@@ -3,6 +3,9 @@ import {
   Component,
   EventEmitter,
   Output,
+  OnInit,
+  computed,
+  inject,
   signal,
 } from '@angular/core';
 
@@ -10,6 +13,9 @@ import {
   RouterLink,
   RouterLinkActive,
 } from '@angular/router';
+
+import { AlertWorkspaceFacade } from '../../features/alerts/alert-workspace.facade';
+import { DeviceWorkspaceFacade } from '../../features/devices/device-workspace.facade';
 
 @Component({
   selector: 'resq-sidebar',
@@ -85,6 +91,10 @@ import {
             {{ item.label }}
           </span>
 
+          @if (item.route === '/alerts' && alertCount()) {
+            <em>{{ alertCount() }}</em>
+          }
+
         </a>
       }
 
@@ -99,8 +109,8 @@ import {
         </b>
 
         <span>
-          <i></i>
-          All Systems Operational
+          <i [class.attention]="systemAttention()"></i>
+          {{ systemStatus() }}
         </span>
 
       </div>
@@ -115,16 +125,32 @@ import {
   styleUrl:
     './sidebar.component.scss',
 })
-export class SidebarComponent {
+export class SidebarComponent implements OnInit {
 
   @Output()
   navigate =
     new EventEmitter<void>();
 
+  private readonly alerts = inject(AlertWorkspaceFacade);
+  private readonly devices = inject(DeviceWorkspaceFacade);
+
   readonly logoFailed =
     signal(
       false,
     );
+
+  readonly alertCount = this.alerts.recentCount;
+  readonly systemAttention = computed(() => this.devices.summary().offline > 0);
+  readonly systemStatus = computed(() =>
+    this.systemAttention()
+      ? `${this.devices.summary().offline} device(s) offline / timeout`
+      : 'All Systems Operational',
+  );
+
+  ngOnInit(): void {
+    if (!this.alerts.rows().length) this.alerts.loadAlerts().subscribe({ error: () => undefined });
+    if (!this.devices.rows().length) this.devices.loadFleet().subscribe({ error: () => undefined });
+  }
 
   readonly items = [
 

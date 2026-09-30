@@ -33,13 +33,21 @@ import { ChartConfiguration } from 'chart.js';
       .status-online,
       .status-resolved,
       .status-active,
-      .status-powered {
+      .status-powered,
+      .status-available,
+      .status-delivered,
+      .status-succeeded,
+      .status-authorized {
         color: #067647;
         background: #ecfdf3;
       }
       .status-warning,
       .status-acknowledged,
       .status-inprogress,
+      .status-in_progress,
+      .status-pending,
+      .status-pending_authorization,
+      .status-execution_requested,
       .status-pending_calibration,
       .status-calibration_required {
         color: #b54708;
@@ -47,14 +55,20 @@ import { ChartConfiguration } from 'chart.js';
       }
       .status-critical,
       .status-new,
-      .status-open {
+      .status-open,
+      .status-failed,
+      .status-rejected {
         color: #b42318;
         background: #fef3f2;
       }
       .status-offline,
+      .status-timeout,
+      .status-unavailable,
+      .status-unknown,
       .status-info,
       .status-inactive,
       .status-retired,
+      .status-closed,
       .status-unpowered {
         color: #475467;
         background: #f2f4f7;
@@ -260,44 +274,35 @@ export class LineChartComponent {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<div class="wrap">
     <canvas baseChart [data]="data" [options]="options" type="doughnut"></canvas>
-    <div class="center"><b>142</b><span>Devices</span></div>
+    <div class="center"><b>{{ centerValue }}</b><span>{{ centerLabel }}</span></div>
   </div>`,
   styles: [
     `
-      .wrap {
-        height: 154px;
-        position: relative;
-      }
-      .center {
-        position: absolute;
-        inset: 0;
-        display: grid;
-        place-content: center;
-        text-align: center;
-        pointer-events: none;
-      }
-      .center b {
-        font-size: 22px;
-      }
-      .center span {
-        font-size: 12px;
-        color: #667085;
-      }
+      .wrap { height: 154px; position: relative; }
+      .center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
+      .center b { font-size: 22px; }
+      .center span { font-size: 12px; color: #667085; }
     `,
   ],
 })
 export class DoughnutChartComponent {
-  readonly data: ChartConfiguration<'doughnut'>['data'] = {
-    labels: ['Online', 'Warning', 'Critical', 'Offline'],
-    datasets: [
-      {
-        data: [118, 12, 6, 6],
-        backgroundColor: ['#12b76a', '#fdb022', '#f04438', '#98a2b3'],
-        borderWidth: 0,
-        hoverOffset: 2,
-      },
-    ],
-  };
+  @Input() labels = ['Online', 'Warning', 'Critical', 'Offline'];
+  @Input() values = [118, 12, 6, 6];
+  @Input() centerValue: string | number = 142;
+  @Input() centerLabel = 'Devices';
+  get data(): ChartConfiguration<'doughnut'>['data'] {
+    return {
+      labels: this.labels,
+      datasets: [
+        {
+          data: this.values,
+          backgroundColor: ['#12b76a', '#fdb022', '#f04438', '#98a2b3', '#617994'],
+          borderWidth: 0,
+          hoverOffset: 2,
+        },
+      ],
+    };
+  }
   readonly options: ChartConfiguration<'doughnut'>['options'] = {
     responsive: true,
     maintainAspectRatio: false,

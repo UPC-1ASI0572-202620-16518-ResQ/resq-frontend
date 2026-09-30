@@ -20,8 +20,8 @@ import {
 } from '../../../core/mock-data/resq.mock';
 
 import {
-  AuthMockService,
-} from '../../../core/services/data.services';
+  UserFacade,
+} from '../../users/data-access/user.facade';
 
 import {
   AlertQueryFilters,
@@ -76,8 +76,8 @@ export class MockAlertGateway
     );
 
   constructor(
-    private readonly auth:
-      AuthMockService,
+    private readonly user:
+      UserFacade,
   ) {}
 
   getAlerts(
@@ -336,7 +336,7 @@ export class MockAlertGateway
     }
 
     const currentUser =
-      this.auth.currentUser();
+      this.user.profile();
 
     if (!currentUser) {
 
@@ -375,7 +375,7 @@ export class MockAlertGateway
         decision,
 
         decidedByUserId:
-          currentUser.id,
+          currentUser.userId,
 
         decidedAt:
           new Date(),

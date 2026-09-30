@@ -34,10 +34,12 @@ import {
   SearchResult,
 } from '../../core/models/resq.models';
 
+
 import {
-  AlertService,
-  SearchService,
-} from '../../core/services/data.services';
+  AlertWorkspaceFacade,
+} from '../../features/alerts/alert-workspace.facade';
+
+import { GlobalSearchFacade } from '../../features/search/global-search.facade';
 
 import {
   AuthSessionFacade,
@@ -437,12 +439,12 @@ export class TopbarComponent
 
   private readonly searchService =
     inject(
-      SearchService,
+      GlobalSearchFacade,
     );
 
-  private readonly alertService =
+  private readonly alertWorkspace =
     inject(
-      AlertService,
+      AlertWorkspaceFacade,
     );
 
   private readonly session =
@@ -492,12 +494,12 @@ export class TopbarComponent
     );
 
   readonly latestAlerts =
-    this.alertService
-      .latestAlerts;
+    this.alertWorkspace
+      .recent;
 
   readonly recentAlertCount =
-    this.alertService
-      .recentAlertCount;
+    this.alertWorkspace
+      .recentCount;
 
   readonly userName =
     computed(
@@ -582,6 +584,10 @@ export class TopbarComponent
         );
 
     this.updateTitle();
+
+    if (!this.alertWorkspace.rows().length) {
+      this.alertWorkspace.loadAlerts().subscribe({ error: () => undefined });
+    }
   }
 
   ngOnDestroy():
