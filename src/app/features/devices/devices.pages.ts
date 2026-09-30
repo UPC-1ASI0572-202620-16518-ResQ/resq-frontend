@@ -14,7 +14,7 @@ import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
 import {
-  Alert,
+  AlertListItem,
   Building,
   Device,
   DeviceCapability,
@@ -148,7 +148,7 @@ interface DeviceTableRow {
       <div class="result-summary">
         <b>{{ filteredCount() }} devices</b
         ><span
-          >Filtered from {{ summary().total }} registered physical devices · Mock data updated
+          >Filtered from {{ summary().total }} registered physical devices · Updated
           moments ago</span
         >
       </div>
@@ -508,8 +508,6 @@ export class DevicesPage implements OnInit {
               ><span class="sr-only">Reading history period</span
               ><select aria-label="Reading history period">
                 <option>Last 24 Hours</option>
-                <option disabled>Last 7 Days — coming soon</option>
-                <option disabled>Last 30 Days — coming soon</option>
               </select></label
             >
           </div>
@@ -544,7 +542,7 @@ export class DevicesPage implements OnInit {
             } @else {
               <div class="hardware-fallback">
                 <span aria-hidden="true">▦</span><b>{{ current.name }}</b
-                ><small>Hardware photo pending</small>
+                ><small>Hardware image unavailable</small>
               </div>
             }
           </div>
@@ -573,7 +571,7 @@ export class DevicesPage implements OnInit {
             </div>
             @if (current.assemblyComponents?.length) {
               <div class="assembly">
-                <b>Prototype Assembly Components</b>
+                <b>Assembly Components</b>
                 <p>{{ current.assemblyComponents?.join(' · ') }}</p>
               </div>
             }
@@ -673,15 +671,15 @@ export class DevicesPage implements OnInit {
                 >
                 <div>
                   <b>{{ alert.title }}</b
-                  ><small>{{ alert.severity }} · {{ relativeTime(alert.timestamp) }}</small>
+                  ><small>{{ alert.riskTypeLabel }} · {{ alert.severity }} · {{ relativeTime(alert.detectedAt) }}</small>
                 </div>
-                <resq-status-badge [status]="alert.status" /><span aria-hidden="true">›</span></a
+                <resq-status-badge [status]="alert.severity" /><span aria-hidden="true">›</span></a
               >
             }
           } @else {
             <resq-empty-state
               title="No alerts for this device"
-              message="There are no device-specific alerts in the current mock data."
+              message="No alerts have been recorded for this device."
             />
           }
         </article>
@@ -754,7 +752,7 @@ export class DeviceDetailPage implements OnInit {
   readonly space = signal<Space | undefined>(undefined);
   readonly capabilities = signal<DeviceCapability[]>([]);
   readonly measurements = signal<SensorReading[]>([]);
-  readonly alerts = signal<Alert[]>([]);
+  readonly alerts = signal<AlertListItem[]>([]);
   readonly componentsOpen = signal(false);
   readonly imageFailed = signal(false);
   ngOnInit(): void {
@@ -834,7 +832,7 @@ export class DeviceDetailPage implements OnInit {
   hardwareSummary(device: Device): string {
     return device.id === 'resq-mvp-001'
       ? 'ESP32 DevKit V1 + MQ-2 + OLED + Buzzer + Status LEDs'
-      : `${device.specifications.model} · demo hardware`;
+      : device.specifications.model;
   }
   calibrationLabel(value: string): string {
     return value

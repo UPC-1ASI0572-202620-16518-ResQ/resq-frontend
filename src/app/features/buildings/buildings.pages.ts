@@ -16,16 +16,14 @@ import {
 import { MatIconModule } from '@angular/material/icon';
 
 import {
+  AlertListItem,
   Building,
   RiskStatus,
   riskRank,
 } from '../../core/models/resq.models';
 
-import {
-  ALERTS,
-  BUILDINGS,
-  DEVICES,
-} from '../../core/mock-data/resq.mock';
+import { BUILDINGS, DEVICES } from '../../core/mock-data/resq.mock';
+import { AlertService } from '../../core/services/data.services';
 
 import {
   StatusBadgeComponent,
@@ -197,11 +195,11 @@ import {
           <div class="kpi-content">
 
             <strong>
-              {{ buildingsWithActiveAlerts() }}
+              {{ buildingsWithRecentAlerts() }}
             </strong>
 
             <span>
-              Buildings with Active Alerts
+              Buildings with Recent Alerts
             </span>
 
           </div>
@@ -458,7 +456,7 @@ import {
                 </div>
 
 
-                <!-- ACTIVE ALERTS -->
+                <!-- RECENT ALERTS -->
 
                 <div class="metric">
 
@@ -473,11 +471,11 @@ import {
                   <div class="metric-data">
 
                     <strong>
-                      {{ activeAlertsFor(building) }}
+                      {{ recentAlertsFor(building) }}
                     </strong>
 
                     <span>
-                      Active Alerts
+                      Recent Alerts
                     </span>
 
                   </div>
@@ -727,7 +725,7 @@ import {
                 <th>Floors</th>
                 <th>Spaces</th>
                 <th>Devices</th>
-                <th>Active Alerts</th>
+                <th>Recent Alerts</th>
                 <th>Critical Spaces</th>
                 <th>Offline</th>
                 <th></th>
@@ -808,7 +806,7 @@ import {
                   </td>
 
                   <td>
-                    {{ activeAlertsFor(building) }}
+                    {{ recentAlertsFor(building) }}
                   </td>
 
                   <td>
@@ -2654,6 +2652,8 @@ import {
 })
 export class BuildingsPage {
 
+  readonly recentAlertItems = signal<AlertListItem[]>([]);
+
   readonly BUILDINGS =
     BUILDINGS;
 
@@ -2766,8 +2766,8 @@ export class BuildingsPage {
             if (sort === 'alerts') {
 
               return (
-                this.activeAlertsFor(b) -
-                this.activeAlertsFor(a)
+                this.recentAlertsFor(b) -
+                this.recentAlertsFor(a)
               );
 
             }
@@ -2789,7 +2789,10 @@ export class BuildingsPage {
 
   constructor(
     private readonly router: Router,
-  ) {}
+    alertService: AlertService,
+  ) {
+    alertService.getRecentAlerts('24h').subscribe(items => this.recentAlertItems.set(items));
+  }
 
 
   totalFloors(): number {
@@ -2814,11 +2817,11 @@ export class BuildingsPage {
   }
 
 
-  buildingsWithActiveAlerts(): number {
+  buildingsWithRecentAlerts(): number {
 
     return BUILDINGS.filter(
       building =>
-        this.activeAlertsFor(building) > 0
+        this.recentAlertsFor(building) > 0
     ).length;
 
   }
@@ -2905,15 +2908,12 @@ export class BuildingsPage {
   }
 
 
-  activeAlertsFor(
+  recentAlertsFor(
     building: Building
   ): number {
 
-    return ALERTS.filter(
-      alert =>
-        alert.buildingId ===
-          building.id &&
-        alert.status !== 'Resolved'
+    return this.recentAlertItems().filter(
+      alert => alert.location.buildingId === building.id
     ).length;
 
   }
@@ -2971,16 +2971,16 @@ export class BuildingsPage {
         building => {
 
           const latestAlert =
-            ALERTS
+            this.recentAlertItems()
               .filter(
                 alert =>
-                  alert.buildingId ===
+                  alert.location.buildingId ===
                   building.id
               )
               .sort(
                 (a, b) =>
-                  b.timestamp.getTime() -
-                  a.timestamp.getTime()
+                  b.generatedAt.getTime() -
+                  a.generatedAt.getTime()
               )[0];
 
 
@@ -3030,7 +3030,7 @@ export class BuildingsPage {
               building.address,
 
             timestamp:
-              latestAlert.timestamp,
+              latestAlert.generatedAt,
 
           };
 
@@ -3303,11 +3303,11 @@ export class BuildingsPage {
           <div>
 
             <strong>
-              {{ activeAlerts() }}
+              {{ recentAlerts() }}
             </strong>
 
             <span>
-              Active Alerts
+              Recent Alerts
             </span>
 
           </div>
@@ -3962,6 +3962,8 @@ export class BuildingsPage {
 export class BuildingDetailPage
   implements OnInit {
 
+  readonly recentAlertItems = signal<AlertListItem[]>([]);
+
   readonly building =
     signal<Building | undefined>(
       undefined
@@ -3974,6 +3976,8 @@ export class BuildingDetailPage
 
     private readonly router:
       Router,
+    private readonly alertService:
+      AlertService,
   ) {}
 
 
@@ -3991,6 +3995,10 @@ export class BuildingDetailPage
           item.id === buildingId
       )
     );
+
+    this.alertService
+      .getRecentAlerts('24h')
+      .subscribe(items => this.recentAlertItems.set(items));
 
   }
 
@@ -4036,7 +4044,7 @@ export class BuildingDetailPage
   }
 
 
-  activeAlerts(): number {
+  recentAlerts(): number {
 
     const buildingId =
       this.building()?.id;
@@ -4047,11 +4055,8 @@ export class BuildingDetailPage
     }
 
 
-    return ALERTS.filter(
-      alert =>
-        alert.buildingId ===
-          buildingId &&
-        alert.status !== 'Resolved'
+    return this.recentAlertItems().filter(
+      alert => alert.location.buildingId === buildingId
     ).length;
 
   }

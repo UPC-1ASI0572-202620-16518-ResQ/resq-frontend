@@ -1,10 +1,16 @@
 import {
   Alert,
+  AlertSeverity,
   Building,
+  DetectionEvidence,
   Device,
   DeviceCapability,
   Floor,
   Incident,
+  NotificationDeliveryStatus,
+  ResponseExecution,
+  RiskDetectionSummary,
+  RiskTypeCode,
   SensorReading,
   Space,
   SpaceThresholds,
@@ -75,7 +81,7 @@ const capabilityFor = (id: string, type: Device['type']): DeviceCapability => ({
   code: `${type.toLowerCase()}_measurement`,
   name: `${type} Measurement`,
   kind: 'MEASUREMENT',
-  hardware: `${type} sensing module (demo)`,
+  hardware: `${type} sensing module`,
   unit: units[type],
 });
 
@@ -96,22 +102,20 @@ const makeDevice = (
   const signalStrength = status === 'Offline' ? undefined : -54 - (id.length % 12);
   return {
     id,
-    organizationId: 'securitybear-demo',
+    organizationId: 'securitybear',
     deviceCode,
-    name: `Demo ${type} Monitoring Node ${deviceCode}`,
-    description:
-      'Future-ready demo physical IoT node used to validate ResQ fleet management workflows.',
+    name: `${type} Monitoring Node ${deviceCode}`,
+    description: 'Physical IoT node registered for environmental monitoring in ResQ.',
     specifications: {
-      manufacturer: 'ResQ Demo',
-      model: `${type} Monitoring Node (Demo)`,
-      serialNumber: `DEMO-${deviceCode}`,
-      firmware: 'v3.8.2-demo',
+      manufacturer: 'SecurityBear',
+      model: `${type} Monitoring Node`,
+      serialNumber: `RSQ-${deviceCode}`,
+      firmware: 'v3.8.2',
       protocol: 'Wi-Fi',
       samplingIntervalSeconds: 60,
-      edgeIntegration: 'Edge API (frontend mock)',
+      edgeIntegration: 'Edge API',
     },
     assignment: { buildingId, floorId, zoneId: spaceId, spaceId },
-    externalReference: 'DEMO-FUTURE-DEVICE',
     administrativeStatus: 'ACTIVE',
     connectivityStatus,
     healthStatus,
@@ -124,7 +128,7 @@ const makeDevice = (
     signalStrength,
     lastSeen: ago(status === 'Offline' ? 185 : 2 + (id.length % 4)),
     readings: readings(id, type, value ?? currentValues[type]),
-    hardwareComponents: [{ name: `${type} sensing module`, role: 'Measurement hardware (demo)' }],
+    hardwareComponents: [{ name: `${type} sensing module`, role: 'Measurement hardware' }],
     maintenance: {
       calibrationStatus: 'NOT_REQUIRED',
       lastInspection: ago(60 * 24 * 21),
@@ -137,7 +141,7 @@ const makeDevice = (
     code: deviceCode,
     type,
     status,
-    firmware: 'v3.8.2-demo',
+    firmware: 'v3.8.2',
     battery: batteryPercentage,
     signal: signalStrength ?? 0,
   };
@@ -151,9 +155,9 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
     organizationId: 'securitybear',
     deviceCode,
     name: 'ResQ Safety Node MVP',
-    description: 'ESP32-based emergency monitoring and local response prototype.',
+    description: 'ESP32-based emergency monitoring and local response node.',
     specifications: {
-      manufacturer: 'SecurityBear Prototype',
+      manufacturer: 'SecurityBear',
       model: 'ResQ Safety Node v0.1',
       serialNumber: 'SB-RSN-MVP-0001',
       controller: 'ESP32 DevKit V1',
@@ -161,7 +165,7 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
       firmware: 'v0.1.0-mvp',
       protocol: 'Wi-Fi',
       samplingIntervalSeconds: 60,
-      edgeIntegration: 'Edge API (frontend mock)',
+      edgeIntegration: 'Edge API',
     },
     assignment: { buildingId, floorId, zoneId: spaceId, spaceId },
     externalReference: 'SECURITYBEAR-MVP-NODE-01',
@@ -561,52 +565,361 @@ export const DEVICES: Device[] = [
   }),
 ];
 
-const alertTitles = [
-  'High gas level detected',
-  'Temperature above threshold',
-  'Smoke detected',
-  'Device offline',
-  'Humidity outside safe range',
-  'Unexpected motion detected',
+interface AlertScenario {
+  alertId: string;
+  riskDetectionId: string;
+  riskTypeCode: RiskTypeCode;
+  severityCode: AlertSeverity;
+  minutesAgo: number;
+  spaceId: string;
+  deviceType: Device['type'];
+  deliveryStatus: NotificationDeliveryStatus;
+  relatedIncident?: {
+    id: string;
+    status: Incident['status'];
+  };
+}
+
+const alertScenarios: AlertScenario[] = [
+  {
+    alertId: 'alert-001',
+    riskDetectionId: 'RISK-0001',
+    riskTypeCode: 'GAS_LEAK',
+    severityCode: 'Critical',
+    minutesAgo: 2,
+    spaceId: 'chem-lab-201',
+    deviceType: 'Gas',
+    deliveryStatus: 'DELIVERED',
+    relatedIncident: { id: 'INC-1001', status: 'Open' },
+  },
+  {
+    alertId: 'alert-002',
+    riskDetectionId: 'RISK-0002',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 18,
+    spaceId: 'server-204',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+    relatedIncident: { id: 'INC-1002', status: 'InProgress' },
+  },
+  {
+    alertId: 'alert-003',
+    riskDetectionId: 'RISK-0003',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 55,
+    spaceId: 'class-205',
+    deviceType: 'Smoke',
+    deliveryStatus: 'FAILED',
+  },
+  {
+    alertId: 'alert-004',
+    riskDetectionId: 'RISK-0004',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Critical',
+    minutesAgo: 90,
+    spaceId: 'science-f1-s1',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+    relatedIncident: { id: 'INC-1004', status: 'Open' },
+  },
+  {
+    alertId: 'alert-005',
+    riskDetectionId: 'RISK-0005',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 300,
+    spaceId: 'office-208',
+    deviceType: 'Smoke',
+    deliveryStatus: 'PENDING',
+  },
+  {
+    alertId: 'alert-006',
+    riskDetectionId: 'RISK-0006',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 720,
+    spaceId: 'science-f3-s3',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+  },
+  {
+    alertId: 'alert-007',
+    riskDetectionId: 'RISK-0007',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Critical',
+    minutesAgo: 1_380,
+    spaceId: 'main-f1-s6',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+    relatedIncident: { id: 'INC-1007', status: 'InProgress' },
+  },
+  {
+    alertId: 'alert-008',
+    riskDetectionId: 'RISK-0008',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 2_880,
+    spaceId: 'main-f2-s1',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+  },
+  {
+    alertId: 'alert-009',
+    riskDetectionId: 'RISK-0009',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 5_760,
+    spaceId: 'main-f3-s4',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+  },
+  {
+    alertId: 'alert-010',
+    riskDetectionId: 'RISK-0010',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Critical',
+    minutesAgo: 8_640,
+    spaceId: 'research-f1-s2',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+    relatedIncident: { id: 'INC-1010', status: 'Resolved' },
+  },
+  {
+    alertId: 'alert-011',
+    riskDetectionId: 'RISK-0011',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 12_960,
+    spaceId: 'research-f2-s5',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+  },
+  {
+    alertId: 'alert-012',
+    riskDetectionId: 'RISK-0012',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 20_160,
+    spaceId: 'science-f4-s2',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+  },
+  {
+    alertId: 'alert-013',
+    riskDetectionId: 'RISK-0013',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Critical',
+    minutesAgo: 30_240,
+    spaceId: 'main-f1-s4',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+    relatedIncident: { id: 'INC-1013', status: 'Resolved' },
+  },
+  {
+    alertId: 'alert-014',
+    riskDetectionId: 'RISK-0014',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 41_760,
+    spaceId: 'research-f2-s1',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+  },
+  {
+    alertId: 'alert-015',
+    riskDetectionId: 'RISK-0015',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Warning',
+    minutesAgo: 64_800,
+    spaceId: 'science-f1-s5',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+  },
+  {
+    alertId: 'alert-016',
+    riskDetectionId: 'RISK-0016',
+    riskTypeCode: 'FIRE',
+    severityCode: 'Critical',
+    minutesAgo: 100_800,
+    spaceId: 'main-f3-s2',
+    deviceType: 'Smoke',
+    deliveryStatus: 'DELIVERED',
+    relatedIncident: { id: 'INC-1016', status: 'Resolved' },
+  },
 ];
-export const ALERTS: Alert[] = Array.from({ length: 56 }, (_, index) => {
-  const space = index < 3 ? scienceF2Spaces[[0, 3, 5][index]] : SPACES[index % SPACES.length];
-  const severity: Alert['severity'] =
-    index % 5 === 0 || index < 3 ? 'Critical' : index % 3 === 0 ? 'Info' : 'Warning';
+
+const scenarioDevice = (scenario: AlertScenario): Device => {
+  if (scenario.alertId === 'alert-001') {
+    return DEVICES.find((device) => device.id === 'resq-mvp-001')!;
+  }
+  return DEVICES.find(
+    (device) =>
+      device.assignment.spaceId === scenario.spaceId && device.type === scenario.deviceType,
+  )!;
+};
+
+const detectedAtFor = (scenario: AlertScenario): Date => ago(scenario.minutesAgo);
+const after = (date: Date, seconds: number): Date => new Date(date.getTime() + seconds * 1_000);
+
+export const RISK_DETECTIONS: RiskDetectionSummary[] = alertScenarios.map((scenario) => {
+  const device = scenarioDevice(scenario);
+  const capability = device.capabilities.find((item) => item.kind === 'MEASUREMENT')!;
+  const detectedAt = detectedAtFor(scenario);
+  const latestReading = device.readings.at(-1);
+  const evidence: DetectionEvidence = {
+    deviceId: device.id,
+    capabilityCode: capability.code,
+    measurementName: capability.name,
+    value: scenario.alertId === 'alert-001' ? 1830 : (latestReading?.value ?? 0),
+    unit: scenario.alertId === 'alert-001' ? 'ADC' : (capability.unit ?? latestReading?.unit ?? ''),
+    capturedAt: detectedAt,
+  };
   return {
-    id: `alert-${index + 1}`,
-    buildingId: space.buildingId,
-    floorId: space.floorId,
-    spaceId: space.id,
-    deviceId: space.devices[0]?.id,
-    severity,
-    title: alertTitles[index % alertTitles.length],
-    description: `A ${severity.toLowerCase()} condition was reported by the monitoring system.`,
-    timestamp: ago(index === 0 ? 2 : index * 7 + 1),
-    status: index < 12 ? 'New' : index < 25 ? 'Acknowledged' : 'Resolved',
+    riskDetectionId: scenario.riskDetectionId,
+    riskTypeCode: scenario.riskTypeCode,
+    severityCode: scenario.severityCode,
+    detectedAt,
+    evidence: [evidence],
   };
 });
 
-export const INCIDENTS: Incident[] = Array.from({ length: 18 }, (_, index) => {
-  const alert = ALERTS[index];
+export const ALERTS: Alert[] = alertScenarios.map((scenario) => {
+  const space = SPACES.find((item) => item.id === scenario.spaceId)!;
+  const detectedAt = detectedAtFor(scenario);
+  const generatedAt = after(detectedAt, 1);
+  const requestedAt = after(detectedAt, 2);
+  const completedAt =
+    scenario.deliveryStatus === 'PENDING' ? undefined : after(detectedAt, 3);
   return {
-    id: `INC-${String(index + 1001)}`,
-    alertIds: [alert.id],
-    buildingId: alert.buildingId,
-    floorId: alert.floorId,
-    spaceId: alert.spaceId,
-    title:
-      index % 3 === 0
-        ? 'Air quality investigation'
-        : index % 3 === 1
-          ? 'Sensor anomaly review'
-          : 'Safety threshold response',
-    description: 'Facilities team response and investigation record.',
-    severity: alert.severity,
-    status: index < 4 ? 'Open' : index < 8 ? 'InProgress' : 'Resolved',
-    createdAt: ago(index * 90 + 30),
-    resolvedAt: index >= 8 ? ago(index * 60) : undefined,
+    alertId: scenario.alertId,
+    organizationId: 'securitybear',
+    context: {
+      riskDetectionId: scenario.riskDetectionId,
+      riskTypeCode: scenario.riskTypeCode,
+      severityCode: scenario.severityCode,
+      buildingId: space.buildingId,
+      zoneId: space.id,
+      detectedAt,
+    },
+    generatedAt,
+    deliveries: [
+      {
+        deliveryId: `delivery-${scenario.alertId}`,
+        recipientUserId: 'user-1',
+        channel: 'PUSH',
+        destination: 'registered-mobile-device',
+        status: scenario.deliveryStatus,
+        requestedAt,
+        completedAt,
+        failureReason:
+          scenario.deliveryStatus === 'FAILED'
+            ? 'The push provider did not confirm delivery.'
+            : undefined,
+      },
+    ],
   };
 });
+
+export const RESPONSE_EXECUTIONS: ResponseExecution[] = [
+  {
+    responseExecutionId: 'response-001',
+    organizationId: 'securitybear',
+    riskDetectionId: 'RISK-0001',
+    policyId: 'policy-gas-leak-mvp',
+    action: {
+      actionId: 'action-audible-alarm',
+      actionCode: 'ACTIVATE_AUDIBLE_ALARM',
+      actionName: 'Audible Alarm',
+      targetDeviceId: 'resq-mvp-001',
+      targetCapabilityCode: 'audible_alarm',
+      authorizationMode: 'AUTOMATIC',
+      critical: true,
+    },
+    status: 'SUCCEEDED',
+    requestedAt: after(RISK_DETECTIONS[0].detectedAt, 4),
+    result: {
+      successful: true,
+      resultCode: 'ACTUATOR_CONFIRMED',
+      message: 'The audible alarm was activated locally.',
+      completedAt: after(RISK_DETECTIONS[0].detectedAt, 5),
+    },
+  },
+  {
+    responseExecutionId: 'response-002',
+    organizationId: 'securitybear',
+    riskDetectionId: 'RISK-0001',
+    policyId: 'policy-gas-leak-mvp',
+    action: {
+      actionId: 'action-critical-indicator',
+      actionCode: 'ACTIVATE_CRITICAL_INDICATOR',
+      actionName: 'Critical Status Indicator',
+      targetDeviceId: 'resq-mvp-001',
+      targetCapabilityCode: 'critical_status_indicator',
+      authorizationMode: 'AUTOMATIC',
+      critical: true,
+    },
+    status: 'SUCCEEDED',
+    requestedAt: after(RISK_DETECTIONS[0].detectedAt, 4),
+    result: {
+      successful: true,
+      resultCode: 'ACTUATOR_CONFIRMED',
+      message: 'The critical status indicator was activated locally.',
+      completedAt: after(RISK_DETECTIONS[0].detectedAt, 5),
+    },
+  },
+  {
+    responseExecutionId: 'response-003',
+    organizationId: 'securitybear',
+    riskDetectionId: 'RISK-0001',
+    policyId: 'policy-gas-leak-mvp',
+    action: {
+      actionId: 'action-local-display',
+      actionCode: 'SHOW_CRITICAL_STATUS',
+      actionName: 'Local Status Display',
+      targetDeviceId: 'resq-mvp-001',
+      targetCapabilityCode: 'local_status_display',
+      authorizationMode: 'AUTOMATIC',
+      critical: true,
+    },
+    status: 'SUCCEEDED',
+    requestedAt: after(RISK_DETECTIONS[0].detectedAt, 4),
+    result: {
+      successful: true,
+      resultCode: 'ACTUATOR_CONFIRMED',
+      message: 'The local display was updated with the critical status.',
+      completedAt: after(RISK_DETECTIONS[0].detectedAt, 5),
+    },
+  },
+];
+
+export const INCIDENTS: Incident[] = alertScenarios
+  .filter((scenario) => scenario.relatedIncident)
+  .map((scenario) => {
+    const space = SPACES.find((item) => item.id === scenario.spaceId)!;
+    const detectedAt = detectedAtFor(scenario);
+    const relatedIncident = scenario.relatedIncident!;
+    const resolvedAt =
+      relatedIncident.status === 'Resolved'
+        ? new Date(Math.min(detectedAt.getTime() + 45 * 60_000, now - 60_000))
+        : undefined;
+    return {
+      id: relatedIncident.id,
+      alertIds: [scenario.alertId],
+      buildingId: space.buildingId,
+      floorId: space.floorId,
+      spaceId: space.id,
+      title:
+        scenario.riskTypeCode === 'GAS_LEAK'
+          ? 'Gas leak response'
+          : 'Fire risk investigation',
+      description: 'Facilities response and investigation record for the classified risk.',
+      severity: scenario.severityCode,
+      status: relatedIncident.status,
+      createdAt: after(detectedAt, 8),
+      resolvedAt,
+    };
+  });
 
 export const DEMO_USER = { id: 'user-1', name: 'John Doe', email: 'admin@resq.io', initials: 'JD' };

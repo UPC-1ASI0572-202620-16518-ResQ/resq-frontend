@@ -20,7 +20,18 @@ export type DeviceConnectivityStatus = 'ONLINE' | 'OFFLINE';
 export type DeviceHealthStatus = 'NORMAL' | 'WARNING' | 'CRITICAL';
 export type CapabilityKind = 'MEASUREMENT' | 'ACTUATION';
 export type AlertSeverity = 'Info' | 'Warning' | 'Critical';
-export type AlertStatus = 'New' | 'Acknowledged' | 'Resolved';
+export type RiskTypeCode = 'GAS_LEAK' | 'FIRE';
+export type NotificationDeliveryStatus = 'PENDING' | 'DELIVERED' | 'FAILED';
+export type NotificationChannel = 'PUSH';
+export type AuthorizationMode = 'AUTOMATIC' | 'HUMAN_REQUIRED';
+export type ResponseExecutionStatus =
+  | 'PENDING'
+  | 'PENDING_AUTHORIZATION'
+  | 'AUTHORIZED'
+  | 'EXECUTION_REQUESTED'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'REJECTED';
 export type IncidentStatus = 'Open' | 'InProgress' | 'Resolved';
 
 export interface FloorPlanPoint {
@@ -159,17 +170,129 @@ export interface Building {
   floors: Floor[];
   status: RiskStatus;
 }
+export interface AlertContext {
+  riskDetectionId: string;
+  riskTypeCode: RiskTypeCode;
+  severityCode: AlertSeverity;
+  buildingId?: string;
+  zoneId?: string;
+  detectedAt: Date;
+}
+export interface NotificationDelivery {
+  deliveryId: string;
+  recipientUserId: string;
+  channel: NotificationChannel;
+  destination: string;
+  status: NotificationDeliveryStatus;
+  requestedAt: Date;
+  completedAt?: Date;
+  failureReason?: string;
+}
 export interface Alert {
+  alertId: string;
+  organizationId: string;
+  context: AlertContext;
+  generatedAt: Date;
+  deliveries: NotificationDelivery[];
+}
+export interface DetectionEvidence {
+  deviceId: string;
+  capabilityCode: string;
+  measurementName: string;
+  value: number;
+  unit: string;
+  capturedAt: Date;
+}
+export interface RiskDetectionSummary {
+  riskDetectionId: string;
+  riskTypeCode: RiskTypeCode;
+  severityCode: AlertSeverity;
+  detectedAt: Date;
+  evidence: DetectionEvidence[];
+}
+export interface ResponseActionSnapshot {
+  actionId: string;
+  actionCode: string;
+  actionName: string;
+  targetDeviceId: string;
+  targetCapabilityCode: string;
+  authorizationMode: AuthorizationMode;
+  critical: boolean;
+}
+export interface ExecutionResult {
+  successful: boolean;
+  resultCode: string;
+  message?: string;
+  completedAt: Date;
+}
+export interface ResponseExecution {
+  responseExecutionId: string;
+  organizationId: string;
+  riskDetectionId: string;
+  policyId: string;
+  action: ResponseActionSnapshot;
+  status: ResponseExecutionStatus;
+  requestedAt: Date;
+  result?: ExecutionResult;
+}
+export interface AlertLocationViewModel {
+  buildingId?: string;
+  buildingName: string;
+  floorId?: string;
+  floorName: string;
+  zoneId?: string;
+  zoneName: string;
+  roomNumber?: string;
+  available: boolean;
+}
+export interface AlertDetectionEvidenceViewModel extends DetectionEvidence {
+  deviceName: string;
+  deviceCode: string;
+  hardware: string;
+}
+export interface NotificationDeliverySummary {
+  status: NotificationDeliveryStatus;
+  delivered: number;
+  pending: number;
+  failed: number;
+  label: string;
+}
+export interface RelatedIncidentViewModel {
   id: string;
-  buildingId: string;
-  floorId: string;
-  spaceId: string;
-  deviceId?: string;
+  title: string;
   severity: AlertSeverity;
+  status: IncidentStatus;
+}
+export interface AlertListItem {
+  id: string;
   title: string;
   description: string;
-  timestamp: Date;
-  status: AlertStatus;
+  riskDetectionId: string;
+  riskTypeCode: RiskTypeCode;
+  riskTypeLabel: string;
+  severity: AlertSeverity;
+  detectedAt: Date;
+  generatedAt: Date;
+  location: AlertLocationViewModel;
+  primaryEvidence?: AlertDetectionEvidenceViewModel;
+  delivery: NotificationDeliverySummary;
+  relatedIncident?: RelatedIncidentViewModel;
+}
+export interface ResponseExecutionViewModel extends ResponseExecution {
+  targetDeviceName: string;
+  targetDeviceCode: string;
+}
+export interface AlertDetailViewModel extends AlertListItem {
+  alert: Alert;
+  evidence: AlertDetectionEvidenceViewModel[];
+  responseExecutions: ResponseExecutionViewModel[];
+}
+export type AlertPeriod = '24h' | '7d' | '30d' | 'all';
+export interface AlertSummary {
+  total: number;
+  critical: number;
+  warning: number;
+  notificationFailures: number;
 }
 export interface Incident {
   id: string;
