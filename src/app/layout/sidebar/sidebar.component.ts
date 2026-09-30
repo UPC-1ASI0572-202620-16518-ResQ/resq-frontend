@@ -7,7 +7,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
     <div class="brand"><div class="logo">◇</div><div><b>ResQ</b><span>Smart Buildings<br>Safer People</span></div></div>
     <nav aria-label="Primary navigation">
       @for (item of items; track item.route) {
-        <a [routerLink]="item.route" routerLinkActive="active" (click)="navigate.emit()"><span class="nav-icon">{{item.icon}}</span>{{item.label}} @if(item.label==='Alerts'){<em>12</em>}</a>
+        <a [routerLink]="item.route" routerLinkActive="active" (click)="navigate.emit()"><span class="nav-icon">{{item.icon}}</span>{{item.label}}</a>
       }
     </nav>
     <div class="sidebar-bottom"><div class="system"><b>System Status</b><span><i></i>All Systems Operational</span></div><small>v1.0.0</small></div>

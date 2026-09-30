@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
-import { Subscription, filter, switchMap } from 'rxjs';
+import { Subscription, filter } from 'rxjs';
 import { SearchResult } from '../../core/models/resq.models';
 import { AlertService, SearchService } from '../../core/services/data.services';
 
@@ -82,14 +82,14 @@ import { AlertService, SearchService } from '../../core/services/data.services';
         @if (notificationsOpen()) {
           <div class="notifications">
             <h3>
-              Notifications <span>{{ activeAlerts().length }}</span>
+              Recent Alerts <span>{{ recentAlertCount() }}</span>
             </h3>
-            @for (alert of activeAlerts().slice(0, 3); track alert.id) {
+            @for (alert of latestAlerts(); track alert.id) {
               <a [routerLink]="'/alerts/' + alert.id"
                 ><i [class.critical]="alert.severity === 'Critical'">!</i>
                 <div>
                   <b>{{ alert.title }}</b
-                  ><small>{{ alert.severity }} · recently</small>
+                  ><small>{{ alert.severity }} · {{ relativeTime(alert.generatedAt) }}</small>
                 </div></a
               >
             }
@@ -117,7 +117,8 @@ export class TopbarComponent implements OnInit, OnDestroy {
   readonly showLocationSelectors = signal(false);
   readonly results = signal<SearchResult[]>([]);
   readonly notificationsOpen = signal(false);
-  readonly activeAlerts = this.alertService.activeAlerts;
+  readonly latestAlerts = this.alertService.latestAlerts;
+  readonly recentAlertCount = this.alertService.recentAlertCount;
   query = '';
   private subscription?: Subscription;
   ngOnInit(): void {
@@ -141,7 +142,7 @@ export class TopbarComponent implements OnInit, OnDestroy {
       ],
       spaces: ['Spaces', 'Monitor risk and environmental conditions by space', '⌂'],
       devices: ['Devices', 'IoT device health, capabilities, connectivity and assignments', '◉'],
-      alerts: ['Alert Center', 'Review, acknowledge and resolve safety alerts', '△'],
+      alerts: ['Alert Center', 'Review risk alerts and detection context', '△'],
       incidents: ['Incidents', 'Coordinate response and track resolution', '◷'],
       analytics: ['Analytics', 'Operational trends and safety intelligence', '⌁'],
       settings: ['Settings', 'Personalize your ResQ experience', '⚙'],
@@ -163,6 +164,13 @@ export class TopbarComponent implements OnInit, OnDestroy {
   clearSearch(): void {
     this.query = '';
     this.results.set([]);
+  }
+  relativeTime(date: Date): string {
+    const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000));
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
   }
   selectBuilding(event: Event): void {
     const id = (event.target as HTMLSelectElement).value;

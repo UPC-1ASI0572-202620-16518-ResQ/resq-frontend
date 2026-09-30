@@ -14,7 +14,7 @@ import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
 import {
-  Alert,
+  AlertListItem,
   Building,
   Device,
   DeviceCapability,
@@ -673,9 +673,9 @@ export class DevicesPage implements OnInit {
                 >
                 <div>
                   <b>{{ alert.title }}</b
-                  ><small>{{ alert.severity }} · {{ relativeTime(alert.timestamp) }}</small>
+                  ><small>{{ alert.riskTypeLabel }} · {{ alert.severity }} · {{ relativeTime(alert.detectedAt) }}</small>
                 </div>
-                <resq-status-badge [status]="alert.status" /><span aria-hidden="true">›</span></a
+                <resq-status-badge [status]="alert.severity" /><span aria-hidden="true">›</span></a
               >
             }
           } @else {
@@ -754,7 +754,7 @@ export class DeviceDetailPage implements OnInit {
   readonly space = signal<Space | undefined>(undefined);
   readonly capabilities = signal<DeviceCapability[]>([]);
   readonly measurements = signal<SensorReading[]>([]);
-  readonly alerts = signal<Alert[]>([]);
+  readonly alerts = signal<AlertListItem[]>([]);
   readonly componentsOpen = signal(false);
   readonly imageFailed = signal(false);
   ngOnInit(): void {
