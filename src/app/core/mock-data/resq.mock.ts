@@ -81,7 +81,7 @@ const capabilityFor = (id: string, type: Device['type']): DeviceCapability => ({
   code: `${type.toLowerCase()}_measurement`,
   name: `${type} Measurement`,
   kind: 'MEASUREMENT',
-  hardware: `${type} sensing module (demo)`,
+  hardware: `${type} sensing module`,
   unit: units[type],
 });
 
@@ -102,22 +102,20 @@ const makeDevice = (
   const signalStrength = status === 'Offline' ? undefined : -54 - (id.length % 12);
   return {
     id,
-    organizationId: 'securitybear-demo',
+    organizationId: 'securitybear',
     deviceCode,
-    name: `Demo ${type} Monitoring Node ${deviceCode}`,
-    description:
-      'Future-ready demo physical IoT node used to validate ResQ fleet management workflows.',
+    name: `${type} Monitoring Node ${deviceCode}`,
+    description: 'Physical IoT node registered for environmental monitoring in ResQ.',
     specifications: {
-      manufacturer: 'ResQ Demo',
-      model: `${type} Monitoring Node (Demo)`,
-      serialNumber: `DEMO-${deviceCode}`,
-      firmware: 'v3.8.2-demo',
+      manufacturer: 'SecurityBear',
+      model: `${type} Monitoring Node`,
+      serialNumber: `RSQ-${deviceCode}`,
+      firmware: 'v3.8.2',
       protocol: 'Wi-Fi',
       samplingIntervalSeconds: 60,
-      edgeIntegration: 'Edge API (frontend mock)',
+      edgeIntegration: 'Edge API',
     },
     assignment: { buildingId, floorId, zoneId: spaceId, spaceId },
-    externalReference: 'DEMO-FUTURE-DEVICE',
     administrativeStatus: 'ACTIVE',
     connectivityStatus,
     healthStatus,
@@ -130,7 +128,7 @@ const makeDevice = (
     signalStrength,
     lastSeen: ago(status === 'Offline' ? 185 : 2 + (id.length % 4)),
     readings: readings(id, type, value ?? currentValues[type]),
-    hardwareComponents: [{ name: `${type} sensing module`, role: 'Measurement hardware (demo)' }],
+    hardwareComponents: [{ name: `${type} sensing module`, role: 'Measurement hardware' }],
     maintenance: {
       calibrationStatus: 'NOT_REQUIRED',
       lastInspection: ago(60 * 24 * 21),
@@ -143,7 +141,7 @@ const makeDevice = (
     code: deviceCode,
     type,
     status,
-    firmware: 'v3.8.2-demo',
+    firmware: 'v3.8.2',
     battery: batteryPercentage,
     signal: signalStrength ?? 0,
   };
@@ -157,9 +155,9 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
     organizationId: 'securitybear',
     deviceCode,
     name: 'ResQ Safety Node MVP',
-    description: 'ESP32-based emergency monitoring and local response prototype.',
+    description: 'ESP32-based emergency monitoring and local response node.',
     specifications: {
-      manufacturer: 'SecurityBear Prototype',
+      manufacturer: 'SecurityBear',
       model: 'ResQ Safety Node v0.1',
       serialNumber: 'SB-RSN-MVP-0001',
       controller: 'ESP32 DevKit V1',
@@ -167,7 +165,7 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
       firmware: 'v0.1.0-mvp',
       protocol: 'Wi-Fi',
       samplingIntervalSeconds: 60,
-      edgeIntegration: 'Edge API (frontend mock)',
+      edgeIntegration: 'Edge API',
     },
     assignment: { buildingId, floorId, zoneId: spaceId, spaceId },
     externalReference: 'SECURITYBEAR-MVP-NODE-01',
