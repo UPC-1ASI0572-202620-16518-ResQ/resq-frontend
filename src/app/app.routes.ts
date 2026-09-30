@@ -11,10 +11,11 @@ import { IncidentsPage, IncidentDetailPage } from './features/incidents/incident
 import { AnalyticsPage } from './features/analytics/analytics.page';
 import { SettingsPage } from './features/settings/settings.page';
 import { NotFoundPage } from './features/not-found.page';
+import { authGuard } from './features/auth/auth.guard';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
-  { path: '', component: AppShellComponent, children: [
+  { path: '', component: AppShellComponent, canActivate: [authGuard], children: [
     { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
     { path: 'dashboard', component: DashboardPage },
     { path: 'buildings', component: BuildingsPage },
