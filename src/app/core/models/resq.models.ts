@@ -34,14 +34,21 @@ export type ResponseExecutionStatus =
   | 'REJECTED';
 export type IncidentStatus = 'Open' | 'InProgress' | 'Resolved';
 
-export interface FloorPlanPoint {
+export interface FloorPlanPoint { x: number; y: number; }
+export interface FloorPlanPosition { x: number; y: number; }
+export type FloorPlanElementType = 'Space' | 'Hallway' | 'Stairs' | 'Restroom' | 'Wall' | 'Door';
+export interface FloorPlanElement {
+  id: string;
+  type: FloorPlanElementType;
   x: number;
   y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  label?: string;
+  spaceId?: string;
 }
-export interface MetricThreshold {
-  warning: number;
-  critical: number;
-}
+export interface MetricThreshold { warning: number; critical: number; }
 export interface SpaceThresholds {
   Temperature?: MetricThreshold;
   Smoke?: MetricThreshold;
@@ -108,37 +115,80 @@ export interface DeviceStatusSummary {
 }
 export interface Device {
   id: string;
+
   organizationId: string;
   deviceCode: string;
+
+  /**
+   * Technical/system name.
+   */
   name: string;
+
+  /**
+   * Friendly name assigned by the user.
+   */
+  displayName?: string;
+
   description: string;
+
   specifications: DeviceSpecifications;
+
   assignment: DeviceAssignment;
+
   externalReference?: string;
+
   administrativeStatus: DeviceAdministrativeStatus;
+
   connectivityStatus: DeviceConnectivityStatus;
+
   healthStatus: DeviceHealthStatus;
+
   capabilities: DeviceCapability[];
+
   power: DevicePowerInfo;
+
   signalStrength?: number;
+
   lastSeen: Date;
+
   readings: SensorReading[];
+
   hardwareImageUrl?: string;
+
   hardwareComponents: DeviceHardwareComponent[];
+
   assemblyComponents?: string[];
+
   maintenance?: DeviceMaintenanceInfo;
+
   createdAt: Date;
+
   updatedAt: Date;
+
   version: number;
 
-  /** Temporary compatibility fields for the existing monitoring, spaces and alerts views. */
+  /**
+   * Compatibility fields currently used by
+   * monitoring / spaces / buildings views.
+   */
   spaceId: string;
+
   code: string;
+
   type: DeviceType;
+
   status: DeviceStatus;
+
   firmware: string;
+
   battery?: number;
+
   signal: number;
+
+  /**
+   * Position inside the floor plan editor.
+   */
+  floorPlanPosition?: FloorPlanPosition;
 }
 export interface Space {
   id: string;
@@ -150,6 +200,8 @@ export interface Space {
   sensitivity: SensitivityLevel;
   status: RiskStatus;
   thresholds: SpaceThresholds;
+  /** Threshold values saved independently for each sensitivity preset. */
+  thresholdProfiles?: Partial<Record<SensitivityLevel, SpaceThresholds>>;
   polygon: FloorPlanPoint[];
   devices: Device[];
 }
@@ -160,6 +212,9 @@ export interface Floor {
   level: number;
   spaces: Space[];
   status: RiskStatus;
+  planImageUrl?: string;
+  planElements?: FloorPlanElement[];
+  planConfigured?: boolean;
 }
 export interface Building {
   id: string;

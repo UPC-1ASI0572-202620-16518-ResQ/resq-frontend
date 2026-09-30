@@ -1,0 +1,85 @@
+<div class="create-page">
+  <header class="page-header">
+    <div>
+      <a routerLink="/buildings" class="back-link"><mat-icon>arrow_back</mat-icon>Buildings</a>
+      <h1>{{ isEditMode() ? 'Edit Building' : 'Add Building' }}</h1>
+      <p>{{ isEditMode() ? 'Update building information and floors.' : 'Configure the building and its floors.' }}</p>
+    </div>
+  </header>
+
+  <section class="stepper">
+    <button type="button" [class.active]="currentStep() === 1" [class.completed]="currentStep() > 1" (click)="goToStep(1)">
+      <span class="step-number">@if(currentStep()>1){<mat-icon>check</mat-icon>}@else{1}</span>
+      <div><strong>Building Info</strong><small>Basic information</small></div>
+    </button>
+    <div class="step-line" [class.completed]="currentStep() > 1"></div>
+    <button type="button" [class.active]="currentStep() === 2" [class.completed]="currentStep() > 2" [disabled]="currentStep() < 2" (click)="goToStep(2)">
+      <span class="step-number">@if(currentStep()>2){<mat-icon>check</mat-icon>}@else{2}</span>
+      <div><strong>Floors</strong><small>Configure levels</small></div>
+    </button>
+    <div class="step-line" [class.completed]="currentStep() > 2"></div>
+    <button type="button" [class.active]="currentStep() === 3" [disabled]="currentStep() < 3">
+      <span class="step-number">3</span>
+      <div><strong>Review</strong><small>Confirm changes</small></div>
+    </button>
+  </section>
+
+  @if(currentStep()===1){
+    <section class="content-card" [formGroup]="buildingForm">
+      <header class="section-header"><span class="section-icon"><mat-icon>apartment</mat-icon></span><div><h2>Building Information</h2><p>Enter the basic details for this building.</p></div></header>
+      <div class="building-info-layout">
+        <div class="form-fields">
+          <label>Building Name *<input formControlName="name" placeholder="Science Building"/>@if(buildingForm.controls.name.touched&&buildingForm.controls.name.invalid){<small class="field-error">Enter a building name.</small>}</label>
+          <label>Address *<input formControlName="address" placeholder="120 Discovery Avenue"/>@if(buildingForm.controls.address.touched&&buildingForm.controls.address.invalid){<small class="field-error">Enter an address.</small>}</label>
+          <label>Description<textarea formControlName="description" rows="4" placeholder="Optional building description"></textarea></label>
+          <label>Number of Floors *<input type="number" min="1" max="20" formControlName="numberOfFloors"/>@if(buildingForm.controls.numberOfFloors.touched&&buildingForm.controls.numberOfFloors.invalid){<small class="field-error">Choose between 1 and 20 floors.</small>}</label>
+        </div>
+        <aside class="image-upload">
+          <h3>Building Image</h3>
+          <div class="image-drop" (dragover)="$event.preventDefault()" (drop)="onImageDrop($event)">
+            @if(imagePreview()){<img [src]="imagePreview()" alt="Building preview"/><button type="button" (click)="removeImage()"><mat-icon>delete_outline</mat-icon>Remove image</button>}@else{<mat-icon>add_photo_alternate</mat-icon><b>Upload building image</b><small>JPG, PNG or WEBP · max 5 MB</small><label><input type="file" accept="image/jpeg,image/png,image/webp" (change)="onImageSelected($event)"/>Choose image</label>}
+          </div>
+          @if(imageError()){<p class="field-error">{{imageError()}}</p>}
+        </aside>
+      </div>
+    </section>
+  }
+
+  @if(currentStep()===2){
+    <section class="content-card">
+      <header class="section-header"><span class="section-icon"><mat-icon>layers</mat-icon></span><div><h2>Floors</h2><p>Name the floors. Monitored spaces are created later in Floor Plan Editor.</p></div></header>
+      <div class="floors-layout">
+        <div class="floor-list">
+          @for(floor of floorControls;track floor.controls.id.value || floor.controls.level.value;let index=$index){
+            <article class="floor-row" [formGroup]="floor">
+              <span class="floor-number">{{floor.controls.level.value}}</span>
+              <label>Floor name<input formControlName="name"/></label>
+              <button type="button" aria-label="Delete floor" title="Delete floor" [disabled]="floorControls.length===1" (click)="removeFloor(index)"><mat-icon>delete_outline</mat-icon></button>
+            </article>
+          }
+          <button type="button" class="add-floor" (click)="addFloor()"><mat-icon>add</mat-icon>Add Floor</button>
+        </div>
+      </div>
+    </section>
+  }
+
+  @if(currentStep()===3){
+    <section class="content-card">
+      <header class="section-header"><span class="section-icon"><mat-icon>fact_check</mat-icon></span><div><h2>Review Building</h2><p>Confirm the information before {{isEditMode()?'saving changes':'creating the building'}}.</p></div></header>
+      <div class="review-layout">
+        <article class="review-building">
+          <div class="review-image">@if(imagePreview()){<img [src]="imagePreview()" alt="Building preview"/>}@else{<div><mat-icon>apartment</mat-icon><span>No image</span></div>}</div>
+          <div class="review-building-info"><span class="review-status">{{isEditMode()?'Existing Building':'New Building'}}</span><h2>{{buildingForm.controls.name.value}}</h2><p><mat-icon>location_on</mat-icon>{{buildingForm.controls.address.value}}</p>@if(buildingForm.controls.description.value){<div class="review-description">{{buildingForm.controls.description.value}}</div>}</div>
+        </article>
+        <section class="review-kpis"><article><mat-icon>layers</mat-icon><strong>{{floorControls.length}}</strong><span>Floors</span></article></section>
+        <section class="review-floors"><h3>Floor Configuration</h3>@for(floor of floorControls;track floor.controls.id.value || floor.controls.level.value){<div class="review-floor"><span class="review-floor-icon"><mat-icon>layers</mat-icon></span><div><strong>{{floor.controls.name.value}}</strong><small>Level {{floor.controls.level.value}}</small></div></div>}</section>
+        <div class="floor-plan-note"><mat-icon>map</mat-icon><div><strong>Spaces are configured in Floor Plan Editor</strong><p>After creating the building, draw Areas to create monitored Spaces and position their devices.</p></div></div>
+      </div>
+    </section>
+  }
+
+  <footer class="wizard-actions">
+    <div>@if(currentStep()>1){<button type="button" class="secondary-button" (click)="previous()"><mat-icon>arrow_back</mat-icon>Back</button>}@else{<a routerLink="/buildings" class="secondary-button">Cancel</a>}</div>
+    <div class="right-actions"><span class="step-indicator">Step {{currentStep()}} of 3</span>@if(currentStep()<3){<button type="button" class="primary-button" (click)="next()">Continue<mat-icon>arrow_forward</mat-icon></button>}@else{<button type="button" class="create-button" (click)="createBuilding()"><mat-icon>{{isEditMode()?'save':'check'}}</mat-icon>{{isEditMode()?'Save Changes':'Create Building'}}</button>}</div>
+  </footer>
+</div>

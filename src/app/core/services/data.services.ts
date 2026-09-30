@@ -1,5 +1,6 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, delay, of } from 'rxjs';
+
 import {
   ALERTS,
   BUILDINGS,
@@ -11,6 +12,7 @@ import {
   RISK_DETECTIONS,
   SPACES,
 } from '../mock-data/resq.mock';
+
 import {
   Alert,
   AlertDetailViewModel,
@@ -32,97 +34,92 @@ import {
   User,
 } from '../models/resq.models';
 
+import { BuildingStoreService } from './building-store.service';
+
 @Injectable({ providedIn: 'root' })
 export class ResqStore {
-  readonly buildings = signal<Building[]>(BUILDINGS);
-  readonly devices = signal<Device[]>(DEVICES);
+  private readonly buildingStore = inject(BuildingStoreService);
+  readonly buildings = this.buildingStore.buildings;
+  readonly devices = this.buildingStore.devices;
   readonly incidents = signal<Incident[]>(INCIDENTS);
 }
 
 @Injectable({ providedIn: 'root' })
 export class BuildingService {
-  private readonly store = new ResqStore();
-  getBuildings(): Observable<Building[]> {
-    return of(this.store.buildings()).pipe(delay(150));
-  }
-  getBuildingById(id: string): Observable<Building | undefined> {
-    return of(this.store.buildings().find((item) => item.id === id)).pipe(delay(100));
-  }
+  private readonly store = inject(BuildingStoreService);
+  readonly buildings = this.store.buildings;
+  getBuildings(): Observable<Building[]> { return of(this.store.buildings()).pipe(delay(150)); }
+  getBuildingById(id: string): Observable<Building | undefined> { return of(this.store.getBuilding(id)).pipe(delay(100)); }
 }
 
 @Injectable({ providedIn: 'root' })
 export class FloorService {
-  getFloors(): Observable<Floor[]> {
-    return of(FLOORS).pipe(delay(100));
-  }
-  getFloorsByBuilding(buildingId: string): Observable<Floor[]> {
-    return of(FLOORS.filter((item) => item.buildingId === buildingId)).pipe(delay(100));
-  }
-  getFloorById(id: string): Observable<Floor | undefined> {
-    return of(FLOORS.find((item) => item.id === id)).pipe(delay(80));
-  }
+  private readonly store = inject(BuildingStoreService);
+  getFloorsByBuilding(buildingId: string): Observable<Floor[]> { return of(this.store.getBuilding(buildingId)?.floors ?? []).pipe(delay(100)); }
+  getFloorById(id: string): Observable<Floor | undefined> { return of(this.store.floors().find(item => item.id === id)).pipe(delay(80)); }
 }
 
 @Injectable({ providedIn: 'root' })
 export class SpaceService {
-  private readonly spaces = signal<Space[]>(SPACES);
-  getSpaces(): Observable<Space[]> {
-    return of(this.spaces()).pipe(delay(120));
-  }
-  getSpacesByFloor(floorId: string): Observable<Space[]> {
-    return of(this.spaces().filter((item) => item.floorId === floorId)).pipe(delay(100));
-  }
-  getSpaceById(id: string): Observable<Space | undefined> {
-    return of(this.spaces().find((item) => item.id === id)).pipe(delay(80));
-  }
+  private readonly store = inject(BuildingStoreService);
+  getSpaces(): Observable<Space[]> { return of(this.store.spaces()).pipe(delay(120)); }
+  getSpacesByFloor(floorId: string): Observable<Space[]> { return of(this.store.spaces().filter(item => item.floorId === floorId)).pipe(delay(100)); }
+  getSpaceById(id: string): Observable<Space | undefined> { return of(this.store.spaces().find(item => item.id === id)).pipe(delay(80)); }
   updateConfiguration(
     id: string,
     sensitivity: Space['sensitivity'],
     thresholds: SpaceThresholds,
+    thresholdProfiles?: Space['thresholdProfiles'],
   ): void {
-    this.spaces.update((items) =>
-      items.map((item) => (item.id === id ? { ...item, sensitivity, thresholds } : item)),
-    );
+    const space = this.store.spaces().find(item => item.id === id);
+    if (space) this.store.updateSpace(space.buildingId, space.floorId, {
+      ...space,
+      sensitivity,
+      thresholds,
+      thresholdProfiles: thresholdProfiles ?? space.thresholdProfiles,
+    });
   }
 }
 
 @Injectable({ providedIn: 'root' })
 export class DeviceService {
+  private readonly store = inject(BuildingStoreService);
   getDevices(): Observable<Device[]> {
-    return of(DEVICES).pipe(delay(120));
+    return of(this.store.devices()).pipe(delay(120));
   }
   getDeviceById(id: string): Observable<Device | undefined> {
-    return of(DEVICES.find((item) => item.id === id)).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === id)).pipe(delay(80));
   }
   getDevicesBySpace(spaceId: string): Observable<Device[]> {
-    return of(DEVICES.filter((item) => item.assignment.spaceId === spaceId)).pipe(delay(80));
+    return of(this.store.devices().filter((item) => item.spaceId === spaceId)).pipe(delay(80));
   }
   getDevicesByBuilding(buildingId: string): Observable<Device[]> {
-    return of(DEVICES.filter((item) => item.assignment.buildingId === buildingId)).pipe(delay(80));
+    return of(this.store.devices().filter((item) => item.assignment.buildingId === buildingId)).pipe(delay(80));
   }
   getDevicesByFloor(floorId: string): Observable<Device[]> {
-    return of(DEVICES.filter((item) => item.assignment.floorId === floorId)).pipe(delay(80));
+    return of(this.store.devices().filter((item) => item.assignment.floorId === floorId)).pipe(delay(80));
   }
   getDeviceCapabilities(deviceId: string): Observable<DeviceCapability[]> {
-    return of(DEVICES.find((item) => item.id === deviceId)?.capabilities ?? []).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === deviceId)?.capabilities ?? []).pipe(delay(80));
   }
   getDeviceMeasurements(deviceId: string): Observable<SensorReading[]> {
-    return of(DEVICES.find((item) => item.id === deviceId)?.readings ?? []).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === deviceId)?.readings ?? []).pipe(delay(80));
   }
   getStatusSummary(): Observable<DeviceStatusSummary> {
     return of({
-      total: DEVICES.length,
-      online: DEVICES.filter((item) => item.connectivityStatus === 'ONLINE').length,
-      warningDegraded: DEVICES.filter(
+      total: this.store.devices().length,
+      online: this.store.devices().filter((item) => item.connectivityStatus === 'ONLINE').length,
+      warningDegraded: this.store.devices().filter(
         (item) => item.healthStatus === 'WARNING' || item.healthStatus === 'CRITICAL',
       ).length,
-      offline: DEVICES.filter((item) => item.connectivityStatus === 'OFFLINE').length,
+      offline: this.store.devices().filter((item) => item.connectivityStatus === 'OFFLINE').length,
     }).pipe(delay(80));
   }
 }
 
 @Injectable({ providedIn: 'root' })
 export class AlertService {
+  private readonly store = inject(BuildingStoreService);
   private readonly items = signal<Alert[]>(ALERTS);
   private readonly listItems = computed(() =>
     this.items()
@@ -176,7 +173,7 @@ export class AlertService {
     );
     const evidence =
       detection?.evidence.map((item) => {
-        const device = DEVICES.find((candidate) => candidate.id === item.deviceId);
+        const device = this.store.devices().find((candidate) => candidate.id === item.deviceId);
         const capability = device?.capabilities.find(
           (candidate) => candidate.code === item.capabilityCode,
         );
@@ -190,7 +187,7 @@ export class AlertService {
     const responseExecutions = RESPONSE_EXECUTIONS.filter(
       (execution) => execution.riskDetectionId === alert.context.riskDetectionId,
     ).map((execution) => {
-      const device = DEVICES.find((item) => item.id === execution.action.targetDeviceId);
+      const device = this.store.devices().find((item) => item.id === execution.action.targetDeviceId);
       return {
         ...execution,
         targetDeviceName: device?.name ?? 'Device unavailable',
@@ -203,11 +200,11 @@ export class AlertService {
     const detection = RISK_DETECTIONS.find(
       (item) => item.riskDetectionId === alert.context.riskDetectionId,
     );
-    const space = SPACES.find((item) => item.id === alert.context.zoneId);
-    const floor = FLOORS.find((item) => item.id === space?.floorId);
-    const building = BUILDINGS.find((item) => item.id === alert.context.buildingId);
+    const space = this.store.spaces().find((item) => item.id === alert.context.zoneId);
+    const floor = this.store.floors().find((item) => item.id === space?.floorId);
+    const building = this.store.buildings().find((item) => item.id === alert.context.buildingId);
     const evidence = detection?.evidence[0];
-    const device = DEVICES.find((item) => item.id === evidence?.deviceId);
+    const device = this.store.devices().find((item) => item.id === evidence?.deviceId);
     const capability = device?.capabilities.find(
       (item) => item.code === evidence?.capabilityCode,
     );
@@ -308,18 +305,19 @@ export class IncidentService {
 
 @Injectable({ providedIn: 'root' })
 export class SearchService {
+  private readonly store = inject(BuildingStoreService);
   search(query: string): Observable<SearchResult[]> {
     const q = query.trim().toLowerCase();
     if (q.length < 2) return of([]);
     const results: SearchResult[] = [
-      ...BUILDINGS.filter((item) => item.name.toLowerCase().includes(q)).map((item) => ({
+      ...this.store.buildings().filter((item) => item.name.toLowerCase().includes(q)).map((item) => ({
         id: item.id,
         type: 'Building' as const,
         title: item.name,
         subtitle: item.address,
         route: `/buildings/${item.id}`,
       })),
-      ...SPACES.filter((item) => `${item.name} ${item.roomNumber}`.toLowerCase().includes(q))
+      ...this.store.spaces().filter((item) => `${item.name} ${item.roomNumber}`.toLowerCase().includes(q))
         .slice(0, 6)
         .map((item) => ({
           id: item.id,
@@ -328,7 +326,7 @@ export class SearchService {
           subtitle: `Room ${item.roomNumber ?? '—'}`,
           route: `/spaces/${item.id}`,
         })),
-      ...DEVICES.filter((item) =>
+      ...this.store.devices().filter((item) =>
         `${item.name} ${item.deviceCode} ${item.specifications.model} ${item.specifications.serialNumber}`
           .toLowerCase()
           .includes(q),
@@ -361,12 +359,14 @@ export class AuthMockService {
 
 @Injectable({ providedIn: 'root' })
 export class AnalyticsService {
+  private readonly store = inject(BuildingStoreService);
+  private readonly alertService = inject(AlertService);
   summary() {
     return {
-      buildings: BUILDINGS.length,
-      devices: DEVICES.length,
-      alerts: ALERTS.length,
-      criticalSpaces: SPACES.filter((item) => item.status === 'Critical').length,
+      buildings: this.store.buildings().length,
+      devices: this.store.devices().length,
+      alerts: this.alertService.recentAlertCount(),
+      criticalSpaces: this.store.spaces().filter((item) => item.status === 'Critical').length,
     };
   }
 }

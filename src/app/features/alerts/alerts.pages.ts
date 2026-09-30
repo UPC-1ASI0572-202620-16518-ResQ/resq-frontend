@@ -5,6 +5,7 @@ import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
 import { MatSort, MatSortModule } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent, KpiCardComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { AlertWorkspaceFacade, AlertWorkspaceRow } from './alert-workspace.facade';
@@ -19,6 +20,7 @@ import { ResponseExecutionRecord } from './data-access/alert.gateway';
     MatPaginatorModule,
     MatSortModule,
     MatTableModule,
+    MatIconModule,
     KpiCardComponent,
     LoadingStateComponent,
     EmptyStateComponent,
@@ -26,15 +28,15 @@ import { ResponseExecutionRecord } from './data-access/alert.gateway';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="kpis" aria-label="Alert summary">
-      <resq-kpi-card icon="△" [value]="workspace.summary().total" label="Total Alerts" />
-      <resq-kpi-card icon="!" [value]="workspace.summary().critical" label="Critical" tone="red" />
-      <resq-kpi-card icon="△" [value]="workspace.summary().warning" label="Warning" tone="amber" />
-      <resq-kpi-card icon="✕" [value]="workspace.summary().notificationFailures" label="Delivery Failures" />
+      <resq-kpi-card icon="warning_amber" [value]="workspace.summary().total" label="Total Alerts" />
+      <resq-kpi-card icon="error_outline" [value]="workspace.summary().critical" label="Critical" tone="red" />
+      <resq-kpi-card icon="warning_amber" [value]="workspace.summary().warning" label="Warning" tone="amber" />
+      <resq-kpi-card icon="notification_important" [value]="workspace.summary().notificationFailures" label="Delivery Failures" />
     </section>
 
     <section class="filters" aria-label="Alert filters">
       <label class="search-field">
-        <span>Search</span><i class="search-icon">⌕</i>
+        <span>Search</span><mat-icon class="search-icon">search</mat-icon>
         <input [(ngModel)]="query" (ngModelChange)="applyFilters()" placeholder="Alert, risk, building or zone..." />
       </label>
       <label>
@@ -76,13 +78,13 @@ import { ResponseExecutionRecord } from './data-access/alert.gateway';
       <section class="table-card" aria-label="Alerts">
         <div class="table-scroll">
           <table mat-table [dataSource]="dataSource" matSort>
-            <ng-container matColumnDef="severity"><th mat-header-cell *matHeaderCellDef mat-sort-header>Severity</th><td mat-cell *matCellDef="let row"><span [class]="'severity ' + severityClass(row.severity)"><span>{{ severityIcon(row.severity) }}</span>{{ row.severity }}</span></td></ng-container>
+            <ng-container matColumnDef="severity"><th mat-header-cell *matHeaderCellDef mat-sort-header>Severity</th><td mat-cell *matCellDef="let row"><span [class]="'severity ' + severityClass(row.severity)"><mat-icon>{{ severityIcon(row.severity) }}</mat-icon>{{ row.severity }}</span></td></ng-container>
             <ng-container matColumnDef="alert"><th mat-header-cell *matHeaderCellDef mat-sort-header>Alert</th><td mat-cell *matCellDef="let row"><span class="primary-cell"><b>{{ row.title }}</b><small>{{ row.riskTypeLabel }} · {{ row.id }}</small></span></td></ng-container>
             <ng-container matColumnDef="location"><th mat-header-cell *matHeaderCellDef mat-sort-header>Location</th><td mat-cell *matCellDef="let row"><span class="primary-cell"><b>{{ row.location.buildingName }}</b><small>{{ row.location.floorLabel || '—' }} · {{ row.location.zoneName }}</small></span></td></ng-container>
             <ng-container matColumnDef="detected"><th mat-header-cell *matHeaderCellDef mat-sort-header>Detected</th><td mat-cell *matCellDef="let row">{{ relativeTime(row.detectedAt) }}</td></ng-container>
             <ng-container matColumnDef="detection"><th mat-header-cell *matHeaderCellDef>Risk Detection</th><td mat-cell *matCellDef="let row"><span class="primary-cell detection-cell"><b>{{ row.riskDetectionId }}</b><small>{{ row.riskTypeCode }}</small></span></td></ng-container>
             <ng-container matColumnDef="delivery"><th mat-header-cell *matHeaderCellDef mat-sort-header>Delivery</th><td mat-cell *matCellDef="let row"><span [class]="'delivery ' + row.delivery.status.toLowerCase()">{{ row.delivery.label }}</span></td></ng-container>
-            <ng-container matColumnDef="open"><th mat-header-cell *matHeaderCellDef></th><td mat-cell *matCellDef="let row">›</td></ng-container>
+            <ng-container matColumnDef="open"><th mat-header-cell *matHeaderCellDef></th><td mat-cell *matCellDef="let row"><mat-icon>chevron_right</mat-icon></td></ng-container>
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr mat-row *matRowDef="let row; columns: displayedColumns" tabindex="0" [attr.aria-label]="'Open ' + row.title" (click)="open(row)" (keydown.enter)="open(row)" (keydown.space)="open(row); $event.preventDefault()"></tr>
           </table>
@@ -92,7 +94,7 @@ import { ResponseExecutionRecord } from './data-access/alert.gateway';
       </section>
     }
   `,
-  styleUrl: './alerts.pages.scss',
+  styleUrls: ['./alerts.pages.scss', './alerts.readability.scss'],
 })
 export class AlertsPage implements OnInit {
   readonly workspace = inject(AlertWorkspaceFacade);
@@ -142,7 +144,7 @@ export class AlertsPage implements OnInit {
   resetFilters(): void { this.query = this.buildingFilter = this.riskFilter = this.severityFilter = ''; this.periodFilter = 'all'; this.applyFilters(); }
   open(row: AlertWorkspaceRow): void { void this.router.navigate(['/alerts', row.id]); }
   severityClass(value: string): string { return value.toLowerCase(); }
-  severityIcon(value: string): string { return value === 'Critical' ? '!' : value === 'Warning' ? '△' : 'i'; }
+  severityIcon(value: string): string { return value === 'Critical' ? 'error_outline' : value === 'Warning' ? 'warning_amber' : 'info_outline'; }
   riskLabel(value: string): string { return this.workspace.rows().find((row) => row.riskTypeCode === value)?.riskTypeLabel ?? value; }
   relativeTime(date: Date): string { const min = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000)); return min < 1 ? 'just now' : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.floor(min / 60)}h ago` : `${Math.floor(min / 1440)}d ago`; }
   private configureSorting(): void { this.dataSource.sortingDataAccessor = (row, column) => ({ severity: row.severity, alert: row.title, location: `${row.location.buildingName} ${row.location.zoneName}`, detected: row.detectedAt.getTime(), delivery: row.delivery.status } as Record<string, string | number>)[column] ?? ''; }
@@ -151,7 +153,7 @@ export class AlertsPage implements OnInit {
 @Component({
   selector: 'resq-alert-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, StatusBadgeComponent, LoadingStateComponent, EmptyStateComponent],
+  imports: [CommonModule, RouterLink, MatIconModule, StatusBadgeComponent, LoadingStateComponent, EmptyStateComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (workspace.loading()) {
@@ -173,7 +175,7 @@ export class AlertsPage implements OnInit {
       <div class="not-found"><span>△</span><h2>Alert Not Found</h2><p>The requested alert does not exist or is unavailable.</p><a routerLink="/alerts">Return to Alert Center</a></div>
     }
   `,
-  styleUrl: './alert-detail.page.scss',
+  styleUrls: ['./alert-detail.page.scss', './alerts.readability.scss'],
 })
 export class AlertDetailPage implements OnInit {
   private readonly route = inject(ActivatedRoute);

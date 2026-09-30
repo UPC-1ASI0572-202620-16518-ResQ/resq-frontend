@@ -1,0 +1,33 @@
+:host { width: 100%; }
+.kpis { gap: 14px; margin-bottom: 16px; }
+.filters { gap: 12px; padding: 16px; }
+.filters label { font-size: 13px; }
+.filters input, .filters select, .reset { height: 42px; font-size: 13px; }
+.search-field > mat-icon { bottom: 12px; }
+.search-field input { padding-left: 38px; }
+.result-summary b { font-size: 15px; }
+.result-summary span { font-size: 12px; }
+th.mat-mdc-header-cell { height: 48px; font-size: 11px; }
+td.mat-mdc-cell { height: 70px; font-size: 13px; }
+.primary-cell b { font-size: 13px; }
+.primary-cell small, .incident-link small, .delivery { font-size: 11px; }
+.detail-head > div > a { font-size: 13px; }
+.title-line h2 { font-size: 25px; }
+.alert-title p { font-size: 13px; }
+.detail-grid { grid-template-columns: minmax(0, 2.2fr) minmax(320px, .8fr); gap: 16px; margin-top: 16px; }
+.detail-grid main { gap: 16px; }
+.card { padding: 20px; border-radius: 12px; }
+.card-head h3 { font-size: 17px; }
+.card-head p { font-size: 12px; }
+.context-grid > div, .evidence-list dl > div, .delivery-list dl > div, .response-list dl > div, .incident-card dl > div { padding: 12px 0; }
+dt { font-size: 11px; }
+dd { font-size: 13px; }
+.evidence-device a { font-size: 13px; }
+.evidence-device small, .delivery-heading small, .response-heading small, .incident-summary small { font-size: 11px; }
+.measurement span { font-size: 12px; }
+.measurement b { font-size: 20px; }
+.delivery-heading b, .response-heading b { font-size: 14px; }
+.incident-summary b, .inline-empty { font-size: 12px; }
+.incident-card > a { font-size: 12px; }
+.authorization-actions button { min-height: 38px; padding: 8px 13px; font-size: 12px; }
+@media (max-width: 980px) { .detail-grid { grid-template-columns: 1fr; } }

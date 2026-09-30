@@ -6,6 +6,8 @@ import {
   Device,
   DeviceCapability,
   Floor,
+  FloorPlanElement,
+  FloorPlanPoint,
   Incident,
   NotificationDeliveryStatus,
   ResponseExecution,
@@ -442,62 +444,99 @@ function makeSpace(
   };
 }
 
-const genericNames = [
-  'Reception',
-  'Open Office',
-  'Meeting Room',
-  'Control Room',
-  'Training Room',
-  'Kitchen',
-  'Archive',
-  'Operations',
+const rectanglePolygon = (x: number, y: number, width: number, height: number): FloorPlanPoint[] => [
+  { x, y }, { x: x + width, y }, { x: x + width, y: y + height }, { x, y: y + height },
 ];
-function makeGenericFloor(buildingId: string, level: number, index: number): Floor {
-  const floorId = `${buildingId}-f${level}`;
-  const spaces = genericNames.slice(0, (level % 3) + 5).map((name, room) =>
-    makeSpace(
-      [
-        `${floorId}-s${room + 1}`,
-        name,
-        `${level}0${room + 1}`,
-        room === 0 ? 'Reception' : room === 2 ? 'MeetingRoom' : 'Office',
-        (index + room) % 11 === 0 ? 'Warning' : 'Normal',
-        'Normal',
-        [
-          [0, 0],
-          [1, 0],
-          [1, 1],
-          [0, 1],
-        ],
-      ],
-      buildingId,
-      floorId,
-    ),
-  );
+
+function positionDevices(space: Space): Space {
+  if (space.polygon.length < 3) return space;
+  const xs = space.polygon.map(point => point.x);
+  const ys = space.polygon.map(point => point.y);
+  const x = Math.min(...xs); const y = Math.min(...ys);
+  const width = Math.max(...xs) - x; const height = Math.max(...ys) - y;
+  const positions: Record<Device['type'], [number, number]> = {
+    Temperature: [.24, .28], Smoke: [.74, .28], Gas: [.5, .5], Humidity: [.25, .72], Motion: [.74, .72],
+  };
   return {
-    id: floorId,
-    buildingId,
-    name: `Floor ${level}`,
-    level,
-    spaces,
-    status: spaces.some((space) => space.status === 'Warning') ? 'Warning' : 'Normal',
+    ...space,
+    devices: space.devices.map((device, index) => {
+      const [px, py] = positions[device.type];
+      const offsetX = ((index % 3) - 1) * 10;
+      const offsetY = Math.floor(index / 3) * 10;
+      return { ...device, floorPlanPosition: { x: x + width * px + offsetX, y: y + height * py + offsetY } };
+    }),
   };
 }
 
-const scienceF2Spaces = scienceF2Specs.map((spec) => makeSpace(spec, 'science', 'science-f2'));
-const scienceFloors: Floor[] = [1, 2, 3, 4].map((level, index) =>
-  level === 2
-    ? {
-        id: 'science-f2',
-        buildingId: 'science',
-        name: 'Floor 2',
-        level: 2,
-        spaces: scienceF2Spaces,
-        status: 'Critical',
-      }
-    : makeGenericFloor('science', level, index),
-);
-const mainFloors = [1, 2, 3].map((level, index) => makeGenericFloor('main', level, index + 4));
+function configureDemoFloor(floor: Floor, variant = 0): Floor {
+  const spaces = floor.spaces;
+  const topCount = Math.ceil(spaces.length / 2);
+  const bottomCount = spaces.length - topCount;
+  const padding = 50 + (variant % 3) * 8;
+  const gap = 18;
+  const usableWidth = 1000 - padding * 2;
+  const row = (items: Space[], y: number, height: number): Space[] => {
+    const width = (usableWidth - gap * Math.max(0, items.length - 1)) / Math.max(1, items.length);
+    return items.map((space, index) => positionDevices({
+      ...space,
+      polygon: rectanglePolygon(padding + index * (width + gap), y, width, height),
+    }));
+  };
+  const configuredSpaces = [
+    ...row(spaces.slice(0, topCount), 45 + variant * 3, 155),
+    ...row(spaces.slice(topCount), 305 - variant * 2, 145),
+  ];
+  const areaElements: FloorPlanElement[] = configuredSpaces.map(space => {
+    const xs = space.polygon.map(point => point.x); const ys = space.polygon.map(point => point.y);
+    return {
+      id: `plan-area-${space.id}`,
+      type: 'Space',
+      spaceId: space.id,
+      x: Math.min(...xs), y: Math.min(...ys),
+      width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys),
+      label: space.name,
+    };
+  });
+  const structural: FloorPlanElement[] = [
+    { id: `${floor.id}-hall`, type: 'Hallway', x: padding, y: 220, width: usableWidth, height: 65, label: 'Central Hallway' },
+    { id: `${floor.id}-stairs`, type: 'Stairs', x: 445 + variant * 8, y: 220, width: 70, height: 65, label: 'Stairs' },
+    { id: `${floor.id}-wc`, type: 'Restroom', x: 535 + variant * 6, y: 220, width: 65, height: 65, label: 'WC' },
+  ];
+  return { ...floor, spaces: configuredSpaces, planElements: [...structural, ...areaElements], planConfigured: configuredSpaces.length > 0 };
+}
+
+const genericNames = ['Reception','Open Office','Meeting Room','Control Room','Training Room','Kitchen','Archive','Operations'];
+function makeGenericFloor(buildingId: string, level: number, index: number): Floor {
+  const floorId = `${buildingId}-f${level}`;
+  const spaces = genericNames.slice(0, level % 3 + 5).map((name, room) => makeSpace([
+    `${floorId}-s${room+1}`, name, `${level}0${room+1}`, room === 0 ? 'Reception' : room === 2 ? 'MeetingRoom' : 'Office',
+    (index + room) % 11 === 0 ? 'Warning' : 'Normal', 'Normal', [[0,0],[1,0],[1,1],[0,1]]
+  ], buildingId, floorId));
+  return configureDemoFloor({ id: floorId, buildingId, name: `Floor ${level}`, level, spaces, status: spaces.some(space => space.status === 'Warning') ? 'Warning' : 'Normal' }, index % 3);
+}
+
+const scienceF2Spaces = scienceF2Specs.map(spec => {
+  const space = positionDevices(makeSpace(spec, 'science', 'science-f2'));
+  return space.type === 'Hallway' ? { ...space, polygon: [] } : space;
+});
+const scienceFloors: Floor[] = [1,2,3,4].map((level, index) => level === 2
+  ? {
+      id: 'science-f2', buildingId: 'science', name: 'Floor 2', level: 2,
+      spaces: scienceF2Spaces, status: 'Critical', planConfigured: true,
+      planElements: [
+        { id: 'science-f2-hall', type: 'Hallway', x: 70, y: 225, width: 830, height: 70, label: 'Central Hallway' },
+        { id: 'science-f2-stairs-a', type: 'Stairs', x: 445, y: 310, width: 45, height: 145, label: 'Stairs' },
+        { id: 'science-f2-stairs-b', type: 'Stairs', x: 70, y: 232, width: 55, height: 56, label: 'Stairs' },
+        { id: 'science-f2-wc-a', type: 'Restroom', x: 505, y: 310, width: 45, height: 145, label: 'WC' },
+        { id: 'science-f2-wc-b', type: 'Restroom', x: 845, y: 232, width: 55, height: 56, label: 'WC' },
+        ...scienceF2Spaces.filter(space => space.type !== 'Hallway').map(space => {
+          const xs = space.polygon.map(point => point.x); const ys = space.polygon.map(point => point.y);
+          return { id: `plan-area-${space.id}`, type: 'Space' as const, spaceId: space.id, label: space.name, x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+        }),
+      ],
+    }
+  : makeGenericFloor('science', level, index));
+const mainFloors = [1,2,3].map((level, index) => makeGenericFloor('main', level, index + 4));
 const researchFloors: Floor[] = [1, 2].map((level, index) => {
   const floor = makeGenericFloor('research', level, index + 7);
 
@@ -521,6 +560,7 @@ export const BUILDINGS: Building[] = [
     name: 'Science Building',
     address: '120 Discovery Avenue',
     description: 'Advanced teaching laboratories and science classrooms.',
+    imageUrl: '/images/buildings/science-building.webp',
     floors: scienceFloors,
     status: 'Critical',
   },
@@ -529,6 +569,7 @@ export const BUILDINGS: Building[] = [
     name: 'Main Building',
     address: '1 University Plaza',
     description: 'Administration, shared services and collaborative spaces.',
+    imageUrl: '/images/buildings/main-building.webp',
     floors: mainFloors,
     status: 'Warning',
   },
@@ -537,6 +578,7 @@ export const BUILDINGS: Building[] = [
     name: 'Research Center',
     address: '44 Innovation Drive',
     description: 'Specialized research facilities and controlled environments.',
+    imageUrl: '/images/buildings/research-center.webp',
     floors: researchFloors,
     status: 'Normal',
   },
@@ -922,4 +964,4 @@ export const INCIDENTS: Incident[] = alertScenarios
     };
   });
 
-export const DEMO_USER = { id: 'user-1', name: 'John Doe', email: 'admin@resq.io', initials: 'JD' };
+export const DEMO_USER = { id: 'user-1', name: 'Sofia Ramirez', email: 'sofia.ramirez@resq.io', initials: 'SR' };

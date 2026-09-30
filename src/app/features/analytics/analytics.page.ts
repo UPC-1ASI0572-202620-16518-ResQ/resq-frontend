@@ -8,7 +8,7 @@ import { AnalyticsWorkspaceFacade } from './analytics-workspace.facade';
   template:`
     <div class="period"><span>Analysis period</span>@for(item of periods;track item.value){<button type="button" [class.active]="period()===item.value" (click)="period.set(item.value)">{{item.label}}</button>}</div>
     @if(workspace.loading()){<resq-loading-state message="Building analytics from bounded-context data..." />}@else if(workspace.error()){<resq-empty-state title="Analytics could not be loaded" [message]="workspace.error()!.message" />}@else{
-      <section class="kpis"><resq-kpi-card icon="△" [value]="filteredAlerts().length" label="Total Alerts" tone="red"/><resq-kpi-card icon="◷" [value]="filteredIncidents().length" label="Total Incidents" tone="amber"/><resq-kpi-card icon="✓" [value]="averageResolution()" label="Avg. Resolution Time" tone="green"/><resq-kpi-card icon="◉" [value]="uptime()" label="Device Online Rate"/></section>
+      <section class="kpis"><resq-kpi-card icon="warning_amber" [value]="filteredAlerts().length" label="Total Alerts" tone="red"/><resq-kpi-card icon="emergency" [value]="filteredIncidents().length" label="Total Incidents" tone="amber"/><resq-kpi-card icon="schedule" [value]="averageResolution()" label="Avg. Resolution Time" tone="green"/><resq-kpi-card icon="sensors" [value]="uptime()" label="Device Online Rate"/></section>
       <section class="chart-grid">
         <article class="wide"><header><div><h3>Alerts Over Time</h3><p>Alert & Response read model for the selected period</p></div></header><resq-line-chart [labels]="alertTimeLabels()" [values]="alertTimeValues()" datasetLabel="Alerts" /></article>
         <article><header><div><h3>Alerts by Severity</h3><p>Current period distribution</p></div></header><div class="donut"><resq-doughnut-chart [labels]="['Critical','Warning','Info']" [values]="[criticalAlerts(),warningAlerts(),infoAlerts()]" [centerValue]="filteredAlerts().length" centerLabel="Alerts"/><ul><li><i class="critical"></i>Critical <b>{{criticalAlerts()}}</b></li><li><i class="warning"></i>Warning <b>{{warningAlerts()}}</b></li><li><i class="info"></i>Info <b>{{infoAlerts()}}</b></li></ul></div></article>
@@ -19,7 +19,7 @@ import { AnalyticsWorkspaceFacade } from './analytics-workspace.facade';
         <article><header><div><h3>Resolution Performance</h3><p>Observed Incident Management durations</p></div></header><div class="performance"><div><span>Resolved incidents</span><b>{{resolvedCount()}}</b><em [style.--w]="resolvedBarWidth()"></em></div><div><span>In progress</span><b>{{inProgressCount()}}</b><em [style.--w]="inProgressBarWidth()"></em></div><div><span>Active</span><b>{{activeCount()}}</b><em [style.--w]="activeBarWidth()"></em></div></div></article>
       </section>
     }
-  `,styleUrl:'./analytics.page.scss'
+  `,styleUrls:['./analytics.page.scss','./analytics.readability.scss']
 })
 export class AnalyticsPage implements OnInit{
   readonly workspace=inject(AnalyticsWorkspaceFacade);readonly period=signal<'24h'|'7d'|'30d'>('7d');metric='';readonly periods=[{value:'24h' as const,label:'Last 24 Hours'},{value:'7d' as const,label:'Last 7 Days'},{value:'30d' as const,label:'Last 30 Days'}];

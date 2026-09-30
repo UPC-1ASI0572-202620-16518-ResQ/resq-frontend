@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatIconModule } from '@angular/material/icon';
 import { BaseChartDirective } from 'ng2-charts';
 import { ChartConfiguration } from 'chart.js';
 
@@ -82,84 +83,25 @@ export class StatusBadgeComponent {
 }
 
 @Component({
-  selector: 'resq-kpi-card',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<article class="kpi">
-    <div class="icon" [class]="tone">{{ icon }}</div>
-    <div>
-      <strong>{{ value }}</strong
-      ><span>{{ label }}</span>
-    </div>
-    <em [class.down]="trend.startsWith('↓')">{{ trend }}</em>
-  </article>`,
-  styles: [
-    `
-      .kpi {
-        min-height: 84px;
-        padding: 14px 16px;
-        background: #fff;
-        border: 1px solid var(--resq-border);
-        border-radius: 11px;
-        display: grid;
-        grid-template-columns: 44px 1fr auto;
-        align-items: center;
-        gap: 12px;
-        box-shadow: 0 1px 2px #10182808;
-      }
-      .icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 9px;
-        background: #eaf2ff;
-        color: #1268e8;
-        display: grid;
-        place-items: center;
-        font-size: 20px;
-      }
-      .icon.green {
-        background: #eafaf2;
-        color: #12b76a;
-      }
-      .icon.red {
-        background: #fff0f1;
-        color: #f04438;
-      }
-      .icon.amber {
-        background: #fff7e8;
-        color: #f79009;
-      }
-      strong {
-        display: block;
-        color: #101828;
-        font-size: 24px;
-        line-height: 1.1;
-      }
-      span {
-        display: block;
-        margin-top: 4px;
-        color: #667085;
-        font-size: 13px;
-      }
-      em {
-        align-self: start;
-        color: #12b76a;
-        font-size: 12px;
-        font-style: normal;
-        font-weight: 700;
-      }
-      .down {
-        color: #f04438;
-      }
-    `,
-  ],
+  selector: 'resq-kpi-card', standalone: true, imports: [MatIconModule], changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `<article class="kpi"><div class="icon" [class]="tone"><mat-icon>{{ materialIcon }}</mat-icon></div><div><strong>{{ value }}</strong><span>{{ label }}</span></div><em [class.down]="trend.startsWith('↓')">{{ trend }}</em></article>`,
+  styles: [`.kpi{min-height:84px;padding:14px 16px;background:#fff;border:1px solid var(--resq-border);border-radius:11px;display:grid;grid-template-columns:48px 1fr auto;align-items:center;gap:12px;box-shadow:0 1px 2px #10182808}.icon{width:46px;height:46px;border-radius:10px;background:#eaf2ff;color:#1268e8;display:grid;place-items:center}.icon mat-icon{width:24px;height:24px;font-size:24px;line-height:24px;font-family:'Material Icons'}.icon.green{background:#eafaf2;color:#12b76a}.icon.red{background:#fff0f1;color:#f04438}.icon.amber{background:#fff7e8;color:#f79009}strong{display:block;color:#101828;font-size:24px;line-height:1.1}span{display:block;margin-top:4px;color:#667085;font-size:13px}em{align-self:start;color:#12b76a;font-size:12px;font-style:normal;font-weight:700}.down{color:#f04438}`]
 })
 export class KpiCardComponent {
-  @Input() icon = '▦';
+  @Input() icon = 'grid_view';
   @Input() value: string | number = 0;
   @Input() label = '';
   @Input() trend = '';
   @Input() tone = '';
+
+  get materialIcon(): string {
+    const legacyIcons: Record<string, string> = {
+      '!': 'warning_amber', '△': 'warning_amber', '✓': 'check_circle',
+      '◷': 'schedule', '↻': 'autorenew', '◴': 'timer', '▥': 'apartment',
+      '◉': 'sensors', '▦': 'grid_view',
+    };
+    return legacyIcons[this.icon] ?? this.icon;
+  }
 }
 
 @Component({
