@@ -1,0 +1,28 @@
+@import '@angular/material/prebuilt-themes/indigo-pink.css';
+
+:root {
+  --resq-primary: #1570ef;
+  --resq-sidebar: #071c35;
+  --resq-background: #f3f6fa;
+  --resq-surface: #ffffff;
+  --resq-text: #101828;
+  --resq-muted: #667085;
+  --resq-border: #e4e9f0;
+  --status-normal: #12b76a;
+  --status-warning: #fdb022;
+  --status-critical: #f04438;
+  --status-offline: #98a2b3;
+  color-scheme: light;
+  font-family: Inter, Roboto, "Segoe UI", Arial, sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-width: 320px; min-height: 100%; background: var(--resq-background); color: var(--resq-text); }
+body { font-size: 14px; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; }
+button, a, select { -webkit-tap-highlight-color: transparent; }
+button:not(:disabled), select { cursor: pointer; }
+*:focus-visible { outline: 2px solid #1570ef; outline-offset: 2px; }
+::selection { background: #bfd8ff; }
+.mat-mdc-snack-bar-container { --mdc-snackbar-container-color: #17324f; --mdc-snackbar-supporting-text-color: #fff; }
