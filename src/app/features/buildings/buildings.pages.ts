@@ -3,6 +3,7 @@ import {
   Component,
   OnInit,
   computed,
+  inject,
   signal,
 } from '@angular/core';
 
@@ -14,6 +15,7 @@ import {
 } from '@angular/router';
 
 import { MatIconModule } from '@angular/material/icon';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import {
   Building,
@@ -23,9 +25,10 @@ import {
 
 import {
   ALERTS,
-  BUILDINGS,
-  DEVICES,
 } from '../../core/mock-data/resq.mock';
+
+import { BuildingStoreService } from '../../core/services/building-store.service';
+import { ThreeBuildingViewerComponent } from './three-building-viewer/three-building-viewer.component';
 
 import {
   StatusBadgeComponent,
@@ -110,7 +113,7 @@ import {
           <div class="kpi-content">
 
             <strong>
-              {{ BUILDINGS.length }}
+              {{ buildings().length }}
             </strong>
 
             <span>
@@ -1522,38 +1525,16 @@ import {
     }
 
 
-    .is-critical .building-header {
-      background:
-        linear-gradient(
-          90deg,
-          #ffffff 0%,
-          #ffffff 58%,
-          #fff5f5 100%
-        );
+    .building-header {
+      min-height: 135px;
+      display: grid;
+      grid-template-columns:
+        minmax(0, 1fr)
+        175px;
+      gap: 14px;
+      padding: 17px 17px 10px;
+      background: #fff;
     }
-
-
-    .is-warning .building-header {
-      background:
-        linear-gradient(
-          90deg,
-          #ffffff 0%,
-          #ffffff 58%,
-          #fffbeb 100%
-        );
-    }
-
-
-    .is-normal .building-header {
-      background:
-        linear-gradient(
-          90deg,
-          #ffffff 0%,
-          #ffffff 58%,
-          #f0fdf4 100%
-        );
-    }
-
 
     .building-title-row {
       display: flex;
@@ -2654,8 +2635,16 @@ import {
 })
 export class BuildingsPage {
 
-  readonly BUILDINGS =
-    BUILDINGS;
+  private readonly buildingStore =
+    inject(BuildingStoreService);
+
+
+  private readonly router =
+    inject(Router);
+
+
+  readonly buildings =
+    this.buildingStore.buildings;
 
 
   readonly query =
@@ -2711,7 +2700,7 @@ export class BuildingsPage {
 
 
       let result =
-        BUILDINGS.filter(
+        this.buildings().filter(
           building => {
 
             const searchable =
@@ -2787,14 +2776,9 @@ export class BuildingsPage {
     });
 
 
-  constructor(
-    private readonly router: Router,
-  ) {}
-
-
   totalFloors(): number {
 
-    return BUILDINGS.reduce(
+    return this.buildings().reduce(
       (total, building) =>
         total +
         building.floors.length,
@@ -2806,7 +2790,7 @@ export class BuildingsPage {
 
   activeDevices(): number {
 
-    return DEVICES.filter(
+    return this.buildingStore.devices().filter(
       device =>
         device.status !== 'Offline'
     ).length;
@@ -2816,7 +2800,7 @@ export class BuildingsPage {
 
   buildingsWithActiveAlerts(): number {
 
-    return BUILDINGS.filter(
+    return this.buildings().filter(
       building =>
         this.activeAlertsFor(building) > 0
     ).length;
@@ -2853,7 +2837,7 @@ export class BuildingsPage {
       );
 
 
-    return DEVICES.filter(
+    return this.buildingStore.devices().filter(
       device =>
         spaceIds.has(
           device.spaceId
@@ -2878,7 +2862,7 @@ export class BuildingsPage {
       );
 
 
-    return DEVICES.filter(
+    return this.buildingStore.devices().filter(
       device =>
         spaceIds.has(device.spaceId) &&
         device.status === 'Offline'
@@ -2937,7 +2921,7 @@ export class BuildingsPage {
     status: RiskStatus
   ): number {
 
-    return BUILDINGS.filter(
+    return this.buildings().filter(
       building =>
         building.status === status
     ).length;
@@ -2949,7 +2933,7 @@ export class BuildingsPage {
     status: RiskStatus
   ): number {
 
-    if (!BUILDINGS.length) {
+    if (!this.buildings().length) {
       return 0;
     }
 
@@ -2957,7 +2941,7 @@ export class BuildingsPage {
     return Math.round(
       (
         this.summaryCount(status) /
-        BUILDINGS.length
+        this.buildings().length
       ) * 100
     );
 
@@ -2966,7 +2950,7 @@ export class BuildingsPage {
 
   recentBuildingActivity() {
 
-    return BUILDINGS
+    return this.buildings()
       .map(
         building => {
 
@@ -3143,6 +3127,8 @@ export class BuildingsPage {
     RouterLink,
     MatIconModule,
     StatusBadgeComponent,
+    ThreeBuildingViewerComponent,
+    MatSnackBarModule,
   ],
 
   changeDetection:
@@ -3204,9 +3190,28 @@ export class BuildingsPage {
         </div>
 
 
-        <resq-status-badge
-          [status]="building()!.status"
-        />
+        <div class="detail-actions">
+
+          <resq-status-badge
+            [status]="building()!.status"
+          />
+
+          <a [routerLink]="['/buildings', building()!.id, 'edit']">
+            <mat-icon>edit</mat-icon>
+            Edit Building
+          </a>
+
+          <button type="button" class="delete-building" (click)="deleteConfirmationOpen.set(true)">
+            <mat-icon>delete_outline</mat-icon>
+            Delete Building
+          </button>
+
+          <button type="button" (click)="openDetailFloor(reversedDetailFloors()[0].id)">
+            <mat-icon>map</mat-icon>
+            Floor Monitoring
+          </button>
+
+        </div>
 
       </div>
 
@@ -3342,46 +3347,18 @@ export class BuildingsPage {
         </div>
 
 
-        <div class="stack">
-
-          @for (
-            floor of reversedDetailFloors();
-            track floor.id;
-            let i = $index
-          ) {
-
-            <button
-              [class]="
-                'floor ' +
-                floor.status.toLowerCase()
-              "
-              (click)="openDetailFloor(floor.id)"
-              [style.--i]="i"
-            >
-
-              <span class="slab">
-
-                <b>
-                  {{ floor.name }}
-                </b>
-
-                <small>
-                  {{ floor.spaces.length }}
-                  spaces ·
-                  {{ floor.status }}
-                </small>
-
-              </span>
-
-
-              <em>
-                {{ floor.level }}
-              </em>
-
-            </button>
-
+        <div class="building-model">
+          @defer (on viewport) {
+            <resq-three-building-viewer
+              [building]="building()!"
+              [hoveredFloorId]="hoveredFloorId()"
+            />
+          } @placeholder {
+            <div class="building-model-placeholder">
+              <mat-icon>view_in_ar</mat-icon>
+              <span>Loading 3D building overview…</span>
+            </div>
           }
-
         </div>
 
 
@@ -3392,11 +3369,10 @@ export class BuildingsPage {
             track floor.id
           ) {
 
-            <button
-              type="button"
-              (click)="
-                openDetailFloor(floor.id)
-              "
+            <article
+              [class.hovered]="hoveredFloorId() === floor.id"
+              (mouseenter)="hoveredFloorId.set(floor.id)"
+              (mouseleave)="hoveredFloorId.set(undefined)"
             >
 
               <div class="floor-summary-info">
@@ -3417,7 +3393,11 @@ export class BuildingsPage {
 
                   <small>
                     {{ floor.spaces.length }}
-                    spaces
+                    spaces · {{ floorDevices(floor.id) }} devices
+                  </small>
+
+                  <small [class.configured]="floor.planConfigured">
+                    Floor Plan: {{ floor.planConfigured ? 'Configured' : 'Not Configured' }}
                   </small>
 
                 </div>
@@ -3429,18 +3409,36 @@ export class BuildingsPage {
                 [status]="floor.status"
               />
 
+              <div class="floor-actions">
+                <button type="button" (click)="openDetailFloor(floor.id)"><mat-icon>monitoring</mat-icon>Monitor</button>
+                <a [routerLink]="['/buildings', building()!.id, 'floors', floor.id, 'editor']">
+                  <mat-icon>edit</mat-icon>
+                  {{ floor.planConfigured ? 'Edit Plan' : 'Configure Plan' }}
+                </a>
+              </div>
 
-              <mat-icon>
-                chevron_right
-              </mat-icon>
-
-            </button>
+            </article>
 
           }
 
         </div>
 
       </article>
+
+      @if (deleteConfirmationOpen()) {
+        <div class="delete-dialog-backdrop" role="presentation">
+          <section class="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-building-title">
+            <mat-icon>warning_amber</mat-icon>
+            <h2 id="delete-building-title">Delete {{ building()!.name }}?</h2>
+            <p>This building contains:</p>
+            <ul><li>{{building()!.floors.length}} floors</li><li>{{spaces()}} spaces</li><li>{{devices()}} devices</li><li>{{activeAlerts()}} active alerts</li></ul>
+            <div>
+              <button type="button" (click)="deleteConfirmationOpen.set(false)">Cancel</button>
+              <button type="button" class="confirm-delete" (click)="confirmDeleteBuilding()">Delete Building</button>
+            </div>
+          </section>
+        </div>
+      }
 
     } @else {
 
@@ -3502,6 +3500,52 @@ export class BuildingsPage {
       height: 17px;
       font-size: 17px;
       line-height: 17px;
+    }
+
+
+    .detail-actions {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+
+    .detail-actions a,
+    .detail-actions button {
+      min-height: 40px;
+      padding: 0 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--resq-border);
+      border-radius: 7px;
+      background: #fff;
+      color: #344054;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .detail-actions .delete-building {
+      border-color: #fda29b;
+      background: #fff;
+      color: #d92d20;
+    }
+
+
+    .detail-actions button {
+      border-color: #1570ef;
+      background: #1570ef;
+      color: #fff;
+      cursor: pointer;
+    }
+
+
+    .detail-actions mat-icon {
+      width: 18px;
+      height: 18px;
+      font-size: 18px;
+      line-height: 18px;
     }
 
 
@@ -3650,6 +3694,25 @@ export class BuildingsPage {
       border-radius: 12px;
     }
 
+    .building-model {
+      min-width: 0;
+      align-self: stretch;
+    }
+
+    .building-model-placeholder {
+      min-height: 500px;
+      display: grid;
+      place-content: center;
+      gap: 8px;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #f7f9fc, #eaf0f6);
+      color: #667085;
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .building-model-placeholder mat-icon { margin: auto; color: #1570ef; }
+
 
     .overview-icon {
       width: 42px;
@@ -3795,28 +3858,56 @@ export class BuildingsPage {
     }
 
 
-    .floor-summary > button {
+    .floor-summary > article {
       min-height: 65px;
       padding: 10px;
       display: grid;
-      grid-template-columns:
-        minmax(0, 1fr)
-        auto
-        20px;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 8px;
       align-items: center;
       border: 1px solid var(--resq-border);
       border-radius: 8px;
       background: #fff;
-      cursor: pointer;
       text-align: left;
     }
 
 
-    .floor-summary > button:hover {
+    .floor-summary > article:hover {
       border-color: #b2ccff;
       background: #f9fbff;
     }
+
+    .floor-summary > article.hovered {
+      border-color: #84adff;
+      background: #f5f8ff;
+      box-shadow: 0 8px 20px rgb(21 112 239 / 10%);
+    }
+
+    .delete-dialog-backdrop {
+      position: fixed;
+      z-index: 1200;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgb(15 23 42 / 52%);
+    }
+
+    .delete-dialog {
+      width: min(450px, 100%);
+      padding: 25px;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 24px 60px rgb(15 23 42 / 28%);
+    }
+
+    .delete-dialog > mat-icon { color: #d92d20; }
+    .delete-dialog h2 { margin: 12px 0 8px; font-size: 20px; }
+    .delete-dialog p { margin: 0; color: #667085; font-size: 13px; line-height: 1.55; }
+    .delete-dialog ul { margin: 10px 0 0; padding-left: 20px; color: #475467; font-size: 13px; line-height: 1.7; }
+    .delete-dialog > div { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+    .delete-dialog button { min-height: 38px; padding: 0 14px; border: 1px solid #d0d5dd; border-radius: 7px; background: #fff; color: #344054; font-weight: 700; cursor: pointer; }
+    .delete-dialog .confirm-delete { border-color: #d92d20; background: #d92d20; color: #fff; }
 
 
     .floor-summary-info {
@@ -3859,6 +3950,44 @@ export class BuildingsPage {
       margin-top: 3px;
       color: #98a2b3;
       font-size: 10px;
+    }
+
+
+    .floor-summary small.configured {
+      color: #079455;
+    }
+
+
+    .floor-actions {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
+
+    .floor-actions a,
+    .floor-actions button {
+      min-height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--resq-border);
+      border-radius: 6px;
+      background: #fff;
+      color: #1570ef;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+
+    .floor-actions button {
+      border-color: #1570ef;
+      background: #1570ef;
+      color: #fff;
+      cursor: pointer;
     }
 
 
@@ -3967,6 +4096,9 @@ export class BuildingDetailPage
       undefined
     );
 
+  readonly hoveredFloorId = signal<string | undefined>(undefined);
+  readonly deleteConfirmationOpen = signal(false);
+
 
   constructor(
     private readonly route:
@@ -3974,6 +4106,12 @@ export class BuildingDetailPage
 
     private readonly router:
       Router,
+
+    private readonly buildingStore:
+      BuildingStoreService,
+
+    private readonly snackBar:
+      MatSnackBar,
   ) {}
 
 
@@ -3986,10 +4124,9 @@ export class BuildingDetailPage
 
 
     this.building.set(
-      BUILDINGS.find(
-        item =>
-          item.id === buildingId
-      )
+      buildingId
+        ? this.buildingStore.getBuilding(buildingId)
+        : undefined
     );
 
   }
@@ -4028,11 +4165,18 @@ export class BuildingDetailPage
       );
 
 
-    return DEVICES.filter(
+    return this.buildingStore.devices().filter(
       device =>
         ids.has(device.spaceId)
     ).length;
 
+  }
+
+
+  floorDevices(floorId: string): number {
+    const floor = this.building()?.floors.find(item => item.id === floorId);
+    const spaceIds = new Set(floor?.spaces.map(space => space.id) ?? []);
+    return this.buildingStore.devices().filter(device => spaceIds.has(device.spaceId)).length;
   }
 
 
@@ -4093,6 +4237,15 @@ export class BuildingDetailPage
       floorId,
     ]);
 
+  }
+
+  confirmDeleteBuilding(): void {
+    const buildingId = this.building()?.id;
+    if (!buildingId) return;
+    this.buildingStore.deleteBuilding(buildingId);
+    this.deleteConfirmationOpen.set(false);
+    this.snackBar.open('Building deleted successfully', 'Close', { duration: 3000, horizontalPosition: 'right', verticalPosition: 'top' });
+    this.router.navigate(['/buildings']);
   }
 
 }

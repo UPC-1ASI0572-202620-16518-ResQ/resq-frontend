@@ -9,6 +9,19 @@ export type AlertStatus = 'New' | 'Acknowledged' | 'Resolved';
 export type IncidentStatus = 'Open' | 'InProgress' | 'Resolved';
 
 export interface FloorPlanPoint { x: number; y: number; }
+export interface FloorPlanPosition { x: number; y: number; }
+export type FloorPlanElementType = 'Space' | 'Hallway' | 'Stairs' | 'Restroom' | 'Wall' | 'Door';
+export interface FloorPlanElement {
+  id: string;
+  type: FloorPlanElementType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  label?: string;
+  spaceId?: string;
+}
 export interface MetricThreshold { warning: number; critical: number; }
 export interface SpaceThresholds {
   Temperature?: MetricThreshold;
@@ -19,14 +32,25 @@ export interface SpaceThresholds {
 }
 export interface SensorReading { id: string; deviceId: string; metric: SensorMetric; value: number; unit: string; timestamp: Date; }
 export interface Device {
-  id: string; spaceId: string; name: string; code: string; type: DeviceType; status: DeviceStatus;
+  id: string; spaceId: string; name: string; displayName?: string; code: string; type: DeviceType; status: DeviceStatus;
   lastSeen: Date; readings: SensorReading[]; firmware: string; battery: number; signal: number;
+  floorPlanPosition?: FloorPlanPosition;
 }
 export interface Space {
   id: string; floorId: string; buildingId: string; name: string; roomNumber?: string; type: SpaceType;
   sensitivity: SensitivityLevel; status: RiskStatus; thresholds: SpaceThresholds; polygon: FloorPlanPoint[]; devices: Device[];
 }
-export interface Floor { id: string; buildingId: string; name: string; level: number; spaces: Space[]; status: RiskStatus; }
+export interface Floor {
+  id: string;
+  buildingId: string;
+  name: string;
+  level: number;
+  spaces: Space[];
+  status: RiskStatus;
+  planImageUrl?: string;
+  planElements?: FloorPlanElement[];
+  planConfigured?: boolean;
+}
 export interface Building {
   id: string;
   name: string;

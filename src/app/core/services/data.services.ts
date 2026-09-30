@@ -1,7 +1,8 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, delay, of } from 'rxjs';
 import { ALERTS, BUILDINGS, DEMO_USER, DEVICES, FLOORS, INCIDENTS, SPACES } from '../mock-data/resq.mock';
 import { Alert, AlertStatus, Building, Device, Floor, Incident, IncidentStatus, SearchResult, Space, SpaceThresholds, User } from '../models/resq.models';
+import { BuildingStoreService } from './building-store.service';
 
 @Injectable({ providedIn: 'root' })
 export class ResqStore {
@@ -14,25 +15,28 @@ export class ResqStore {
 
 @Injectable({ providedIn: 'root' })
 export class BuildingService {
-  private readonly store = new ResqStore();
+  private readonly store = inject(BuildingStoreService);
+  readonly buildings = this.store.buildings;
   getBuildings(): Observable<Building[]> { return of(this.store.buildings()).pipe(delay(150)); }
-  getBuildingById(id: string): Observable<Building | undefined> { return of(this.store.buildings().find(item => item.id === id)).pipe(delay(100)); }
+  getBuildingById(id: string): Observable<Building | undefined> { return of(this.store.getBuilding(id)).pipe(delay(100)); }
 }
 
 @Injectable({ providedIn: 'root' })
 export class FloorService {
-  getFloorsByBuilding(buildingId: string): Observable<Floor[]> { return of(FLOORS.filter(item => item.buildingId === buildingId)).pipe(delay(100)); }
-  getFloorById(id: string): Observable<Floor | undefined> { return of(FLOORS.find(item => item.id === id)).pipe(delay(80)); }
+  private readonly store = inject(BuildingStoreService);
+  getFloorsByBuilding(buildingId: string): Observable<Floor[]> { return of(this.store.getBuilding(buildingId)?.floors ?? []).pipe(delay(100)); }
+  getFloorById(id: string): Observable<Floor | undefined> { return of(this.store.floors().find(item => item.id === id)).pipe(delay(80)); }
 }
 
 @Injectable({ providedIn: 'root' })
 export class SpaceService {
-  private readonly spaces = signal<Space[]>(SPACES);
-  getSpaces(): Observable<Space[]> { return of(this.spaces()).pipe(delay(120)); }
-  getSpacesByFloor(floorId: string): Observable<Space[]> { return of(this.spaces().filter(item => item.floorId === floorId)).pipe(delay(100)); }
-  getSpaceById(id: string): Observable<Space | undefined> { return of(this.spaces().find(item => item.id === id)).pipe(delay(80)); }
+  private readonly store = inject(BuildingStoreService);
+  getSpaces(): Observable<Space[]> { return of(this.store.spaces()).pipe(delay(120)); }
+  getSpacesByFloor(floorId: string): Observable<Space[]> { return of(this.store.spaces().filter(item => item.floorId === floorId)).pipe(delay(100)); }
+  getSpaceById(id: string): Observable<Space | undefined> { return of(this.store.spaces().find(item => item.id === id)).pipe(delay(80)); }
   updateConfiguration(id: string, sensitivity: Space['sensitivity'], thresholds: SpaceThresholds): void {
-    this.spaces.update(items => items.map(item => item.id === id ? { ...item, sensitivity, thresholds } : item));
+    const space = this.store.spaces().find(item => item.id === id);
+    if (space) this.store.updateSpace(space.buildingId, space.floorId, { ...space, sensitivity, thresholds });
   }
 }
 
