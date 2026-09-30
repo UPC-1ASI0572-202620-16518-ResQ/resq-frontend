@@ -26,3 +26,164 @@ button:not(:disabled), select { cursor: pointer; }
 *:focus-visible { outline: 2px solid #1570ef; outline-offset: 2px; }
 ::selection { background: #bfd8ff; }
 .mat-mdc-snack-bar-container { --mdc-snackbar-container-color: #17324f; --mdc-snackbar-supporting-text-color: #fff; }
+
+/* Unified application typography: 13px body copy, 12px supporting copy. */
+resq-sidebar .brand span,
+resq-sidebar nav em,
+resq-sidebar .system span,
+resq-sidebar .sidebar-bottom small,
+resq-topbar .search-results small,
+resq-topbar .notifications a small,
+resq-topbar .user small {
+  font-size: 12px;
+}
+
+resq-sidebar nav a,
+resq-sidebar .system b,
+resq-topbar .page-title p,
+resq-topbar .select select,
+resq-topbar .search input,
+resq-topbar .search-results > b,
+resq-topbar .notifications h3 span,
+resq-topbar .notifications a b,
+resq-topbar .notifications .view-all,
+resq-topbar .user b,
+resq-topbar .user > span {
+  font-size: 13px;
+}
+
+resq-login-page .brand small,
+resq-login-page .message > span,
+resq-login-page .mini small,
+resq-login-page .login > form > p,
+resq-login-page .login label,
+resq-login-page .login button,
+resq-login-page .error,
+resq-login-page .demo,
+resq-login-page .copyright {
+  font-size: 12px;
+}
+
+resq-login-page .login input {
+  font-size: 14px;
+}
+
+resq-alerts-page .filters input,
+resq-alerts-page .filters select,
+resq-incidents-page .filters input,
+resq-incidents-page .filters select,
+resq-devices-page .filters input,
+resq-devices-page .filters select {
+  font-size: 13px;
+}
+
+resq-alerts-page th,
+resq-alerts-page td small,
+resq-alerts-page .severity,
+resq-incidents-page .severity,
+resq-incidents-page .meta,
+resq-incidents-page footer button,
+resq-incidents-page footer a,
+resq-devices-page th,
+resq-devices-page code {
+  font-size: 11px;
+}
+
+resq-alerts-page td,
+resq-incidents-page .incident-grid p,
+resq-incidents-page .incident-grid footer b,
+resq-devices-page td,
+resq-devices-page .summary span {
+  font-size: 12px;
+}
+
+resq-devices-page .summary b {
+  font-size: 14px;
+}
+
+resq-alert-detail .detail-head a,
+resq-alert-detail .detail-head p,
+resq-alert-detail .actions button,
+resq-alert-detail .detail-grid dl,
+resq-alert-detail .readings span,
+resq-alert-detail .timeline b,
+resq-alert-detail .timeline small,
+resq-alert-detail .incident,
+resq-device-detail .detail-head a,
+resq-device-detail .detail-head p,
+resq-device-detail .stats span,
+resq-device-detail .stats small,
+resq-device-detail .card-head p,
+resq-device-detail .card-head select,
+resq-device-detail .location small,
+resq-device-detail .detail-grid aside > a,
+resq-device-detail .detail-grid dl,
+resq-device-detail .alerts-card b,
+resq-device-detail .alerts-card small,
+resq-incident-detail .detail-head a,
+resq-incident-detail .detail-head p,
+resq-incident-detail .detail-head > div > span,
+resq-incident-detail .actions button,
+resq-incident-detail .timeline b,
+resq-incident-detail .timeline small,
+resq-incident-detail .timeline p,
+resq-incident-detail .note b,
+resq-incident-detail .note small,
+resq-incident-detail .note p,
+resq-incident-detail .grid dl,
+resq-incident-detail .alert,
+resq-incident-detail .alert small {
+  font-size: 12px;
+}
+
+resq-alert-detail .detail-grid h3,
+resq-device-detail .card-head h3,
+resq-device-detail .detail-grid aside h3,
+resq-device-detail .alerts-card h3,
+resq-incident-detail .grid h3 {
+  font-size: 15px;
+}
+
+resq-alert-detail .description,
+resq-device-detail .location b {
+  font-size: 13px;
+}
+
+resq-analytics-page .period > span,
+resq-analytics-page .period button,
+resq-analytics-page .chart-grid header p,
+resq-analytics-page .chart-grid header select,
+resq-analytics-page .legend,
+resq-analytics-page .donut li,
+resq-analytics-page .performance div {
+  font-size: 12px;
+}
+
+resq-analytics-page .chart-grid h3 {
+  font-size: 15px;
+}
+
+resq-settings-page .settings nav b,
+resq-settings-page .settings nav small,
+resq-settings-page .settings header p,
+resq-settings-page .avatar button,
+resq-settings-page .fields label,
+resq-settings-page .toggles b,
+resq-settings-page .toggles small,
+resq-settings-page .settings footer button {
+  font-size: 12px;
+}
+
+resq-settings-page .fields input,
+resq-settings-page .fields select {
+  font-size: 13px;
+}
+
+resq-settings-page .settings h2 {
+  font-size: 18px;
+}
+
+resq-not-found p,
+resq-not-found a {
+  font-size: 13px;
+}
