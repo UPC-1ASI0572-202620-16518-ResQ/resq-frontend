@@ -26,8 +26,40 @@ import {
 } from './core/api/api.config';
 
 import {
+  provideAlertResponseDataAccess,
+} from './features/alerts/data-access/alert.providers';
+
+import {
+  provideIamDataAccess,
+} from './features/auth/data-access/iam.providers';
+
+import {
+  provideBuildingDataAccess,
+} from './features/buildings/data-access/building.providers';
+
+import {
+  provideConnectivityDataAccess,
+} from './features/connectivity/data-access/connectivity.providers';
+
+import {
   provideDeviceDataAccess,
 } from './features/devices/data-access/device.providers';
+
+import {
+  provideIncidentDataAccess,
+} from './features/incidents/data-access/incident.providers';
+
+import {
+  provideMonitoringDataAccess,
+} from './features/monitoring/data-access/monitoring.providers';
+
+import {
+  provideRiskDetectionDataAccess,
+} from './features/risk-detection/data-access/risk-detection.providers';
+
+import {
+  provideUserDataAccess,
+} from './features/users/data-access/user.providers';
 
 import {
   routes,
@@ -48,7 +80,31 @@ export const appConfig:
 
       provideHttpClient(),
 
+      provideIamDataAccess(),
+
+      provideUserDataAccess(
+        'mock',
+      ),
+
+      provideBuildingDataAccess(
+        'mock',
+      ),
+
       provideDeviceDataAccess(
+        'mock',
+      ),
+
+      provideConnectivityDataAccess(
+        'mock',
+      ),
+
+      provideMonitoringDataAccess(),
+
+      provideRiskDetectionDataAccess(),
+
+      provideAlertResponseDataAccess(),
+
+      provideIncidentDataAccess(
         'mock',
       ),
 
