@@ -36,7 +36,7 @@ import { DoughnutChartComponent, KpiCardComponent, LineChartComponent, StatusBad
       </article>
     </aside></div>
   `,
-  styleUrl:'./floor-monitoring.page.scss'
+  styleUrls:['./floor-monitoring.page.scss','./floor-monitoring.typography.scss']
 })
 export class FloorMonitoringPage {
   readonly floorSpaces=SPACES.filter(space=>space.floorId==='science-f2'); readonly selected=signal<Space>(this.floorSpaces[0]); readonly view=signal<'2d'|'3d'>('2d'); readonly zoom=signal(1); readonly detailTab=signal('Overview'); readonly recentAlerts=ALERTS.slice(0,4);

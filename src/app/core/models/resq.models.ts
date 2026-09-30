@@ -27,8 +27,15 @@ export interface Space {
   sensitivity: SensitivityLevel; status: RiskStatus; thresholds: SpaceThresholds; polygon: FloorPlanPoint[]; devices: Device[];
 }
 export interface Floor { id: string; buildingId: string; name: string; level: number; spaces: Space[]; status: RiskStatus; }
-export interface Building { id: string; name: string; address: string; description?: string; floors: Floor[]; status: RiskStatus; }
-export interface Alert {
+export interface Building {
+  id: string;
+  name: string;
+  address: string;
+  description?: string;
+  imageUrl?: string;
+  floors: Floor[];
+  status: RiskStatus;
+}export interface Alert {
   id: string; buildingId: string; floorId: string; spaceId: string; deviceId?: string; severity: AlertSeverity;
   title: string; description: string; timestamp: Date; status: AlertStatus;
 }

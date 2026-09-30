@@ -61,12 +61,48 @@ const scienceFloors: Floor[] = [1,2,3,4].map((level, index) => level === 2
   ? { id: 'science-f2', buildingId: 'science', name: 'Floor 2', level: 2, spaces: scienceF2Spaces, status: 'Critical' }
   : makeGenericFloor('science', level, index));
 const mainFloors = [1,2,3].map((level, index) => makeGenericFloor('main', level, index + 4));
-const researchFloors = [1,2].map((level, index) => makeGenericFloor('research', level, index + 7));
+const researchFloors: Floor[] = [1, 2].map((level, index) => {
+  const floor = makeGenericFloor('research', level, index + 7);
+
+  return {
+    ...floor,
+    status: 'Normal',
+    spaces: floor.spaces.map(space => ({
+      ...space,
+      status: 'Normal',
+      devices: space.devices.map(device => ({
+        ...device,
+        status: device.status === 'Offline' ? 'Offline' : 'Online',
+      })),
+    })),
+  };
+});
 
 export const BUILDINGS: Building[] = [
-  { id: 'science', name: 'Science Building', address: '120 Discovery Avenue', description: 'Advanced teaching laboratories and science classrooms.', floors: scienceFloors, status: 'Critical' },
-  { id: 'main', name: 'Main Building', address: '1 University Plaza', description: 'Administration, shared services and collaborative spaces.', floors: mainFloors, status: 'Warning' },
-  { id: 'research', name: 'Research Center', address: '44 Innovation Drive', description: 'Specialized research facilities and controlled environments.', floors: researchFloors, status: 'Normal' },
+  {
+    id: 'science',
+    name: 'Science Building',
+    address: '120 Discovery Avenue',
+    description: 'Advanced teaching laboratories and science classrooms.',
+    floors: scienceFloors,
+    status: 'Critical',
+  },
+  {
+    id: 'main',
+    name: 'Main Building',
+    address: '1 University Plaza',
+    description: 'Administration, shared services and collaborative spaces.',
+    floors: mainFloors,
+    status: 'Warning',
+  },
+  {
+    id: 'research',
+    name: 'Research Center',
+    address: '44 Innovation Drive',
+    description: 'Specialized research facilities and controlled environments.',
+    floors: researchFloors,
+    status: 'Normal',
+  },
 ];
 
 export const FLOORS: Floor[] = BUILDINGS.flatMap(building => building.floors);

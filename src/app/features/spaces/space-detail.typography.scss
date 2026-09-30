@@ -1,0 +1,42 @@
+/* Match the detail view to the more readable Spaces type scale. */
+.detail-head a,
+.title p,
+.tabs button,
+.reading-grid span,
+.overview-grid dl,
+.list-panel > a,
+.config-intro p,
+.config > label,
+.thresholds span small,
+.thresholds label,
+.config > button,
+.history > p {
+  font-size: 12px;
+}
+
+.overview-grid h3,
+.config h3,
+.history h3 {
+  font-size: 15px;
+}
+
+.reading-grid b {
+  font-size: 17px;
+}
+
+.list-panel small {
+  font-size: 11px;
+}
+
+.config h4,
+.thresholds span b {
+  font-size: 13px;
+}
+
+.overview-grid dt,
+.overview-grid dd,
+.list-panel > a,
+.history > p {
+  padding-top: 11px;
+  padding-bottom: 11px;
+}

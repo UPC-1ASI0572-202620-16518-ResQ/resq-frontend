@@ -1,0 +1,41 @@
+/* Readable type scale for dense monitoring data. */
+.card-title h2,
+.details-head h2 { font-size: 16px; }
+
+.controls button,
+.legend,
+.floor-buttons button,
+.details-card > nav button { font-size: 12px; }
+
+.hall-label,
+.room-name { font-size: 14px; }
+
+.room-number,
+.stairs text,
+.restroom text,
+.mini-head p,
+.mini-head a,
+.mini-head > span,
+.devices li,
+.chart select,
+.tabs button,
+.tabs span,
+.details-head p,
+.readings span,
+.readings em,
+.timeline p { font-size: 11px; }
+
+.sensor-dots text { font-size: 9px; }
+.legend { height: 42px; }
+.mini-card { height: auto; min-height: 210px; padding: 14px; }
+.mini-head h3 { font-size: 14px; }
+.alerts a b,
+.panel-list b { font-size: 12px; }
+.alerts a span,
+.alerts time,
+.panel-list small { font-size: 10px; }
+.floor-buttons button { width: 100px; height: 34px; }
+.readings b { font-size: 15px; }
+.details-chart h4,
+.timeline h4 { font-size: 13px; }
+.timeline p { grid-template-columns: 8px 42px 58px 1fr; }
