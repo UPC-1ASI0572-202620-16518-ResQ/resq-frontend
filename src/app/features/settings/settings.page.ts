@@ -8,14 +8,16 @@ import {
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatIconModule } from '@angular/material/icon';
 import { Router } from '@angular/router';
 import { AuthSessionFacade } from '../auth/auth-session.facade';
 import { UserFacade } from '../users/data-access/user.facade';
+import { AppLanguage, LanguageService } from '../../core/services/language.service';
 
 @Component({
   selector: 'resq-settings-page',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, MatIconModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="settings">
@@ -26,10 +28,10 @@ import { UserFacade } from '../users/data-access/user.facade';
             [class.active]="section() === item.id"
             (click)="section.set(item.id)"
           >
-            <span>{{ item.icon }}</span>
+            <span><mat-icon>{{ item.icon }}</mat-icon></span>
             <div>
-              <b>{{ item.label }}</b>
-              <small>{{ item.help }}</small>
+              <b>{{ language.t(item.key, item.label) }}</b>
+              <small>{{ language.t(item.helpKey, item.help) }}</small>
             </div>
           </button>
         }
@@ -37,12 +39,12 @@ import { UserFacade } from '../users/data-access/user.facade';
 
       <section class="panel">
         @if (loading()) {
-          <div class="state">Loading your profile...</div>
+          <div class="state">{{language.t('loadingProfile','Loading your profile...')}}</div>
         } @else {
           @if (section() === 'profile') {
             <header>
-              <h2>Profile</h2>
-              <p>Personal information owned by the User bounded context.</p>
+              <h2>{{language.t('profile','Profile')}}</h2>
+              <p>{{language.t('personalInfo','Personal information and contact details for your account.')}}</p>
             </header>
 
             <div class="identity-card">
@@ -53,22 +55,35 @@ import { UserFacade } from '../users/data-access/user.facade';
               </div>
             </div>
 
+            <h3 class="section-heading">{{language.t('accountOverview','Account overview')}}</h3>
+            <dl class="profile-meta">
+              <div><dt>{{language.t('userId','User ID')}}</dt><dd>{{profile()?.userId || language.t('unavailable','Unavailable')}}</dd></div>
+              <div><dt>{{language.t('role','Role')}}</dt><dd>{{language.t('administrator','Administrator')}}</dd></div>
+              <div><dt>{{language.t('accountStatus','Account status')}}</dt><dd class="active-state">{{language.t('active','Active')}}</dd></div>
+              <div><dt>{{language.t('applicationLanguage','Application language')}}</dt><dd>{{language.language()==='es' ? language.t('spanish','Spanish') : language.t('english','English')}}</dd></div>
+              <div><dt>{{language.t('timeZone','Time zone')}}</dt><dd>{{profile()?.preferences?.timeZone || 'America/Lima'}}</dd></div>
+            </dl>
+
             <form [formGroup]="contactForm" (ngSubmit)="saveContact()">
               <div class="fields">
                 <label>
-                  Full name
-                  <input [value]="session.fullName()" readonly />
-                  <small>Name editing is not exposed by the current User API contract.</small>
+                  {{language.t('firstName','First name')}}
+                  <input [value]="profile()?.firstName || ''" readonly />
                 </label>
 
                 <label>
-                  Email address
+                  {{language.t('lastName','Last name')}}
+                  <input [value]="profile()?.lastName || ''" readonly />
+                </label>
+
+                <label>
+                  {{language.t('email','Email address')}}
                   <input type="email" formControlName="email" autocomplete="email" />
                 </label>
 
                 <label>
-                  Phone number
-                  <input formControlName="phoneNumber" autocomplete="tel" placeholder="Enter phone number" />
+                  {{language.t('phone','Phone number')}}
+                  <input formControlName="phoneNumber" autocomplete="tel" [placeholder]="language.t('enterPhone','Enter phone number')" />
                 </label>
               </div>
 
@@ -77,9 +92,9 @@ import { UserFacade } from '../users/data-access/user.facade';
               }
 
               <footer>
-                <button type="button" class="cancel" (click)="resetContact()">Reset</button>
+                <button type="button" class="cancel" (click)="resetContact()">{{language.t('reset','Reset')}}</button>
                 <button type="submit" [disabled]="contactForm.invalid || user.saving()">
-                  {{ user.saving() ? 'Saving...' : 'Save contact information' }}
+                  {{ user.saving() ? language.t('saving','Saving...') : language.t('saveContact','Save contact information') }}
                 </button>
               </footer>
             </form>
@@ -87,23 +102,22 @@ import { UserFacade } from '../users/data-access/user.facade';
 
           @if (section() === 'preferences') {
             <header>
-              <h2>Preferences</h2>
-              <p>Language, time zone and SMS alert preferences from the User bounded context.</p>
+              <h2>{{language.t('preferences','Preferences')}}</h2>
+              <p>{{language.t('preferencesDescription','Configure language, time zone and SMS notifications.')}}</p>
             </header>
 
             <form [formGroup]="preferencesForm" (ngSubmit)="savePreferences()">
               <div class="fields">
                 <label>
-                  Application language
-                  <select formControlName="language">
-                    <option value="">Not set</option>
-                    <option value="en_US">English (en_US)</option>
-                    <option value="es_419">Español Latinoamérica (es_419)</option>
+                  {{language.t('applicationLanguage','Application language')}}
+                  <select formControlName="language" (change)="changeLanguage($any($event.target).value)">
+                    <option value="en_US">English</option>
+                    <option value="es_419">Español</option>
                   </select>
                 </label>
 
                 <label>
-                  Time zone
+                  {{language.t('timeZone','Time zone')}}
                   <select formControlName="timeZone">
                     <option value="">Not set</option>
                     <option value="America/Lima">America/Lima</option>
@@ -115,22 +129,21 @@ import { UserFacade } from '../users/data-access/user.facade';
               <div class="toggles">
                 <label>
                   <div>
-                    <b>SMS alerts</b>
-                    <small>Allow ResQ to send alert notifications to your registered phone number.</small>
+                    <b>{{language.t('smsAlerts','SMS alerts')}}</b>
+                    <small>{{language.t('smsHelp','Allow ResQ to send alert notifications to your registered phone number.')}}</small>
                   </div>
                   <input type="checkbox" formControlName="receiveSMSAlerts" />
                 </label>
               </div>
 
               <p class="note">
-                The interface remains English-first. These values are already backend-ready; full UI
-                localization can be connected independently without changing the User contract.
+                {{language.t('languageApplied','Language changes are applied immediately and retained for future sessions.')}}
               </p>
 
               <footer>
-                <button type="button" class="cancel" (click)="resetPreferences()">Reset</button>
+                <button type="button" class="cancel" (click)="resetPreferences()">{{language.t('reset','Reset')}}</button>
                 <button type="submit" [disabled]="user.saving()">
-                  {{ user.saving() ? 'Saving...' : 'Save preferences' }}
+                  {{ user.saving() ? language.t('saving','Saving...') : language.t('savePreferences','Save preferences') }}
                 </button>
               </footer>
             </form>
@@ -138,42 +151,42 @@ import { UserFacade } from '../users/data-access/user.facade';
 
           @if (section() === 'security') {
             <header>
-              <h2>Security & Access</h2>
+              <h2>{{language.t('security','Security & Access')}}</h2>
               <p>Authentication belongs to IAM. Personal profile data is not duplicated here.</p>
             </header>
 
             <dl class="security-grid">
               <div>
-                <dt>Authentication state</dt>
-                <dd>{{ session.authenticated() ? 'Authenticated' : 'Local profile only' }}</dd>
+                <dt>{{language.t('authenticationState','Authentication state')}}</dt>
+                <dd>{{ session.authenticated() ? language.t('authenticated','Authenticated') : language.t('localProfile','Local profile only') }}</dd>
               </div>
               <div>
-                <dt>Identity ID</dt>
+                <dt>{{language.t('identityId','Identity ID')}}</dt>
                 <dd>{{ session.identityId() || 'Not available in current session' }}</dd>
               </div>
               <div>
-                <dt>User ID</dt>
+                <dt>{{language.t('userId','User ID')}}</dt>
                 <dd>{{ profile()?.userId || 'Unavailable' }}</dd>
               </div>
               <div>
-                <dt>Role management</dt>
-                <dd>Backend role catalog required before exposing assignments in the UI.</dd>
+                <dt>{{language.t('roleManagement','Role management')}}</dt>
+                <dd>{{language.t('roleHelp','Roles are managed by the identity service.')}}</dd>
               </div>
             </dl>
 
             <div class="security-actions">
               <div>
-                <b>End this session</b>
-                <small>Clears the current frontend session and profile state.</small>
+                <b>{{language.t('endSession','End this session')}}</b>
+                <small>{{language.t('endSessionHelp','Clears the current frontend session and profile state.')}}</small>
               </div>
-              <button type="button" class="danger" (click)="signOut()">Sign out</button>
+              <button type="button" class="danger" (click)="signOut()">{{language.t('signOut','Sign out')}}</button>
             </div>
           }
         }
       </section>
     </div>
   `,
-  styleUrl: './settings.page.scss',
+  styleUrls: ['./settings.page.scss', './settings.readability.scss'],
 })
 export class SettingsPage implements OnInit {
   private readonly fb = inject(FormBuilder);
@@ -182,12 +195,13 @@ export class SettingsPage implements OnInit {
 
   readonly user = inject(UserFacade);
   readonly session = inject(AuthSessionFacade);
+  readonly language = inject(LanguageService);
 
   readonly section = signal<'profile' | 'preferences' | 'security'>('profile');
   readonly sections = [
-    { id: 'profile' as const, label: 'Profile', icon: '◉', help: 'Contact information' },
-    { id: 'preferences' as const, label: 'Preferences', icon: '◎', help: 'Language and notifications' },
-    { id: 'security' as const, label: 'Security & Access', icon: '⌾', help: 'IAM session information' },
+    { id: 'profile' as const, key: 'profile', label: 'Profile', icon: 'person', helpKey: 'contactInfo', help: 'Contact information' },
+    { id: 'preferences' as const, key: 'preferences', label: 'Preferences', icon: 'tune', helpKey: 'languageNotifications', help: 'Language and notifications' },
+    { id: 'security' as const, key: 'security', label: 'Security & Access', icon: 'security', helpKey: 'sessionInfo', help: 'IAM session information' },
   ];
 
   readonly loading = computed(() => this.user.loading() || this.session.loading());
@@ -204,7 +218,7 @@ export class SettingsPage implements OnInit {
   });
 
   readonly preferencesForm = this.fb.nonNullable.group({
-    language: [''],
+    language: ['en_US'],
     timeZone: [''],
     receiveSMSAlerts: [false],
   });
@@ -238,6 +252,7 @@ export class SettingsPage implements OnInit {
 
   savePreferences(): void {
     const value = this.preferencesForm.getRawValue();
+    this.language.setLanguage(this.language.fromPreference(value.language));
     this.user
       .updatePreferences({
         ...(value.language ? { language: value.language } : {}),
@@ -261,6 +276,10 @@ export class SettingsPage implements OnInit {
     this.populatePreferences();
   }
 
+  changeLanguage(preference: string): void {
+    this.language.setLanguage(this.language.fromPreference(preference) as AppLanguage);
+  }
+
   signOut(): void {
     this.session.signOut();
     void this.router.navigateByUrl('/login');
@@ -282,9 +301,10 @@ export class SettingsPage implements OnInit {
   private populatePreferences(): void {
     const preferences = this.profile()?.preferences;
     this.preferencesForm.setValue({
-      language: preferences?.language ?? '',
+      language: preferences?.language ?? this.language.toPreference(),
       timeZone: preferences?.timeZone ?? '',
       receiveSMSAlerts: preferences?.receiveSMSAlerts ?? false,
     });
+    this.language.setLanguage(this.language.fromPreference(preferences?.language ?? this.language.toPreference()));
   }
 }

@@ -1,5 +1,6 @@
 import {
   Injectable,
+  inject,
   signal,
 } from '@angular/core';
 
@@ -51,10 +52,13 @@ import {
   versionFromEtag,
   withEtag,
 } from './device.mapper';
+import { BuildingStoreService } from '../../../core/services/building-store.service';
 
 @Injectable()
 export class MockDeviceGateway
   implements DeviceGateway {
+
+  private readonly buildingStore = inject(BuildingStoreService);
 
   private readonly items =
     signal<DeviceCatalogRecord[]>(
@@ -80,7 +84,7 @@ export class MockDeviceGateway
       );
 
     const filtered =
-      this.items()
+      this.catalogItems()
         .filter(
           device =>
             !filters.buildingId ||
@@ -137,7 +141,7 @@ export class MockDeviceGateway
     > {
 
     const device =
-      this.items().find(
+      this.catalogItems().find(
         item =>
           item.id ===
           deviceId,
@@ -411,6 +415,14 @@ export class MockDeviceGateway
     ).pipe(
       delay(100),
     );
+  }
+
+  private catalogItems(): DeviceCatalogRecord[] {
+    const current = new Map(this.items().map(item => [item.id, item]));
+    for (const device of this.buildingStore.devices()) {
+      if (!current.has(device.id)) current.set(device.id, mapMockDeviceToCatalog(device));
+    }
+    return [...current.values()];
   }
 
   updateDeviceDetails(

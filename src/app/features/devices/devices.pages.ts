@@ -5,6 +5,7 @@ import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
 import { MatSort, MatSortModule } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DeviceAdministrativeStatus } from '../../core/models/resq.models';
 import { EmptyStateComponent, KpiCardComponent, LineChartComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
@@ -13,50 +14,19 @@ import { CapabilityDefinitionResourceDto } from './data-access/device.dto';
 import { DeviceCatalogRecord } from './data-access/device.gateway';
 import { DeviceWorkspaceFacade, DeviceWorkspaceRow } from './device-workspace.facade';
 
-interface RegisterDeviceForm {
-  deviceCode: string;
-  name: string;
-  description: string;
-  manufacturer: string;
-  model: string;
-  serialNumber: string;
-  buildingId: string;
-  zoneId: string;
-  capabilitiesText: string;
-}
-
 @Component({
   selector: 'resq-devices-page',
   standalone: true,
-  imports: [CommonModule, FormsModule, MatPaginatorModule, MatSortModule, MatTableModule, KpiCardComponent, LoadingStateComponent, EmptyStateComponent, StatusBadgeComponent],
+  imports: [CommonModule, FormsModule, MatIconModule, MatPaginatorModule, MatSortModule, MatTableModule, KpiCardComponent, LoadingStateComponent, EmptyStateComponent, StatusBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="page-actions"><div><b>Device Management</b><span>Catalog, assignment and administrative lifecycle are backend-ready.</span></div><button type="button" (click)="showRegister.set(!showRegister())">{{ showRegister() ? 'Close form' : '+ Register Device' }}</button></div>
-
-    @if (showRegister()) {
-      <section class="editor-card">
-        <header><div><h3>Register physical device</h3><p>New devices start INACTIVE. At least one capability is required.</p></div></header>
-        <div class="editor-grid">
-          <label>Device code<input [(ngModel)]="registerForm.deviceCode" placeholder="RESQ-NODE-002" /></label>
-          <label>Name<input [(ngModel)]="registerForm.name" placeholder="Safety Node" /></label>
-          <label class="wide">Description<input [(ngModel)]="registerForm.description" placeholder="Optional description" /></label>
-          <label>Manufacturer<input [(ngModel)]="registerForm.manufacturer" /></label>
-          <label>Model<input [(ngModel)]="registerForm.model" /></label>
-          <label>Serial number<input [(ngModel)]="registerForm.serialNumber" /></label>
-          <label>Building<select [(ngModel)]="registerForm.buildingId" (ngModelChange)="registerForm.zoneId=''" ><option value="">Select building</option>@for(building of workspace.buildings();track building.id){<option [value]="building.id">{{building.name}}</option>}</select></label>
-          <label>Zone<select [(ngModel)]="registerForm.zoneId"><option value="">No zone</option>@for(zone of zonesFor(registerForm.buildingId);track zone.id){<option [value]="zone.id">{{zone.name}}{{zone.floorLabel ? ' · '+zone.floorLabel : ''}}</option>}</select></label>
-          <label class="wide">Capabilities<textarea [(ngModel)]="registerForm.capabilitiesText" rows="4" placeholder="gas_smoke_level|MEASUREMENT|ADC&#10;audible_alarm|ACTUATION"></textarea><small>One per line: code | MEASUREMENT/ACTUATION | optional unit</small></label>
-        </div>
-        @if (formError()) { <p class="form-error">{{ formError() }}</p> }
-        <footer><button type="button" class="secondary" (click)="resetRegister()">Reset</button><button type="button" (click)="registerDevice()" [disabled]="saving()">{{ saving() ? 'Registering...' : 'Register Device' }}</button></footer>
-      </section>
-    }
+    <div class="page-actions"><div><b>Device Management</b><span>Devices are created and positioned directly from each Floor Plan Editor.</span></div></div>
 
     <section class="kpis" aria-label="Device fleet summary">
-      <resq-kpi-card icon="◉" [value]="workspace.summary().total" label="Total Devices" />
-      <resq-kpi-card icon="✓" [value]="workspace.summary().online" label="Online" tone="green" />
-      <resq-kpi-card icon="△" [value]="workspace.summary().warningDegraded" label="Weak Signal" tone="amber" />
-      <resq-kpi-card icon="—" [value]="workspace.summary().offline" label="Offline / Timeout" />
+      <resq-kpi-card icon="sensors" [value]="workspace.summary().total" label="Total Devices" />
+      <resq-kpi-card icon="check_circle" [value]="workspace.summary().online" label="Online" tone="green" />
+      <resq-kpi-card icon="warning_amber" [value]="workspace.summary().warningDegraded" label="Weak Signal" tone="amber" />
+      <resq-kpi-card icon="sensors_off" [value]="workspace.summary().offline" label="Offline / Timeout" />
     </section>
 
     @if (workspace.loading()) {
@@ -65,7 +35,7 @@ interface RegisterDeviceForm {
       <resq-empty-state title="Devices could not be loaded" [message]="workspace.error()!.message" />
     } @else {
       <section class="filters" aria-label="Device filters">
-        <label class="search-field"><span>⌕</span><span class="sr-only">Search devices</span><input [(ngModel)]="query" (ngModelChange)="applyFilters()" placeholder="Search name, code, model or serial..." /></label>
+        <label class="search-field"><mat-icon>search</mat-icon><span class="sr-only">Search devices</span><input [(ngModel)]="query" (ngModelChange)="applyFilters()" placeholder="Search name, code, model or serial..." /></label>
         <label><span>Building</span><select [(ngModel)]="buildingFilter" (ngModelChange)="applyFilters()"><option value="">All buildings</option>@for(building of workspace.buildings();track building.id){<option [value]="building.id">{{building.name}}</option>}</select></label>
         <label><span>Floor</span><select [(ngModel)]="floorFilter" (ngModelChange)="applyFilters()"><option value="">All floors</option>@for(floor of floors();track floor){<option [value]="floor">{{floor}}</option>}</select></label>
         <label><span>Zone</span><select [(ngModel)]="zoneFilter" (ngModelChange)="applyFilters()"><option value="">All zones</option>@for(zone of zones();track zone.id){<option [value]="zone.id">{{zone.name}}</option>}</select></label>
@@ -77,7 +47,7 @@ interface RegisterDeviceForm {
       <div class="result-summary"><b>{{ filteredCount() }} devices</b><span>Composed from Device Management, Monitoring, Connectivity and Building Management.</span></div>
       <section class="table-card" aria-label="Registered devices">
         <div class="table-scroll"><table mat-table [dataSource]="dataSource" matSort>
-          <ng-container matColumnDef="device"><th mat-header-cell *matHeaderCellDef mat-sort-header>Device</th><td mat-cell *matCellDef="let row"><span class="device-icon">◉</span><span class="primary-cell"><b>{{row.catalog.name}}</b><small>{{row.catalog.description || 'No description'}}</small></span></td></ng-container>
+          <ng-container matColumnDef="device"><th mat-header-cell *matHeaderCellDef mat-sort-header>Device</th><td mat-cell *matCellDef="let row"><span class="device-icon"><mat-icon>sensors</mat-icon></span><span class="primary-cell"><b>{{row.catalog.name}}</b><small>{{row.catalog.description || 'No description'}}</small></span></td></ng-container>
           <ng-container matColumnDef="code"><th mat-header-cell *matHeaderCellDef mat-sort-header>Code</th><td mat-cell *matCellDef="let row"><code>{{row.catalog.deviceCode}}</code></td></ng-container>
           <ng-container matColumnDef="model"><th mat-header-cell *matHeaderCellDef mat-sort-header>Model</th><td mat-cell *matCellDef="let row">{{row.catalog.specifications.model || '—'}}</td></ng-container>
           <ng-container matColumnDef="location"><th mat-header-cell *matHeaderCellDef mat-sort-header>Location</th><td mat-cell *matCellDef="let row"><span class="primary-cell"><b>{{row.location.buildingName}}</b><small>{{row.location.floorLabel || '—'}} · {{row.location.zoneName || 'Unassigned zone'}}</small></span></td></ng-container>
@@ -94,36 +64,31 @@ interface RegisterDeviceForm {
       </section>
     }
   `,
-  styleUrl: './devices.pages.scss',
+  styleUrls: ['./devices.pages.scss', './devices.readability.scss'],
 })
 export class DevicesPage implements OnInit {
   readonly workspace = inject(DeviceWorkspaceFacade);
   private readonly router = inject(Router);
-  private readonly snack = inject(MatSnackBar);
   @ViewChild(MatSort) set matSort(sort: MatSort | undefined){if(sort)this.dataSource.sort=sort;}
   @ViewChild(MatPaginator) set matPaginator(paginator: MatPaginator | undefined){if(paginator)this.dataSource.paginator=paginator;}
   readonly displayedColumns=['device','code','model','location','capabilities','administrative','connectivity','reading','signal','lastSeen'];
   readonly dataSource=new MatTableDataSource<DeviceWorkspaceRow>([]);
-  readonly filteredCount=signal(0);readonly showRegister=signal(false);readonly saving=signal(false);readonly formError=signal('');
+  readonly filteredCount=signal(0);
   query='';buildingFilter='';floorFilter='';zoneFilter='';administrativeFilter='';connectivityFilter='';capabilityFilter='';
-  registerForm:RegisterDeviceForm=emptyRegisterForm();
   readonly floors=computed(()=>[...new Set(this.workspace.rows().map(row=>row.location.floorLabel).filter((value):value is string=>Boolean(value)))].sort());
   readonly zones=computed(()=>{const map=new Map<string,string>();this.workspace.rows().forEach(row=>{if(row.location.zoneId)map.set(row.location.zoneId,row.location.zoneName||row.location.zoneId)});return [...map].map(([id,name])=>({id,name})).sort((a,b)=>a.name.localeCompare(b.name));});
   readonly capabilities=computed(()=>{const map=new Map<string,string>();this.workspace.rows().flatMap(row=>row.capabilities).forEach(cap=>map.set(cap.code,cap.label));return [...map].map(([code,label])=>({code,label})).sort((a,b)=>a.label.localeCompare(b.label));});
   ngOnInit():void{this.workspace.loadFleet().subscribe({next:()=>{this.configureSorting();this.applyFilters();},error:()=>undefined});}
-  zonesFor(buildingId:string):ZoneCatalogRecord[]{return this.workspace.buildings().find(item=>item.id===buildingId)?.zones.filter(zone=>zone.availableForAssignment)??[];}
   applyFilters():void{const q=this.query.trim().toLowerCase();const rows=this.workspace.rows().filter(row=>{const searchable=`${row.catalog.name} ${row.catalog.deviceCode} ${row.catalog.specifications.model??''} ${row.catalog.specifications.serialNumber??''}`.toLowerCase();return(!q||searchable.includes(q))&&(!this.buildingFilter||row.location.buildingId===this.buildingFilter)&&(!this.floorFilter||row.location.floorLabel===this.floorFilter)&&(!this.zoneFilter||row.location.zoneId===this.zoneFilter)&&(!this.administrativeFilter||row.catalog.administrativeStatus===this.administrativeFilter)&&(!this.connectivityFilter||row.connection?.status===this.connectivityFilter)&&(!this.capabilityFilter||row.catalog.capabilities.some(cap=>cap.code===this.capabilityFilter));});this.dataSource.data=rows;this.filteredCount.set(rows.length);this.dataSource.paginator?.firstPage();}
   resetFilters():void{this.query=this.buildingFilter=this.floorFilter=this.zoneFilter=this.administrativeFilter=this.connectivityFilter=this.capabilityFilter='';this.applyFilters();}
   openDevice(row:DeviceWorkspaceRow):void{void this.router.navigate(['/devices',row.catalog.id]);}
   measurementLabel(row:DeviceWorkspaceRow):string{const item=row.latestMeasurement;return item?`${item.measurementValue.value} ${item.measurementValue.unit}`:'No reading';}
   relativeTime(date:Date):string{const minutes=Math.max(0,Math.round((Date.now()-date.getTime())/60000));return minutes<1?'Just now':minutes<60?`${minutes} min ago`:minutes<1440?`${Math.round(minutes/60)}h ago`:`${Math.round(minutes/1440)}d ago`;}
-  resetRegister():void{this.registerForm=emptyRegisterForm();this.formError.set('');}
-  registerDevice():void{this.formError.set('');const capabilities=parseCapabilities(this.registerForm.capabilitiesText);if(!this.registerForm.deviceCode.trim()||!this.registerForm.name.trim()||!this.registerForm.buildingId||!capabilities.length){this.formError.set('Device code, name, building and at least one valid capability are required.');return;}this.saving.set(true);this.workspace.registerDevice({deviceCode:this.registerForm.deviceCode,name:this.registerForm.name,description:this.registerForm.description||undefined,specifications:{manufacturer:this.registerForm.manufacturer||undefined,model:this.registerForm.model||undefined,serialNumber:this.registerForm.serialNumber||undefined},assignment:{buildingId:this.registerForm.buildingId,zoneId:this.registerForm.zoneId||undefined},capabilities}).subscribe({next:()=>{this.saving.set(false);this.showRegister.set(false);this.resetRegister();this.snack.open('Device registered as INACTIVE.','Close',{duration:2200});this.workspace.loadFleet().subscribe({next:()=>this.applyFilters()});},error:(error)=>{this.saving.set(false);this.formError.set(error?.message??'Device could not be registered.');}});}
   private configureSorting():void{this.dataSource.sortingDataAccessor=(row,column)=>({device:row.catalog.name,code:row.catalog.deviceCode,model:row.catalog.specifications.model??'',location:`${row.location.buildingName} ${row.location.floorLabel??''} ${row.location.zoneName??''}`,administrative:row.catalog.administrativeStatus,connectivity:row.connection?.status??'',reading:row.latestMeasurement?.measurementValue.value??-Infinity,signal:row.connection?.signalStrength??-Infinity,lastSeen:row.connection?.lastHeartbeatAt.getTime()??0}as Record<string,string|number>)[column]??'';}
 }
 
 @Component({
-  selector:'resq-device-detail',standalone:true,imports:[CommonModule,FormsModule,RouterLink,EmptyStateComponent,LineChartComponent,LoadingStateComponent,StatusBadgeComponent],changeDetection:ChangeDetectionStrategy.OnPush,
+  selector:'resq-device-detail',standalone:true,imports:[CommonModule,FormsModule,RouterLink,MatIconModule,EmptyStateComponent,LineChartComponent,LoadingStateComponent,StatusBadgeComponent],changeDetection:ChangeDetectionStrategy.OnPush,
   template:`
     @if(workspace.loading()){<resq-loading-state message="Loading device..." />}@else if(workspace.error()){<resq-empty-state title="Device could not be loaded" [message]="workspace.error()!.message" />}@else if(workspace.detail();as current){
       <header class="detail-head"><div><a routerLink="/devices">← Devices</a><div class="device-title"><span class="device-mark">◉</span><div><div class="title-line"><h2>{{current.catalog.name}}</h2><code>{{current.catalog.deviceCode}}</code></div><div class="badges"><resq-status-badge [status]="current.catalog.administrativeStatus" /><resq-status-badge [status]="current.connection?.status||'UNKNOWN'" /><resq-status-badge [status]="current.monitoring?.availability||'UNKNOWN'" /></div><p>{{current.catalog.description||'No description provided.'}}</p></div></div></div><div class="detail-actions"><button type="button" (click)="openEditor('details')" [disabled]="!workspace.canEditDetails(current.catalog)">Edit details</button>@if(workspace.canChangeAssignment(current.catalog)){<button type="button" (click)="openEditor('assignment')">Assignment</button>}@if(workspace.canChangeCapabilities(current.catalog)){<button type="button" (click)="openEditor('capabilities')">Capabilities</button>}</div></header>
@@ -139,7 +104,7 @@ export class DevicesPage implements OnInit {
         <aside class="side-stack"><article class="card connectivity-card"><h3>Connectivity</h3><dl><dt>Status</dt><dd><resq-status-badge [status]="current.connection?.status||'UNKNOWN'" /></dd><dt>Wi-Fi RSSI</dt><dd>{{current.connection?.signalStrength!==undefined?current.connection!.signalStrength+' dBm':'Unavailable'}}</dd><dt>Last Heartbeat</dt><dd>{{current.connection?relativeTime(current.connection.lastHeartbeatAt):'—'}}</dd><dt>Monitoring availability</dt><dd>{{current.monitoring?.availability||'UNKNOWN'}}</dd></dl></article></aside>
       </main>
     }@else{<div class="not-found"><span>◇</span><h2>Device Not Found</h2><p>The requested device does not exist or is unavailable.</p><a routerLink="/devices">Back to Devices</a></div>}
-  `,styleUrl:'./device-detail.page.scss'
+  `,styleUrls:['./device-detail.page.scss','./devices.readability.scss']
 })
 export class DeviceDetailPage implements OnInit{
   private readonly route=inject(ActivatedRoute);private readonly snack=inject(MatSnackBar);readonly workspace=inject(DeviceWorkspaceFacade);readonly editor=signal<'details'|'assignment'|'capabilities'|null>(null);readonly saving=signal(false);readonly formError=signal('');
@@ -162,5 +127,4 @@ export class DeviceDetailPage implements OnInit{
   private populate(device:DeviceCatalogRecord):void{this.detailForm={name:device.name,description:device.description??'',manufacturer:device.specifications.manufacturer??'',model:device.specifications.model??'',serialNumber:device.specifications.serialNumber??'',buildingId:device.assignment.buildingId,zoneId:device.assignment.zoneId??'',capabilitiesText:device.capabilities.map(cap=>`${cap.code}|${cap.kind}${cap.unit?`|${cap.unit}`:''}`).join('\n')};}
 }
 
-function emptyRegisterForm():RegisterDeviceForm{return{deviceCode:'',name:'',description:'',manufacturer:'',model:'',serialNumber:'',buildingId:'',zoneId:'',capabilitiesText:'gas_smoke_level|MEASUREMENT|ADC\naudible_alarm|ACTUATION'};}
 function parseCapabilities(text:string):CapabilityDefinitionResourceDto[]{return text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean).flatMap(line=>{const[code,kind,unit]=line.split('|').map(value=>value.trim());if(!code||(kind!=='MEASUREMENT'&&kind!=='ACTUATION'))return[];return[{code,kind,unit:unit||undefined}];});}

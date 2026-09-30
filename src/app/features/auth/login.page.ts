@@ -18,6 +18,7 @@ import {
 import {
   AuthSessionFacade,
 } from './auth-session.facade';
+import { TranslatePageDirective } from '../../shared/directives/translate-page.directive';
 
 @Component({
   selector:
@@ -25,6 +26,8 @@ import {
 
   standalone:
     true,
+
+  hostDirectives: [TranslatePageDirective],
 
   imports: [
     ReactiveFormsModule,
@@ -38,18 +41,7 @@ import {
 
       <section class="visual">
 
-        <div class="brand">
-
-          <span>◇</span>
-
-          <div>
-            <b>ResQ</b>
-            <small>
-              Smart Buildings. Safer People.
-            </small>
-          </div>
-
-        </div>
+        <div class="brand"><img src="/assets/brand/resq-logo.png" alt="ResQ" /></div>
 
         <div class="message">
 
@@ -105,9 +97,7 @@ import {
           (ngSubmit)="submit()"
         >
 
-          <div class="mobile-brand">
-            ◇ ResQ
-          </div>
+          <div class="mobile-brand"><img src="/assets/brand/resq-icon.png" alt="ResQ" /></div>
 
           <h2>
             Welcome back

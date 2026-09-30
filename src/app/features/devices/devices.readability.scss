@@ -1,0 +1,36 @@
+:host { width: 100%; }
+.kpis { gap: 14px; margin-bottom: 16px; }
+.filters { gap: 12px; padding: 16px; }
+.filters label { font-size: 13px; }
+.filters input, .filters select, .reset { min-height: 42px; font-size: 13px; }
+.search-field > mat-icon { bottom: 12px; }
+.search-field input { padding-left: 38px; }
+.result-summary b, .page-actions b { font-size: 15px; }
+.result-summary span, .page-actions span { font-size: 12px; }
+th.mat-mdc-header-cell { height: 48px; font-size: 11px; }
+td.mat-mdc-cell { height: 70px; font-size: 13px; }
+.primary-cell b { font-size: 13px; }
+.primary-cell small, .status-stack small { font-size: 11px; }
+.page-actions button, .editor-card footer button, .detail-actions button, .lifecycle-actions button { min-height: 40px; padding: 9px 14px; font-size: 13px; }
+.editor-card { padding: 20px; }
+.editor-card h3 { font-size: 17px; }
+.editor-card p, .editor-grid label { font-size: 12px; }
+.editor-grid input, .editor-grid select, .editor-grid textarea { min-height: 42px; font-size: 13px; }
+.detail-head > div > a { font-size: 13px; }
+.title-line h2 { font-size: 25px; }
+.device-title p { max-width: none; font-size: 13px; }
+.stats { gap: 14px; }
+.stats article { min-height: 108px; padding: 16px; }
+.stats span, .stats small { font-size: 12px; }
+.stats b { font-size: 21px; }
+.detail-grid { grid-template-columns: minmax(0, 2.2fr) minmax(320px, .8fr); gap: 16px; }
+.main-stack, .side-stack { gap: 16px; }
+.card { padding: 20px; border-radius: 12px; }
+.card h3, .card-head h3 { font-size: 17px; }
+.card-head p, .card p { font-size: 12px; }
+.card dt, .card dd { font-size: 12px; }
+.capability-list b, .component-list b, .event-list b { font-size: 13px; }
+.capability-list small, .component-list small, .event-list small { font-size: 11px; }
+.lifecycle-actions span, .detail-editor .editor-grid label { font-size: 12px; }
+.detail-editor input, .detail-editor select, .detail-editor textarea { min-height: 42px; font-size: 13px; }
+@media (max-width: 980px) { .detail-grid { grid-template-columns: 1fr; } }

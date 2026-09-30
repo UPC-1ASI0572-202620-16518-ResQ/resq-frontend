@@ -1,0 +1,30 @@
+:host { width: 100%; }
+.kpis { gap: 14px; }
+.filters { gap: 12px; padding: 14px; margin: 14px 0; }
+.filters label { min-height: 42px; font-size: 13px; }
+.filters label mat-icon { width: 20px; height: 20px; flex: 0 0 20px; color: #667085; font-size: 20px; line-height: 20px; }
+.filters input, .filters select { min-height: 42px; padding: 10px 12px; font-size: 13px; }
+.incident-grid { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; }
+.incident-grid article { min-height: 230px; padding: 18px; border-radius: 11px; }
+.severity { padding: 6px 10px; font-size: 11px; }
+.incident-grid h3 { margin: 14px 0 7px; font-size: 17px; }
+.incident-grid p, .meta { font-size: 12px; }
+.incident-grid footer b { font-size: 12px; }
+.incident-grid footer a { padding: 8px 11px; font-size: 12px; }
+.detail-head a, .detail-head p, .detail-head > div > span { font-size: 12px; }
+.detail-head h2 { font-size: 25px; }
+.actions { margin: 12px 0 16px; }
+.actions button, .resolve-box button { min-height: 40px; padding: 9px 15px; font-size: 13px; font-weight: 700; }
+.resolve-box { padding: 18px; }
+.resolve-box label { font-size: 13px; }
+.grid { grid-template-columns: minmax(0, 2.2fr) minmax(310px, .8fr); gap: 16px; }
+.grid > article, .grid > aside { padding: 20px; border-radius: 12px; }
+.grid h3 { font-size: 17px; }
+.timeline > div { grid-template-columns: 34px 1fr; gap: 12px; min-height: 92px; }
+.timeline i { width: 30px; height: 30px; font-size: 12px; }
+.timeline b { font-size: 14px; }
+.timeline small, .timeline p { font-size: 12px; }
+.grid dl { font-size: 13px; }
+.grid dt, .grid dd { padding: 12px 0; }
+.contract-note { font-size: 12px; }
+@media (max-width: 850px) { .grid { grid-template-columns: 1fr; } }

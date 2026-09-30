@@ -30,10 +30,6 @@ import {
 } from '../../core/models/resq.models';
 
 import {
-  ALERTS,
-} from '../../core/mock-data/resq.mock';
-
-import {
   AlertService,
 } from '../../core/services/data.services';
 
@@ -219,7 +215,7 @@ import {
             </strong>
 
             <span>
-              Buildings with Recent Alerts
+              Buildings with Active Alerts
             </span>
 
           </div>
@@ -476,7 +472,7 @@ import {
                 </div>
 
 
-                <!-- RECENT ALERTS -->
+                <!-- Active Alerts -->
 
                 <div class="metric">
 
@@ -495,7 +491,7 @@ import {
                     </strong>
 
                     <span>
-                      Recent Alerts
+                      Active Alerts
                     </span>
 
                   </div>
@@ -710,7 +706,7 @@ import {
                   (click)="openFloorSelector(building)"
                 >
                   <mat-icon>
-                    analytics
+                    monitoring
                   </mat-icon>
 
                   Monitor Floor
@@ -745,7 +741,7 @@ import {
                 <th>Floors</th>
                 <th>Spaces</th>
                 <th>Devices</th>
-                <th>Recent Alerts</th>
+                <th>Active Alerts</th>
                 <th>Critical Spaces</th>
                 <th>Offline</th>
                 <th></th>
@@ -2710,40 +2706,6 @@ export class BuildingsPage {
         this.recentAlertItems.set(items)
       );
   }
-  readonly query =
-    signal('');
-
-
-  readonly viewMode =
-    signal<'grid' | 'table'>('grid');
-
-
-  readonly statusFilter =
-    signal<'All' | RiskStatus>('All');
-
-
-  readonly sortMode =
-    signal<
-      'critical' |
-      'name' |
-      'devices' |
-      'alerts'
-    >('critical');
-
-
-  readonly floorSelectorBuilding =
-    signal<Building | undefined>(
-      undefined
-    );
-
-
-  readonly summaryStatuses:
-    RiskStatus[] = [
-      'Critical',
-      'Warning',
-      'Normal',
-    ];
-
 
   readonly displayedBuildings =
     computed(() => {
@@ -3173,7 +3135,6 @@ export class BuildingsPage {
 
 }
 
-
 /* ============================================================
    BUILDING DETAIL
 ============================================================ */
@@ -3368,11 +3329,11 @@ export class BuildingsPage {
           <div>
 
             <strong>
-              {{ recentAlerts() }}
+              {{ activeAlerts() }}
             </strong>
 
             <span>
-              Recent Alerts
+              Active Alerts
             </span>
 
           </div>
@@ -4040,6 +4001,14 @@ export class BuildingsPage {
       font-size: 11px;
       font-weight: 700;
       white-space: nowrap;
+      gap: 6px;
+    }
+
+    .floor-actions mat-icon {
+      width: 18px;
+      height: 18px;
+      font-size: 18px;
+      line-height: 18px;
     }
 
 

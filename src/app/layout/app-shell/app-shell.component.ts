@@ -22,6 +22,7 @@ import {
 import {
   TopbarComponent,
 } from '../topbar/topbar.component';
+import { TranslatePageDirective } from '../../shared/directives/translate-page.directive';
 
 @Component({
   selector:
@@ -29,6 +30,8 @@ import {
 
   standalone:
     true,
+
+  hostDirectives: [TranslatePageDirective],
 
   imports: [
     RouterOutlet,
@@ -108,9 +111,9 @@ import {
 
       main {
         min-height:
-          calc(100dvh - 70px);
+          calc(100dvh - 84px);
         padding:
-          12px 14px 22px;
+          16px 18px 24px;
       }
 
       .backdrop {
@@ -120,6 +123,7 @@ import {
       @media(max-width: 800px) {
 
         aside {
+          width: min(280px, 86vw);
           transform:
             translateX(-100%);
           transition: .2s;

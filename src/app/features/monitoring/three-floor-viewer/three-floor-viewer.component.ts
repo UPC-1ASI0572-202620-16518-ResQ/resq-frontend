@@ -6,16 +6,20 @@ import { floorPlanShape, floorPlanToWorldCoordinates, riskColor } from '../../..
 import { visualDevicePosition } from '../../../shared/utils/floor-plan-device.utils';
 
 const ROOM_HEIGHT = .75;
+const HALLWAY_HEIGHT = .14;
+const FLOOR_GAP = 1.15;
+const CONTEXT_COLOR = 0xaeb9c5;
 
 @Component({
   selector: 'resq-three-floor-viewer',
   standalone: true,
   template: '<div #host class="viewer" role="application" aria-label="Interactive 3D floor view"><div #tooltip class="device-tooltip"></div></div>',
-  styles: [':host{display:block;height:366px;background:linear-gradient(180deg,#f5f8fc,#e8eef5)}.viewer{position:relative;width:100%;height:100%;cursor:grab}.viewer:active{cursor:grabbing}canvas{display:block;width:100%;height:100%}.device-tooltip{display:none;position:absolute;z-index:3;max-width:240px;padding:7px 9px;border:1px solid #d0d5dd;border-radius:6px;background:#fff;color:#344054;box-shadow:0 6px 18px rgb(16 24 40 / 18%);font:600 11px/1.4 system-ui;pointer-events:none;white-space:nowrap}'],
+  styles: [':host{display:block;height:clamp(440px,56vh,680px);background:linear-gradient(180deg,#f5f8fc,#e8eef5)}.viewer{position:relative;width:100%;height:100%;cursor:grab}.viewer:active{cursor:grabbing}canvas{display:block;width:100%;height:100%}.device-tooltip{display:none;position:absolute;z-index:3;max-width:240px;padding:7px 9px;border:1px solid #d0d5dd;border-radius:6px;background:#fff;color:#344054;box-shadow:0 6px 18px rgb(16 24 40 / 18%);font:600 12px/1.45 system-ui;pointer-events:none;white-space:nowrap}'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDestroy {
-  @Input({ required: true }) floor!: Floor;
+  @Input({ required: true }) floors: Floor[] = [];
+  @Input({ required: true }) selectedFloorId = '';
   @Input() selectedSpaceId = '';
   @Output() readonly spaceSelected = new EventEmitter<string>();
   @Output() readonly deviceSelected = new EventEmitter<string>();
@@ -36,12 +40,12 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
 
   ngAfterViewInit(): void {
     this.initialize();
-    this.rebuildFloor();
+    this.rebuildFloors();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (!this.scene) return;
-    if (changes['floor']) this.rebuildFloor();
+    if (changes['floors'] || changes['selectedFloorId']) this.rebuildFloors();
     else if (changes['selectedSpaceId']) this.updateSelection();
   }
 
@@ -94,75 +98,147 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
     this.zone.runOutsideAngular(() => this.animate());
   }
 
-  private rebuildFloor(): void {
-    if (!this.scene || !this.floor) return;
+  private rebuildFloors(): void {
+    if (!this.scene || !this.floors.length) return;
     this.disposeSceneObjects();
     this.roomMeshes.clear();
     this.deviceMeshes.length = 0;
 
-    const slab = new THREE.Mesh(
-      new THREE.BoxGeometry(20.5, .18, 10.5),
-      new THREE.MeshStandardMaterial({ color: 0xdbe4ee, roughness: .86, metalness: .04 }),
-    );
-    slab.position.y = -.12;
-    slab.receiveShadow = true;
-    slab.userData['generated'] = true;
-    this.scene.add(slab);
+    const sortedFloors = [...this.floors].sort((a, b) => a.level - b.level);
+    sortedFloors.forEach((floor, floorIndex) => {
+      const baseY = floorIndex * FLOOR_GAP;
+      const activeFloor = floor.id === this.selectedFloorId;
 
-    const grid = new THREE.GridHelper(20, 20, 0xb8c8d8, 0xd9e2eb);
-    grid.scale.z = .5;
-    grid.position.y = -.02;
-    grid.userData['generated'] = true;
-    this.scene.add(grid);
-
-    for (const space of this.floor.spaces) {
-      if (space.polygon.length < 3) continue;
-      const shape = floorPlanShape(space.polygon);
-      const geometry = new THREE.ExtrudeGeometry(shape, { depth: ROOM_HEIGHT, bevelEnabled: false });
-      geometry.rotateX(-Math.PI / 2);
-      const material = this.roomMaterial(space.status, space.id === this.selectedSpaceId);
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.userData = { generated: true, spaceId: space.id, status: space.status };
-      this.roomMeshes.set(space.id, mesh);
-      this.scene.add(mesh);
-
-      const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(geometry),
-        new THREE.LineBasicMaterial({ color: space.id === this.selectedSpaceId ? 0x1570ef : 0x52677d, transparent: true, opacity: .7 }),
-      );
-      edges.userData = { generated: true, spaceId: space.id };
-      this.scene.add(edges);
-
-      for (const [deviceIndex, device] of space.devices.entries()) {
-        const visualPosition = visualDevicePosition(space.devices, deviceIndex);
-        if (!visualPosition) continue;
-        const marker = new THREE.Mesh(
-          new THREE.SphereGeometry(.13, 18, 12),
-          new THREE.MeshStandardMaterial({ color: this.deviceColor(device.status), roughness: .5 }),
+      for (const space of floor.spaces) {
+        if (space.polygon.length < 3) continue;
+        const geometry = new THREE.ExtrudeGeometry(
+          floorPlanShape(space.polygon),
+          { depth: ROOM_HEIGHT, bevelEnabled: false },
         );
-        const world = floorPlanToWorldCoordinates(visualPosition);
-        marker.position.set(world.x, ROOM_HEIGHT + .18, world.z);
-        marker.castShadow = true;
-        marker.userData = {
-          generated: true,
-          deviceId: device.id,
-          spaceId: space.id,
-          tooltip: `${device.displayName || device.name} · ${device.name} · ${device.code} · ${device.type} · ${device.status} · ${space.name} ${space.roomNumber ?? ''}`,
-        };
-        this.deviceMeshes.push(marker);
-        this.scene.add(marker);
+        geometry.rotateX(-Math.PI / 2);
+        const selected = activeFloor && space.id === this.selectedSpaceId;
+        const mesh = new THREE.Mesh(geometry, this.roomMaterial(space.status, activeFloor, selected));
+        mesh.position.y = baseY;
+        mesh.castShadow = activeFloor;
+        mesh.receiveShadow = true;
+        mesh.userData = { generated: true, floorId: floor.id, spaceId: space.id, status: space.status };
+        this.roomMeshes.set(space.id, mesh);
+        this.scene!.add(mesh);
+
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry),
+          new THREE.LineBasicMaterial({
+            color: selected ? 0x1570ef : 0x52677d,
+            transparent: true,
+            opacity: activeFloor ? .72 : .3,
+          }),
+        );
+        edges.position.y = baseY;
+        edges.userData = { generated: true, floorId: floor.id, spaceId: space.id };
+        this.scene!.add(edges);
+
+        if (!activeFloor) continue;
+        const activeDevices = space.devices.filter(device =>
+          device.assignment.floorId === floor.id && device.spaceId === space.id
+        );
+        for (const [deviceIndex, device] of activeDevices.entries()) {
+          const visualPosition = visualDevicePosition(activeDevices, deviceIndex);
+          if (!visualPosition) continue;
+          const marker = new THREE.Mesh(
+            new THREE.SphereGeometry(.13, 18, 12),
+            new THREE.MeshStandardMaterial({ color: this.deviceColor(device.status), roughness: .5 }),
+          );
+          const world = floorPlanToWorldCoordinates(visualPosition);
+          marker.position.set(world.x, baseY + ROOM_HEIGHT + .18, world.z);
+          marker.castShadow = true;
+          marker.userData = {
+            generated: true,
+            deviceId: device.id,
+            spaceId: space.id,
+            tooltip: `${device.displayName || device.name} · ${device.name} · ${device.code} · ${device.type} · ${device.status} · ${space.name} ${space.roomNumber ?? ''}`,
+          };
+          this.deviceMeshes.push(marker);
+          this.scene!.add(marker);
+        }
       }
-    }
+
+      // Hallways remain structural elements in the editor. Build their 3D
+      // footprint from that same plan element and keep the actual Space as owner.
+      const hallwaySpaces = floor.spaces.filter(space => space.type === 'Hallway' && space.polygon.length < 3);
+      const hallwayElements = (floor.planElements ?? []).filter(element => element.type === 'Hallway');
+      hallwayElements.forEach((element, index) => {
+        const hallway = hallwaySpaces.find(space => element.spaceId === space.id)
+          ?? hallwaySpaces.find(space => !!element.label && space.name.toLowerCase() === element.label.toLowerCase())
+          ?? hallwaySpaces[index];
+        if (!hallway) return;
+
+        const polygon = [
+          { x: element.x, y: element.y },
+          { x: element.x + element.width, y: element.y },
+          { x: element.x + element.width, y: element.y + element.height },
+          { x: element.x, y: element.y + element.height },
+        ];
+        const geometry = new THREE.ExtrudeGeometry(
+          floorPlanShape(polygon),
+          { depth: HALLWAY_HEIGHT, bevelEnabled: false },
+        );
+        geometry.rotateX(-Math.PI / 2);
+        const selected = activeFloor && hallway.id === this.selectedSpaceId;
+        const mesh = new THREE.Mesh(geometry, this.roomMaterial(hallway.status, activeFloor, selected));
+        mesh.position.y = baseY;
+        mesh.receiveShadow = true;
+        mesh.userData = { generated: true, floorId: floor.id, spaceId: hallway.id, status: hallway.status };
+        this.roomMeshes.set(hallway.id, mesh);
+        this.scene!.add(mesh);
+
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geometry),
+          new THREE.LineBasicMaterial({
+            color: selected ? 0x1570ef : 0x60758a,
+            transparent: true,
+            opacity: activeFloor ? .72 : .3,
+          }),
+        );
+        edges.position.y = baseY;
+        edges.userData = { generated: true, floorId: floor.id, spaceId: hallway.id };
+        this.scene!.add(edges);
+
+        if (!activeFloor) return;
+        const activeDevices = hallway.devices.filter(device =>
+          device.assignment.floorId === floor.id && device.spaceId === hallway.id
+        );
+        for (const [deviceIndex, device] of activeDevices.entries()) {
+          const visualPosition = visualDevicePosition(activeDevices, deviceIndex);
+          if (!visualPosition) continue;
+          const marker = new THREE.Mesh(
+            new THREE.SphereGeometry(.13, 18, 12),
+            new THREE.MeshStandardMaterial({ color: this.deviceColor(device.status), roughness: .5 }),
+          );
+          const world = floorPlanToWorldCoordinates(visualPosition);
+          marker.position.set(world.x, baseY + HALLWAY_HEIGHT + .18, world.z);
+          marker.castShadow = true;
+          marker.userData = {
+            generated: true,
+            deviceId: device.id,
+            spaceId: hallway.id,
+            tooltip: `${device.displayName || device.name} · ${device.name} · ${device.code} · ${device.type} · ${device.status} · ${hallway.name}`,
+          };
+          this.deviceMeshes.push(marker);
+          this.scene!.add(marker);
+        }
+      });
+    });
+
+    this.fitCamera();
   }
 
   private updateSelection(): void {
     for (const mesh of this.roomMeshes.values()) {
       const material = mesh.material as THREE.MeshStandardMaterial;
       const status = mesh.userData['status'] as RiskStatus;
-      const selected = mesh.userData['spaceId'] === this.selectedSpaceId;
-      const replacement = this.roomMaterial(status, selected);
+      const activeFloor = mesh.userData['floorId'] === this.selectedFloorId;
+      const selected = activeFloor && mesh.userData['spaceId'] === this.selectedSpaceId;
+      const replacement = this.roomMaterial(status, activeFloor, selected);
       material.color.copy(replacement.color);
       material.emissive.copy(replacement.emissive);
       material.opacity = replacement.opacity;
@@ -170,13 +246,13 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
     }
   }
 
-  private roomMaterial(status: RiskStatus, selected: boolean): THREE.MeshStandardMaterial {
+  private roomMaterial(status: RiskStatus, activeFloor: boolean, selected: boolean): THREE.MeshStandardMaterial {
     return new THREE.MeshStandardMaterial({
-      color: selected ? 0x72aaf5 : riskColor(status),
+      color: activeFloor ? (selected ? 0x72aaf5 : riskColor(status)) : CONTEXT_COLOR,
       emissive: selected ? 0x0b4ea8 : 0x000000,
       emissiveIntensity: selected ? .28 : 0,
       transparent: true,
-      opacity: selected ? .92 : .76,
+      opacity: activeFloor ? (selected ? .96 : .9) : .38,
       roughness: .72,
       metalness: .03,
       side: THREE.DoubleSide,
@@ -185,6 +261,24 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
 
   private deviceColor(status: DeviceStatus): number {
     return ({ Online: 0x1570ef, Warning: 0xf79009, Critical: 0xf04438, Offline: 0x98a2b3 })[status];
+  }
+
+  private fitCamera(): void {
+    if (!this.scene || !this.camera || !this.controls) return;
+    const generated = this.scene.children.filter(child => child.userData['generated']);
+    if (!generated.length) return;
+    const bounds = new THREE.Box3();
+    generated.forEach(object => bounds.expandByObject(object));
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    const maxSize = Math.max(size.x, size.y * 2, size.z);
+    const distance = maxSize / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) * 1.3;
+    this.camera.position.set(center.x + distance * .72, center.y + distance * .62, center.z + distance * .82);
+    this.camera.near = Math.max(.1, distance / 100);
+    this.camera.far = distance * 10;
+    this.camera.updateProjectionMatrix();
+    this.controls.target.copy(center);
+    this.controls.update();
   }
 
   private readonly onPointerUp = (event: PointerEvent): void => {

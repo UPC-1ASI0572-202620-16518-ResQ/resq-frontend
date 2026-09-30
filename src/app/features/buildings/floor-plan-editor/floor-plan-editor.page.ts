@@ -69,6 +69,10 @@ export class FloorPlanEditorPage implements OnInit {
   readonly newDeviceDisplayName = signal('');
   readonly newDeviceName = signal('');
   readonly newDeviceCode = signal('');
+  readonly newDeviceDescription = signal('');
+  readonly newDeviceManufacturer = signal('');
+  readonly newDeviceModel = signal('');
+  readonly newDeviceSerialNumber = signal('');
   readonly newDeviceType = signal<DeviceType>('Temperature');
   readonly newDeviceStatus = signal<DeviceStatus>('Online');
 
@@ -338,15 +342,35 @@ export class FloorPlanEditorPage implements OnInit {
     const code = this.newDeviceCode().trim() || this.nextDeviceCode(type);
     const name = this.newDeviceName().trim() || `${type} Sensor ${code}`;
     const position = { x: targetArea.x + targetArea.width / 2, y: targetArea.y + targetArea.height / 2 };
+    const now = new Date();
+    const status = this.newDeviceStatus();
+    const unit: Record<DeviceType, string> = { Temperature: '°C', Smoke: 'ppm', Gas: 'ppm', Humidity: '%', Motion: 'events' };
     const device: Device = {
-      id: this.uniqueId('device'), spaceId: targetSpace.id, displayName: this.newDeviceDisplayName().trim() || undefined,
-      name, code, type, status: this.newDeviceStatus(), floorPlanPosition: position,
-      lastSeen: new Date(), readings: [], firmware: 'v1.0.0', battery: 100, signal: -50,
+      id: this.uniqueId('device'), organizationId: 'securitybear', deviceCode: code,
+      spaceId: targetSpace.id, displayName: this.newDeviceDisplayName().trim() || undefined,
+      name, code, type, status, floorPlanPosition: position,
+      description: this.newDeviceDescription().trim() || 'Device created from the Floor Plan Editor.',
+      specifications: {
+        manufacturer: this.newDeviceManufacturer().trim() || 'Unspecified',
+        model: this.newDeviceModel().trim() || `${type} Sensor`,
+        serialNumber: this.newDeviceSerialNumber().trim() || code,
+        firmware: 'v1.0.0', protocol: 'Wi-Fi', samplingIntervalSeconds: 60,
+      },
+      assignment: { buildingId: targetSpace.buildingId, floorId: targetSpace.floorId, zoneId: targetSpace.id, spaceId: targetSpace.id },
+      administrativeStatus: 'ACTIVE',
+      connectivityStatus: status === 'Offline' ? 'OFFLINE' : 'ONLINE',
+      healthStatus: status === 'Critical' ? 'CRITICAL' : status === 'Warning' ? 'WARNING' : 'NORMAL',
+      capabilities: [{ id: `${code}-measurement`, code: `${type.toLowerCase()}_measurement`, name: `${type} Measurement`, kind: 'MEASUREMENT', hardware: `${type} sensing module`, unit: unit[type] }],
+      power: { source: 'Battery', status: 'ON_BATTERY', batteryPercentage: 100 },
+      lastSeen: now, readings: [], firmware: 'v1.0.0', battery: 100, signal: -50, signalStrength: -50,
+      hardwareComponents: [{ name: `${type} sensing module`, role: 'Measurement hardware' }],
+      createdAt: now, updatedAt: now, version: 1,
     };
     this.checkpoint();
     this.spaces.update(spaces => spaces.map(space => space.id === targetSpace.id ? { ...space, devices: [...space.devices, device] } : space));
     this.store.createDevice(device);
     this.newDeviceDisplayName.set(''); this.newDeviceName.set(''); this.newDeviceCode.set('');
+    this.newDeviceDescription.set(''); this.newDeviceManufacturer.set(''); this.newDeviceModel.set(''); this.newDeviceSerialNumber.set('');
     this.selectDevice(device.id);
   }
 

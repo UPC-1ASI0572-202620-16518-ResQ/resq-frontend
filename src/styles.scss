@@ -188,3 +188,165 @@ resq-not-found a {
   font-size: 13px;
 }
 
+/* Shared readable scale and full-width post-merge layout. */
+resq-dashboard-page,
+resq-buildings-page,
+resq-building-detail,
+resq-floor-monitoring,
+resq-floor-plan-editor,
+resq-spaces-page,
+resq-space-detail,
+resq-devices-page,
+resq-device-detail,
+resq-alerts-page,
+resq-alert-detail {
+  display: block;
+  width: 100%;
+  max-width: none;
+  font-size: 14px;
+}
+
+resq-dashboard-page h1,
+resq-buildings-page h1,
+resq-building-detail h1,
+resq-floor-monitoring h1,
+resq-floor-plan-editor h1,
+resq-spaces-page h1,
+resq-space-detail h1,
+resq-devices-page h1,
+resq-device-detail h1,
+resq-alerts-page h1,
+resq-alert-detail h1 { font-size: clamp(24px, 2vw, 28px); }
+
+resq-floor-monitoring h2,
+resq-building-detail h2,
+resq-floor-plan-editor h2,
+resq-devices-page h2,
+resq-device-detail h2 { font-size: 18px; }
+
+resq-floor-monitoring h3,
+resq-building-detail h3,
+resq-floor-plan-editor h3,
+resq-devices-page h3,
+resq-device-detail h3 { font-size: 16px; }
+
+resq-floor-monitoring button,
+resq-floor-monitoring input,
+resq-floor-monitoring select,
+resq-floor-plan-editor button,
+resq-floor-plan-editor input,
+resq-floor-plan-editor select,
+resq-devices-page button,
+resq-devices-page input,
+resq-devices-page select,
+resq-alerts-page button,
+resq-alerts-page input,
+resq-alerts-page select { font-size: 13px; }
+
+resq-floor-monitoring small,
+resq-floor-monitoring em,
+resq-floor-monitoring time,
+resq-floor-monitoring .legend,
+resq-floor-monitoring .details-head p,
+resq-floor-monitoring .panel-list small,
+resq-floor-plan-editor small,
+resq-floor-plan-editor em,
+resq-devices-page small,
+resq-devices-page th,
+resq-alerts-page small,
+resq-alerts-page th { font-size: 12px; }
+
+resq-app-shell main small,
+resq-app-shell main time,
+resq-app-shell main label,
+resq-app-shell main dt,
+resq-app-shell main em { font-size: 12px !important; }
+resq-app-shell main button,
+resq-app-shell main input,
+resq-app-shell main select,
+resq-app-shell main textarea,
+resq-app-shell main td { font-size: 13px !important; }
+resq-app-shell main th { font-size: 12px !important; }
+resq-app-shell main h2 { font-size: 18px !important; }
+resq-app-shell main h3 { font-size: 16px !important; }
+
+/* Mobile safety net shared by feature pages. */
+@media (max-width: 800px) {
+  html, body { max-width: 100%; overflow-x: hidden; }
+  resq-app-shell main,
+  resq-app-shell main > * { min-width: 0; max-width: 100%; }
+
+  resq-dashboard-page .card-head,
+  resq-building-detail .card-head,
+  resq-floor-monitoring .card-head,
+  resq-device-detail .card-head,
+  resq-alert-detail .card-head,
+  resq-incident-detail .detail-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  resq-dashboard-page .metric-tabs,
+  resq-floor-monitoring .details-card > nav,
+  resq-space-detail .tabs {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  resq-dashboard-page .metric-tabs button,
+  resq-floor-monitoring .details-card > nav button,
+  resq-space-detail .tabs button { flex: 0 0 auto; white-space: nowrap; }
+
+  resq-devices-page .table-wrap,
+  resq-alerts-page .table-scroll,
+  resq-spaces-page .table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  resq-settings-page .panel,
+  resq-space-detail .config,
+  resq-alert-detail .card,
+  resq-device-detail .card { min-width: 0; }
+
+  resq-settings-page .security-actions,
+  resq-building-detail .detail-actions,
+  resq-device-detail .detail-actions,
+  resq-incident-detail .actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 560px) {
+  resq-dashboard-page .device-content,
+  resq-dashboard-page .risk-chart,
+  resq-floor-monitoring .device-wrap { grid-template-columns: 1fr; }
+
+  resq-dashboard-page .device-content resq-doughnut-chart,
+  resq-floor-monitoring .device-wrap resq-doughnut-chart {
+    width: min(180px, 100%);
+    margin-inline: auto;
+  }
+
+  resq-floor-monitoring .card-title {
+    height: auto;
+    min-height: 50px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding-block: 10px;
+  }
+  resq-floor-monitoring .controls { width: 100%; overflow-x: auto; }
+  resq-floor-monitoring .controls button { flex: 0 0 auto; }
+
+  resq-settings-page .panel { padding: 15px; }
+  resq-settings-page .panel footer,
+  resq-settings-page .security-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  resq-settings-page .panel footer button,
+  resq-settings-page .security-actions button { width: 100%; }
+}
+

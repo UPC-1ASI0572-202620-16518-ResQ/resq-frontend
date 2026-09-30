@@ -37,7 +37,6 @@ import {
   IncidentDetailPage,
 } from './features/incidents/incidents.pages';
 
-import { AnalyticsPage } from './features/analytics/analytics.page';
 
 import { SettingsPage } from './features/settings/settings.page';
 
@@ -149,7 +148,8 @@ export const routes: Routes = [
 
       {
         path: 'analytics',
-        component: AnalyticsPage,
+        redirectTo: 'dashboard',
+        pathMatch: 'full',
       },
 
       {

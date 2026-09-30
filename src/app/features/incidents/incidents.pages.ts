@@ -2,24 +2,25 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { MatIconModule } from '@angular/material/icon';
 import { EmptyStateComponent, KpiCardComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { IncidentWorkspaceFacade, IncidentWorkspaceRow } from './incident-workspace.facade';
 
 @Component({
   selector: 'resq-incidents-page',
   standalone: true,
-  imports: [FormsModule, RouterLink, KpiCardComponent, StatusBadgeComponent, LoadingStateComponent, EmptyStateComponent],
+  imports: [FormsModule, RouterLink, MatIconModule, KpiCardComponent, StatusBadgeComponent, LoadingStateComponent, EmptyStateComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="kpis" aria-label="Incident summary">
-      <resq-kpi-card icon="◷" [value]="count('ACTIVE')" label="Active Incidents" tone="red" />
-      <resq-kpi-card icon="↻" [value]="count('IN_PROGRESS')" label="In Progress" tone="amber" />
-      <resq-kpi-card icon="✓" [value]="count('RESOLVED')" label="Resolved" tone="green" />
-      <resq-kpi-card icon="◴" [value]="averageResolution()" label="Avg. Resolution" />
+      <resq-kpi-card icon="emergency" [value]="count('ACTIVE')" label="Active Incidents" tone="red" />
+      <resq-kpi-card icon="pending_actions" [value]="count('IN_PROGRESS')" label="In Progress" tone="amber" />
+      <resq-kpi-card icon="task_alt" [value]="count('RESOLVED')" label="Resolved" tone="green" />
+      <resq-kpi-card icon="schedule" [value]="averageResolution()" label="Avg. Resolution" />
     </section>
 
     <section class="filters" aria-label="Incident filters">
-      <label>⌕<input [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search incidents, type or zone..." /></label>
+      <label><mat-icon>search</mat-icon><input [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search incidents, type or zone..." /></label>
       <select [ngModel]="status()" (ngModelChange)="status.set($event)" aria-label="Incident status">
         <option value="">All statuses</option>
         <option value="ACTIVE">Active</option>
@@ -72,7 +73,7 @@ import { IncidentWorkspaceFacade, IncidentWorkspaceRow } from './incident-worksp
       </div>
     }
   `,
-  styleUrl: './incidents.pages.scss',
+  styleUrls: ['./incidents.pages.scss', './incidents.readability.scss'],
 })
 export class IncidentsPage implements OnInit {
   readonly workspace = inject(IncidentWorkspaceFacade);
@@ -203,7 +204,7 @@ export class IncidentsPage implements OnInit {
       <div class="not-found"><h2>Incident not found</h2><a routerLink="/incidents">Back to Incidents</a></div>
     }
   `,
-  styleUrl: './incident-detail.page.scss',
+  styleUrls: ['./incident-detail.page.scss', './incidents.readability.scss'],
 })
 export class IncidentDetailPage implements OnInit {
   private readonly route = inject(ActivatedRoute);

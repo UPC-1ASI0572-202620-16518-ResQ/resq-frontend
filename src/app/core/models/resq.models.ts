@@ -114,8 +114,80 @@ export interface DeviceStatusSummary {
   offline: number;
 }
 export interface Device {
-  id: string; spaceId: string; name: string; displayName?: string; code: string; type: DeviceType; status: DeviceStatus;
-  lastSeen: Date; readings: SensorReading[]; firmware: string; battery: number; signal: number;
+  id: string;
+
+  organizationId: string;
+  deviceCode: string;
+
+  /**
+   * Technical/system name.
+   */
+  name: string;
+
+  /**
+   * Friendly name assigned by the user.
+   */
+  displayName?: string;
+
+  description: string;
+
+  specifications: DeviceSpecifications;
+
+  assignment: DeviceAssignment;
+
+  externalReference?: string;
+
+  administrativeStatus: DeviceAdministrativeStatus;
+
+  connectivityStatus: DeviceConnectivityStatus;
+
+  healthStatus: DeviceHealthStatus;
+
+  capabilities: DeviceCapability[];
+
+  power: DevicePowerInfo;
+
+  signalStrength?: number;
+
+  lastSeen: Date;
+
+  readings: SensorReading[];
+
+  hardwareImageUrl?: string;
+
+  hardwareComponents: DeviceHardwareComponent[];
+
+  assemblyComponents?: string[];
+
+  maintenance?: DeviceMaintenanceInfo;
+
+  createdAt: Date;
+
+  updatedAt: Date;
+
+  version: number;
+
+  /**
+   * Compatibility fields currently used by
+   * monitoring / spaces / buildings views.
+   */
+  spaceId: string;
+
+  code: string;
+
+  type: DeviceType;
+
+  status: DeviceStatus;
+
+  firmware: string;
+
+  battery?: number;
+
+  signal: number;
+
+  /**
+   * Position inside the floor plan editor.
+   */
   floorPlanPosition?: FloorPlanPosition;
 }
 export interface Space {
@@ -128,16 +200,10 @@ export interface Space {
   sensitivity: SensitivityLevel;
   status: RiskStatus;
   thresholds: SpaceThresholds;
+  /** Threshold values saved independently for each sensitivity preset. */
+  thresholdProfiles?: Partial<Record<SensitivityLevel, SpaceThresholds>>;
   polygon: FloorPlanPoint[];
   devices: Device[];
-}
-export interface Floor {
-  id: string;
-  buildingId: string;
-  name: string;
-  level: number;
-  spaces: Space[];
-  status: RiskStatus;
 }
 export interface Floor {
   id: string;

@@ -21,13 +21,26 @@ export interface FloorPlanUpdate {
  */
 @Injectable({ providedIn: 'root' })
 export class BuildingStoreService {
-  private readonly buildingsState = signal<Building[]>(structuredClone(BUILDINGS));
   private readonly devicesState = signal<Device[]>(structuredClone(DEVICES));
+  private readonly buildingsState = signal<Building[]>(this.attachDevicesToSpaces(structuredClone(BUILDINGS), this.devicesState()));
 
   readonly buildings = this.buildingsState.asReadonly();
   readonly devices = this.devicesState.asReadonly();
   readonly floors = computed(() => this.buildingsState().flatMap(building => building.floors));
   readonly spaces = computed(() => this.floors().flatMap(floor => floor.spaces));
+
+  private attachDevicesToSpaces(buildings: Building[], devices: Device[]): Building[] {
+    return buildings.map(building => ({
+      ...building,
+      floors: building.floors.map(floor => ({
+        ...floor,
+        spaces: floor.spaces.map(space => ({
+          ...space,
+          devices: structuredClone(devices.filter(device => device.spaceId === space.id)),
+        })),
+      })),
+    }));
+  }
 
   getBuilding(id: string): Building | undefined {
     return this.buildingsState().find(building => building.id === id);
@@ -150,7 +163,21 @@ export class BuildingStoreService {
 
   moveDevice(deviceId: string, spaceId: string, position: FloorPlanPosition): void {
     const device = this.devicesState().find(item => item.id === deviceId);
-    if (device) this.updateDevice({ ...device, spaceId, floorPlanPosition: position });
+    const space = this.spaces().find(item => item.id === spaceId);
+    if (device && space) this.updateDevice({
+      ...device,
+      spaceId,
+      assignment: {
+        ...device.assignment,
+        buildingId: space.buildingId,
+        floorId: space.floorId,
+        zoneId: space.id,
+        spaceId: space.id,
+      },
+      floorPlanPosition: position,
+      updatedAt: new Date(),
+      version: device.version + 1,
+    });
   }
 
   removeDevicePosition(deviceId: string): void {

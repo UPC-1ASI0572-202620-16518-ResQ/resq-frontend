@@ -1,13 +1,14 @@
 :host {
-  height: 70px;
+  min-height: 84px;
   background: #fff;
   border-bottom:
     1px solid
     var(--resq-border);
   display: flex;
   align-items: center;
-  padding: 0 18px;
-  gap: 16px;
+  width: 100%;
+  padding: 0 24px;
+  gap: 20px;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -54,7 +55,7 @@
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 
 .select {
@@ -87,8 +88,10 @@
 }
 
 .search {
-  width: 215px;
-  height: 38px;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 46px;
   border:
     1px solid
     var(--resq-border);
@@ -96,7 +99,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 11px;
+  padding: 0 13px;
   position: relative;
 }
 
@@ -105,7 +108,7 @@
   outline: 0;
   min-width: 0;
   width: 100%;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .search-results,
@@ -169,8 +172,8 @@
 }
 
 .icon-button {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border: 0;
   background: transparent;
   font-size: 20px;
@@ -192,11 +195,13 @@
 
 .notifications {
   top: 40px;
+  width: min(370px, calc(100vw - 24px));
+  padding: 12px;
 }
 
 .notifications h3 {
-  margin: 5px 7px 8px;
-  font-size: 13px;
+  margin: 4px 9px 10px;
+  font-size: 15px;
 }
 
 .notifications h3 span {
@@ -204,14 +209,14 @@
   color: #f04438;
   border-radius: 20px;
   padding: 2px 6px;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .notifications > a {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px;
+  padding: 11px 9px;
   text-decoration: none;
   border-radius: 7px;
 }
@@ -221,8 +226,9 @@
 }
 
 .notifications a > i {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -244,19 +250,19 @@
 
 .notifications a b {
   color: #344054;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .notifications a small {
   color: #98a2b3;
-  font-size: 9px;
-  margin-top: 2px;
+  font-size: 11px;
+  margin-top: 3px;
 }
 
 .notifications .view-all {
   justify-content: center;
   color: #1570ef;
-  font-size: 11px;
+  font-size: 12px;
   border-top:
     1px solid
     #f2f4f7;
@@ -305,7 +311,7 @@
 }
 
 .user b {
-  font-size: 11px;
+  font-size: 13px;
   color: #101828;
 }
 
@@ -314,12 +320,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 9px;
+  font-size: 11px;
   color: #98a2b3;
   margin-top: 2px;
 }
 
-.user > i {
+.user > i,
+.user > mat-icon {
   color: #667085;
   font-style: normal;
   font-size: 11px;
@@ -327,7 +334,8 @@
     transform .15s ease;
 }
 
-.user > i.open {
+.user > i.open,
+.user > mat-icon.open {
   transform:
     rotate(180deg);
 }
@@ -412,9 +420,11 @@
 
 .user-menu > a span,
 .user-menu > button span {
-  width: 18px;
+  width: auto;
   text-align: center;
 }
+
+.user-menu mat-icon { width: 19px; height: 19px; font-size: 19px; }
 
 .user-menu .sign-out {
   color: #d92d20;
@@ -438,7 +448,7 @@
   }
 
   .search {
-    width: 190px;
+    width: 100%;
   }
 }
 
@@ -471,15 +481,12 @@
   }
 
   .actions {
-    min-width: 0;
+    display: none;
   }
 
   .search {
-    width:
-      min(
-        43vw,
-        210px
-      );
+    flex: 1 1 auto;
+    width: auto;
   }
 
   .user-wrap {

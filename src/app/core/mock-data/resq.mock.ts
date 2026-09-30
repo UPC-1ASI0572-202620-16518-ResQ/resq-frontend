@@ -964,4 +964,4 @@ export const INCIDENTS: Incident[] = alertScenarios
     };
   });
 
-export const DEMO_USER = { id: 'user-1', name: 'John Doe', email: 'admin@resq.io', initials: 'JD' };
+export const DEMO_USER = { id: 'user-1', name: 'Sofia Ramirez', email: 'sofia.ramirez@resq.io', initials: 'SR' };
