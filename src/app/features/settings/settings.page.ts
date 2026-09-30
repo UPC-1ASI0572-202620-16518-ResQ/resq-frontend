@@ -1,6 +1,290 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { Router } from '@angular/router';
+import { AuthSessionFacade } from '../auth/auth-session.facade';
+import { UserFacade } from '../users/data-access/user.facade';
 
-@Component({selector:'resq-settings-page',standalone:true,imports:[ReactiveFormsModule],changeDetection:ChangeDetectionStrategy.OnPush,template:`<div class="settings"><nav>@for(item of sections;track item.label){<button [class.active]="section()===item.label" (click)="section.set(item.label)"><span>{{item.icon}}</span><div><b>{{item.label}}</b><small>{{item.help}}</small></div></button>}</nav><form [formGroup]="form" (ngSubmit)="save()"><header><h2>{{section()}}</h2><p>Manage your {{section().toLowerCase()}} settings.</p></header>@if(section()==='Profile'){<div class="avatar">JD <button type="button">Change photo</button></div><div class="fields"><label>Full name<input formControlName="name"/></label><label>Email address<input formControlName="email" type="email"/></label><label>Role<input formControlName="role"/></label><label>Organization<input formControlName="organization"/></label></div>}@if(section()==='Notification Preferences'){<div class="toggles"><label><div><b>Critical alerts</b><small>Always notify me when a critical condition is detected.</small></div><input type="checkbox" formControlName="criticalAlerts"/></label><label><div><b>Warning alerts</b><small>Notify me about readings crossing warning thresholds.</small></div><input type="checkbox" formControlName="warningAlerts"/></label><label><div><b>Incident updates</b><small>Updates when incidents change status.</small></div><input type="checkbox" formControlName="incidents"/></label><label><div><b>Device offline</b><small>Notify when a monitored device loses connectivity.</small></div><input type="checkbox" formControlName="offline"/></label></div>}@if(section()==='Display Preferences'){<div class="fields"><label>Theme<select formControlName="theme"><option>Light</option><option>System</option></select></label><label>Data density<select formControlName="density"><option>Comfortable</option><option>Compact</option></select></label><label>Default monitoring view<select><option>2D Floor Plan</option><option>Isometric View</option></select></label></div>}@if(section()==='Language'){<div class="fields"><label>Application language<select formControlName="language"><option>English</option><option>Español</option></select><small>Full localization will be available in a future update.</small></label><label>Time format<select><option>24-hour</option><option>12-hour</option></select></label></div>}@if(section()==='Accessibility'){<div class="toggles"><label><div><b>Reduce motion</b><small>Minimize interface animations and transitions.</small></div><input type="checkbox" formControlName="reduceMotion"/></label><label><div><b>High contrast indicators</b><small>Increase status icon contrast in charts and floor plans.</small></div><input type="checkbox" formControlName="highContrast"/></label></div>}<footer><button type="button" class="cancel">Cancel</button><button type="submit">Save changes</button></footer></form></div>`,styleUrl:'./settings.page.scss'})
-export class SettingsPage {private readonly fb=inject(FormBuilder);private readonly snack=inject(MatSnackBar);readonly section=signal('Profile');readonly sections=[{label:'Profile',icon:'◉',help:'Personal information'},{label:'Notification Preferences',icon:'♢',help:'Alerts and updates'},{label:'Display Preferences',icon:'▣',help:'Appearance and density'},{label:'Language',icon:'◎',help:'Language and formats'},{label:'Accessibility',icon:'♿',help:'Inclusive experience'}];readonly form=this.fb.nonNullable.group({name:'John Doe',email:'admin@resq.io',role:'Administrator',organization:'ResQ Facilities',criticalAlerts:true,warningAlerts:true,incidents:true,offline:false,theme:'Light',density:'Comfortable',language:'English',reduceMotion:false,highContrast:false});save():void{this.snack.open('Settings saved.','Close',{duration:2200})}}
+@Component({
+  selector: 'resq-settings-page',
+  standalone: true,
+  imports: [ReactiveFormsModule],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="settings">
+      <nav aria-label="Settings sections">
+        @for (item of sections; track item.id) {
+          <button
+            type="button"
+            [class.active]="section() === item.id"
+            (click)="section.set(item.id)"
+          >
+            <span>{{ item.icon }}</span>
+            <div>
+              <b>{{ item.label }}</b>
+              <small>{{ item.help }}</small>
+            </div>
+          </button>
+        }
+      </nav>
+
+      <section class="panel">
+        @if (loading()) {
+          <div class="state">Loading your profile...</div>
+        } @else {
+          @if (section() === 'profile') {
+            <header>
+              <h2>Profile</h2>
+              <p>Personal information owned by the User bounded context.</p>
+            </header>
+
+            <div class="identity-card">
+              <div class="avatar">{{ initials() }}</div>
+              <div>
+                <b>{{ session.fullName() || 'ResQ User' }}</b>
+                <small>User ID: {{ profile()?.userId || 'Unavailable' }}</small>
+              </div>
+            </div>
+
+            <form [formGroup]="contactForm" (ngSubmit)="saveContact()">
+              <div class="fields">
+                <label>
+                  Full name
+                  <input [value]="session.fullName()" readonly />
+                  <small>Name editing is not exposed by the current User API contract.</small>
+                </label>
+
+                <label>
+                  Email address
+                  <input type="email" formControlName="email" autocomplete="email" />
+                </label>
+
+                <label>
+                  Phone number
+                  <input formControlName="phoneNumber" autocomplete="tel" placeholder="Enter phone number" />
+                </label>
+              </div>
+
+              @if (user.error(); as error) {
+                <p class="error">{{ error.message }}</p>
+              }
+
+              <footer>
+                <button type="button" class="cancel" (click)="resetContact()">Reset</button>
+                <button type="submit" [disabled]="contactForm.invalid || user.saving()">
+                  {{ user.saving() ? 'Saving...' : 'Save contact information' }}
+                </button>
+              </footer>
+            </form>
+          }
+
+          @if (section() === 'preferences') {
+            <header>
+              <h2>Preferences</h2>
+              <p>Language, time zone and SMS alert preferences from the User bounded context.</p>
+            </header>
+
+            <form [formGroup]="preferencesForm" (ngSubmit)="savePreferences()">
+              <div class="fields">
+                <label>
+                  Application language
+                  <select formControlName="language">
+                    <option value="">Not set</option>
+                    <option value="en_US">English (en_US)</option>
+                    <option value="es_419">Español Latinoamérica (es_419)</option>
+                  </select>
+                </label>
+
+                <label>
+                  Time zone
+                  <select formControlName="timeZone">
+                    <option value="">Not set</option>
+                    <option value="America/Lima">America/Lima</option>
+                    <option value="UTC">UTC</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="toggles">
+                <label>
+                  <div>
+                    <b>SMS alerts</b>
+                    <small>Allow ResQ to send alert notifications to your registered phone number.</small>
+                  </div>
+                  <input type="checkbox" formControlName="receiveSMSAlerts" />
+                </label>
+              </div>
+
+              <p class="note">
+                The interface remains English-first. These values are already backend-ready; full UI
+                localization can be connected independently without changing the User contract.
+              </p>
+
+              <footer>
+                <button type="button" class="cancel" (click)="resetPreferences()">Reset</button>
+                <button type="submit" [disabled]="user.saving()">
+                  {{ user.saving() ? 'Saving...' : 'Save preferences' }}
+                </button>
+              </footer>
+            </form>
+          }
+
+          @if (section() === 'security') {
+            <header>
+              <h2>Security & Access</h2>
+              <p>Authentication belongs to IAM. Personal profile data is not duplicated here.</p>
+            </header>
+
+            <dl class="security-grid">
+              <div>
+                <dt>Authentication state</dt>
+                <dd>{{ session.authenticated() ? 'Authenticated' : 'Local profile only' }}</dd>
+              </div>
+              <div>
+                <dt>Identity ID</dt>
+                <dd>{{ session.identityId() || 'Not available in current session' }}</dd>
+              </div>
+              <div>
+                <dt>User ID</dt>
+                <dd>{{ profile()?.userId || 'Unavailable' }}</dd>
+              </div>
+              <div>
+                <dt>Role management</dt>
+                <dd>Backend role catalog required before exposing assignments in the UI.</dd>
+              </div>
+            </dl>
+
+            <div class="security-actions">
+              <div>
+                <b>End this session</b>
+                <small>Clears the current frontend session and profile state.</small>
+              </div>
+              <button type="button" class="danger" (click)="signOut()">Sign out</button>
+            </div>
+          }
+        }
+      </section>
+    </div>
+  `,
+  styleUrl: './settings.page.scss',
+})
+export class SettingsPage implements OnInit {
+  private readonly fb = inject(FormBuilder);
+  private readonly snack = inject(MatSnackBar);
+  private readonly router = inject(Router);
+
+  readonly user = inject(UserFacade);
+  readonly session = inject(AuthSessionFacade);
+
+  readonly section = signal<'profile' | 'preferences' | 'security'>('profile');
+  readonly sections = [
+    { id: 'profile' as const, label: 'Profile', icon: '◉', help: 'Contact information' },
+    { id: 'preferences' as const, label: 'Preferences', icon: '◎', help: 'Language and notifications' },
+    { id: 'security' as const, label: 'Security & Access', icon: '⌾', help: 'IAM session information' },
+  ];
+
+  readonly loading = computed(() => this.user.loading() || this.session.loading());
+  readonly profile = this.user.profile;
+  readonly initials = computed(() => {
+    const profile = this.profile();
+    if (!profile) return 'RQ';
+    return `${profile.firstName.charAt(0)}${profile.lastName.charAt(0)}`.toUpperCase() || 'RQ';
+  });
+
+  readonly contactForm = this.fb.nonNullable.group({
+    email: ['', [Validators.required, Validators.email]],
+    phoneNumber: ['', Validators.required],
+  });
+
+  readonly preferencesForm = this.fb.nonNullable.group({
+    language: [''],
+    timeZone: [''],
+    receiveSMSAlerts: [false],
+  });
+
+  ngOnInit(): void {
+    const load$ = this.user.profile() ? undefined : this.user.loadMyProfile();
+    if (load$) {
+      load$.subscribe({
+        next: () => this.populateForms(),
+        error: () => undefined,
+      });
+    } else {
+      this.populateForms();
+    }
+  }
+
+  saveContact(): void {
+    if (this.contactForm.invalid) {
+      this.contactForm.markAllAsTouched();
+      return;
+    }
+
+    this.user.updateContactInformation(this.contactForm.getRawValue()).subscribe({
+      next: () => {
+        this.populateForms();
+        this.snack.open('Contact information saved.', 'Close', { duration: 2200 });
+      },
+      error: () => undefined,
+    });
+  }
+
+  savePreferences(): void {
+    const value = this.preferencesForm.getRawValue();
+    this.user
+      .updatePreferences({
+        ...(value.language ? { language: value.language } : {}),
+        ...(value.timeZone ? { timeZone: value.timeZone } : {}),
+        receiveSMSAlerts: value.receiveSMSAlerts,
+      })
+      .subscribe({
+        next: () => {
+          this.populateForms();
+          this.snack.open('Preferences saved.', 'Close', { duration: 2200 });
+        },
+        error: () => undefined,
+      });
+  }
+
+  resetContact(): void {
+    this.populateContact();
+  }
+
+  resetPreferences(): void {
+    this.populatePreferences();
+  }
+
+  signOut(): void {
+    this.session.signOut();
+    void this.router.navigateByUrl('/login');
+  }
+
+  private populateForms(): void {
+    this.populateContact();
+    this.populatePreferences();
+  }
+
+  private populateContact(): void {
+    const profile = this.profile();
+    this.contactForm.setValue({
+      email: profile?.contactInformation.email ?? '',
+      phoneNumber: profile?.contactInformation.phoneNumber ?? '',
+    });
+  }
+
+  private populatePreferences(): void {
+    const preferences = this.profile()?.preferences;
+    this.preferencesForm.setValue({
+      language: preferences?.language ?? '',
+      timeZone: preferences?.timeZone ?? '',
+      receiveSMSAlerts: preferences?.receiveSMSAlerts ?? false,
+    });
+  }
+}

@@ -1,13 +1,189 @@
-import { ChangeDetectionStrategy, Component, OnInit, signal } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Alert } from '../../core/models/resq.models';
-import { ALERTS, BUILDINGS, DEVICES, FLOORS, INCIDENTS, SPACES } from '../../core/mock-data/resq.mock';
-import { AlertService } from '../../core/services/data.services';
-import { KpiCardComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
+import { MatPaginator, MatPaginatorModule } from '@angular/material/paginator';
+import { MatSort, MatSortModule } from '@angular/material/sort';
+import { MatTableDataSource, MatTableModule } from '@angular/material/table';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { EmptyStateComponent, KpiCardComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
+import { AlertWorkspaceFacade, AlertWorkspaceRow } from './alert-workspace.facade';
+import { ResponseExecutionRecord } from './data-access/alert.gateway';
 
-@Component({selector:'resq-alerts-page',standalone:true,imports:[FormsModule,RouterLink,KpiCardComponent,StatusBadgeComponent],changeDetection:ChangeDetectionStrategy.OnPush,template:`<section class="kpis"><resq-kpi-card icon="!" [value]="critical" label="Critical" tone="red"/><resq-kpi-card icon="△" [value]="warning" label="Warning" tone="amber"/><resq-kpi-card icon="✓" [value]="acknowledged" label="Acknowledged"/><resq-kpi-card icon="✓" [value]="resolved" label="Resolved Today" tone="green"/></section><div class="filters"><label>⌕<input [(ngModel)]="query" (ngModelChange)="apply()" placeholder="Search alerts..."/></label><select [(ngModel)]="severity" (ngModelChange)="apply()"><option value="">All severities</option><option>Critical</option><option>Warning</option><option>Info</option></select><select [(ngModel)]="status" (ngModelChange)="apply()"><option value="">All statuses</option><option>New</option><option>Acknowledged</option><option>Resolved</option></select><select><option>All buildings</option>@for(b of buildings;track b.id){<option>{{b.name}}</option>}</select></div><div class="table"><table><thead><tr><th>Severity</th><th>Alert</th><th>Building</th><th>Floor</th><th>Space</th><th>Device</th><th>Time</th><th>Status</th><th></th></tr></thead><tbody>@for(alert of filtered();track alert.id){<tr [routerLink]="'/alerts/'+alert.id"><td><span [class]="'severity '+alert.severity.toLowerCase()">{{alert.severity==='Critical'?'!':alert.severity==='Warning'?'△':'i'}} {{alert.severity}}</span></td><td><b>{{alert.title}}</b><small>{{alert.description}}</small></td><td>{{buildingName(alert)}}</td><td>{{floorName(alert)}}</td><td>{{spaceName(alert)}}</td><td>{{deviceCode(alert)}}</td><td>{{time(alert.timestamp)}}</td><td><resq-status-badge [status]="alert.status"/></td><td>›</td></tr>}</tbody></table></div>`,styleUrl:'./alerts.pages.scss'})
-export class AlertsPage {readonly buildings=BUILDINGS;readonly filtered=signal(ALERTS);query='';severity='';status='';readonly critical=ALERTS.filter(a=>a.severity==='Critical'&&a.status!=='Resolved').length;readonly warning=ALERTS.filter(a=>a.severity==='Warning'&&a.status!=='Resolved').length;readonly acknowledged=ALERTS.filter(a=>a.status==='Acknowledged').length;readonly resolved=ALERTS.filter(a=>a.status==='Resolved').length;apply():void{const q=this.query.toLowerCase();this.filtered.set(ALERTS.filter(a=>(!q||`${a.title} ${a.description}`.toLowerCase().includes(q))&&(!this.severity||a.severity===this.severity)&&(!this.status||a.status===this.status)))}space(alert:Alert){return SPACES.find(s=>s.id===alert.spaceId)}spaceName(a:Alert){return this.space(a)?.name??'—'}floorName(a:Alert){return FLOORS.find(f=>f.id===a.floorId)?.name??'—'}buildingName(a:Alert){return BUILDINGS.find(b=>b.id===a.buildingId)?.name??'—'}deviceCode(a:Alert){return DEVICES.find(d=>d.id===a.deviceId)?.code??'—'}time(d:Date){const m=Math.round((Date.now()-d.getTime())/60000);return m<60?`${m} min ago`:`${Math.round(m/60)}h ago`}}
+@Component({
+  selector: 'resq-alerts-page',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    MatPaginatorModule,
+    MatSortModule,
+    MatTableModule,
+    KpiCardComponent,
+    LoadingStateComponent,
+    EmptyStateComponent,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <section class="kpis" aria-label="Alert summary">
+      <resq-kpi-card icon="△" [value]="workspace.summary().total" label="Total Alerts" />
+      <resq-kpi-card icon="!" [value]="workspace.summary().critical" label="Critical" tone="red" />
+      <resq-kpi-card icon="△" [value]="workspace.summary().warning" label="Warning" tone="amber" />
+      <resq-kpi-card icon="✕" [value]="workspace.summary().notificationFailures" label="Delivery Failures" />
+    </section>
 
-@Component({selector:'resq-alert-detail',standalone:true,imports:[RouterLink,StatusBadgeComponent],changeDetection:ChangeDetectionStrategy.OnPush,template:`@if(alert()){<div class="detail-head"><div><a routerLink="/alerts">← Alert Center</a><div><span [class]="alert()!.severity.toLowerCase()">!</span><div><h2>{{alert()!.title}}</h2><p>{{alert()!.id}} · Detected {{time()}}</p></div></div></div><resq-status-badge [status]="alert()!.status"/></div><div class="actions"><button [disabled]="alert()!.status!=='New'" (click)="update('Acknowledged')">✓ Acknowledge</button><button class="resolve" [disabled]="alert()!.status==='Resolved'" (click)="update('Resolved')">Resolve Alert</button></div><div class="detail-grid"><article><h3>Alert Details</h3><p class="description">{{alert()!.description}}</p><dl><dt>Severity</dt><dd><resq-status-badge [status]="alert()!.severity"/></dd><dt>Timestamp</dt><dd>{{alert()!.timestamp.toLocaleString()}}</dd><dt>Device</dt><dd><a [routerLink]="'/devices/'+alert()!.deviceId">{{device()?.name||'System evaluation'}}</a></dd><dt>Space</dt><dd><a [routerLink]="'/spaces/'+alert()!.spaceId">{{space()?.name}} · Room {{space()?.roomNumber}}</a></dd><dt>Floor</dt><dd>{{floorName()}}</dd><dt>Building</dt><dd>{{buildingName()}}</dd></dl><h3>Current Readings</h3><div class="readings">@for(d of space()?.devices?.slice(0,3)||[];track d.id){<div><span>{{d.type}}</span><b>{{d.readings.at(-1)?.value}} {{d.readings.at(-1)?.unit}}</b><resq-status-badge [status]="d.status"/></div>}</div></article><aside><h3>Response Timeline</h3><div class="timeline"><p class="done"><i></i><b>Alert detected</b><small>Automated threshold evaluation</small></p><p [class.done]="alert()!.status!=='New'"><i></i><b>Acknowledged</b><small>Awaiting operator response</small></p><p [class.done]="alert()!.status==='Resolved'"><i></i><b>Resolved</b><small>Condition returned to safe range</small></p></div>@if(incident()){<h3>Related Incident</h3><a class="incident" [routerLink]="'/incidents/'+incident()!.id"><span>◷</span><div><b>{{incident()!.title}}</b><small>{{incident()!.id}} · {{incident()!.status}}</small></div>→</a>}</aside></div>}@else{<div class="not-found"><h2>Alert not found</h2><a routerLink="/dashboard">Back to Dashboard</a></div>}`,styleUrl:'./alert-detail.page.scss'})
-export class AlertDetailPage implements OnInit {readonly alert=signal<Alert|undefined>(undefined);constructor(private readonly route:ActivatedRoute,private readonly service:AlertService){}ngOnInit():void{this.alert.set(ALERTS.find(a=>a.id===this.route.snapshot.paramMap.get('alertId')))}update(status:Alert['status']){const a=this.alert();if(a){this.service.updateStatus(a.id,status);this.alert.set({...a,status})}}space(){return SPACES.find(s=>s.id===this.alert()?.spaceId)}device(){return DEVICES.find(d=>d.id===this.alert()?.deviceId)}floorName(){return FLOORS.find(f=>f.id===this.alert()?.floorId)?.name??'—'}buildingName(){return BUILDINGS.find(b=>b.id===this.alert()?.buildingId)?.name??'—'}incident(){return INCIDENTS.find(i=>i.alertIds.includes(this.alert()?.id??''))}time(){const d=this.alert()?.timestamp;return d?d.toLocaleString():'—'}}
+    <section class="filters" aria-label="Alert filters">
+      <label class="search-field">
+        <span>Search</span><i class="search-icon">⌕</i>
+        <input [(ngModel)]="query" (ngModelChange)="applyFilters()" placeholder="Alert, risk, building or zone..." />
+      </label>
+      <label>
+        <span>Building</span>
+        <select [(ngModel)]="buildingFilter" (ngModelChange)="applyFilters()">
+          <option value="">All buildings</option>
+          @for (item of buildings(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+        </select>
+      </label>
+      <label>
+        <span>Risk Type</span>
+        <select [(ngModel)]="riskFilter" (ngModelChange)="applyFilters()">
+          <option value="">All risks</option>
+          @for (item of riskTypes(); track item) { <option [value]="item">{{ riskLabel(item) }}</option> }
+        </select>
+      </label>
+      <label>
+        <span>Severity</span>
+        <select [(ngModel)]="severityFilter" (ngModelChange)="applyFilters()">
+          <option value="">All severities</option>
+          <option>Critical</option><option>Warning</option><option>Info</option>
+        </select>
+      </label>
+      <label>
+        <span>Period</span>
+        <select [(ngModel)]="periodFilter" (ngModelChange)="applyFilters()">
+          <option value="all">All time</option><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option>
+        </select>
+      </label>
+      <button type="button" class="reset" (click)="resetFilters()">Reset filters</button>
+    </section>
+
+    @if (workspace.loading()) {
+      <resq-loading-state message="Loading alerts..." />
+    } @else if (workspace.error()) {
+      <resq-empty-state title="Alerts could not be loaded" [message]="workspace.error()!.message" />
+    } @else {
+      <div class="result-summary"><b>{{ filteredCount() }} alerts</b><span>Read-only risk notifications from Alert & Response Management</span></div>
+      <section class="table-card" aria-label="Alerts">
+        <div class="table-scroll">
+          <table mat-table [dataSource]="dataSource" matSort>
+            <ng-container matColumnDef="severity"><th mat-header-cell *matHeaderCellDef mat-sort-header>Severity</th><td mat-cell *matCellDef="let row"><span [class]="'severity ' + severityClass(row.severity)"><span>{{ severityIcon(row.severity) }}</span>{{ row.severity }}</span></td></ng-container>
+            <ng-container matColumnDef="alert"><th mat-header-cell *matHeaderCellDef mat-sort-header>Alert</th><td mat-cell *matCellDef="let row"><span class="primary-cell"><b>{{ row.title }}</b><small>{{ row.riskTypeLabel }} · {{ row.id }}</small></span></td></ng-container>
+            <ng-container matColumnDef="location"><th mat-header-cell *matHeaderCellDef mat-sort-header>Location</th><td mat-cell *matCellDef="let row"><span class="primary-cell"><b>{{ row.location.buildingName }}</b><small>{{ row.location.floorLabel || '—' }} · {{ row.location.zoneName }}</small></span></td></ng-container>
+            <ng-container matColumnDef="detected"><th mat-header-cell *matHeaderCellDef mat-sort-header>Detected</th><td mat-cell *matCellDef="let row">{{ relativeTime(row.detectedAt) }}</td></ng-container>
+            <ng-container matColumnDef="detection"><th mat-header-cell *matHeaderCellDef>Risk Detection</th><td mat-cell *matCellDef="let row"><span class="primary-cell detection-cell"><b>{{ row.riskDetectionId }}</b><small>{{ row.riskTypeCode }}</small></span></td></ng-container>
+            <ng-container matColumnDef="delivery"><th mat-header-cell *matHeaderCellDef mat-sort-header>Delivery</th><td mat-cell *matCellDef="let row"><span [class]="'delivery ' + row.delivery.status.toLowerCase()">{{ row.delivery.label }}</span></td></ng-container>
+            <ng-container matColumnDef="open"><th mat-header-cell *matHeaderCellDef></th><td mat-cell *matCellDef="let row">›</td></ng-container>
+            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedColumns" tabindex="0" [attr.aria-label]="'Open ' + row.title" (click)="open(row)" (keydown.enter)="open(row)" (keydown.space)="open(row); $event.preventDefault()"></tr>
+          </table>
+        </div>
+        @if (!filteredCount()) { <resq-empty-state title="No alerts found" message="Try changing the filters." /> }
+        <mat-paginator [pageSize]="25" [pageSizeOptions]="[25,50,100]" showFirstLastButtons aria-label="Alert table pagination" />
+      </section>
+    }
+  `,
+  styleUrl: './alerts.pages.scss',
+})
+export class AlertsPage implements OnInit {
+  readonly workspace = inject(AlertWorkspaceFacade);
+  private readonly router = inject(Router);
+  readonly displayedColumns = ['severity', 'alert', 'location', 'detected', 'detection', 'delivery', 'open'];
+  readonly dataSource = new MatTableDataSource<AlertWorkspaceRow>([]);
+  readonly filteredCount = signal(0);
+  query = '';
+  buildingFilter = '';
+  riskFilter = '';
+  severityFilter = '';
+  periodFilter = 'all';
+
+  @ViewChild(MatSort) set matSort(sort: MatSort | undefined) { if (sort) this.dataSource.sort = sort; }
+  @ViewChild(MatPaginator) set matPaginator(paginator: MatPaginator | undefined) { if (paginator) this.dataSource.paginator = paginator; }
+
+  readonly buildings = computed(() => {
+    const map = new Map<string, string>();
+    this.workspace.rows().forEach((row) => { if (row.location.buildingId) map.set(row.location.buildingId, row.location.buildingName); });
+    return [...map].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  });
+  readonly riskTypes = computed(() => [...new Set(this.workspace.rows().map((row) => row.riskTypeCode))].sort());
+
+  ngOnInit(): void {
+    this.workspace.loadAlerts().subscribe({
+      next: () => { this.configureSorting(); this.applyFilters(); },
+      error: () => undefined,
+    });
+  }
+
+  applyFilters(): void {
+    const q = this.query.trim().toLowerCase();
+    const cutoff = periodCutoff(this.periodFilter);
+    const filtered = this.workspace.rows().filter((row) => {
+      const searchable = `${row.id} ${row.title} ${row.riskTypeLabel} ${row.location.buildingName} ${row.location.zoneName}`.toLowerCase();
+      return (!q || searchable.includes(q)) &&
+        (!this.buildingFilter || row.location.buildingId === this.buildingFilter) &&
+        (!this.riskFilter || row.riskTypeCode === this.riskFilter) &&
+        (!this.severityFilter || row.severity === this.severityFilter) &&
+        (!cutoff || row.generatedAt >= cutoff);
+    });
+    this.dataSource.data = filtered;
+    this.filteredCount.set(filtered.length);
+    this.dataSource.paginator?.firstPage();
+  }
+
+  resetFilters(): void { this.query = this.buildingFilter = this.riskFilter = this.severityFilter = ''; this.periodFilter = 'all'; this.applyFilters(); }
+  open(row: AlertWorkspaceRow): void { void this.router.navigate(['/alerts', row.id]); }
+  severityClass(value: string): string { return value.toLowerCase(); }
+  severityIcon(value: string): string { return value === 'Critical' ? '!' : value === 'Warning' ? '△' : 'i'; }
+  riskLabel(value: string): string { return this.workspace.rows().find((row) => row.riskTypeCode === value)?.riskTypeLabel ?? value; }
+  relativeTime(date: Date): string { const min = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000)); return min < 1 ? 'just now' : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.floor(min / 60)}h ago` : `${Math.floor(min / 1440)}d ago`; }
+  private configureSorting(): void { this.dataSource.sortingDataAccessor = (row, column) => ({ severity: row.severity, alert: row.title, location: `${row.location.buildingName} ${row.location.zoneName}`, detected: row.detectedAt.getTime(), delivery: row.delivery.status } as Record<string, string | number>)[column] ?? ''; }
+}
+
+@Component({
+  selector: 'resq-alert-detail',
+  standalone: true,
+  imports: [CommonModule, RouterLink, StatusBadgeComponent, LoadingStateComponent, EmptyStateComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (workspace.loading()) {
+      <resq-loading-state message="Loading alert..." />
+    } @else if (workspace.error()) {
+      <resq-empty-state title="Alert could not be loaded" [message]="workspace.error()!.message" />
+    } @else if (workspace.detail(); as current) {
+      <header class="detail-head"><div><a routerLink="/alerts">← Alert Center</a><div class="alert-title"><span [class]="'severity-mark ' + current.severity.toLowerCase()">{{ severityIcon(current.severity) }}</span><div><div class="title-line"><h2>{{ current.title }}</h2><resq-status-badge [status]="current.severity" /></div><p>{{ current.description }}</p></div></div></div></header>
+      <div class="detail-grid">
+        <main>
+          <article class="card context-card"><div class="card-head"><div><h3>Alert Context</h3><p>Alert is read-only; risk classification belongs to Risk Detection.</p></div></div><dl class="context-grid"><div><dt>Alert ID</dt><dd><code>{{ current.id }}</code></dd></div><div><dt>Risk Detection ID</dt><dd><code>{{ current.riskDetectionId }}</code></dd></div><div><dt>Risk Type</dt><dd>{{ current.riskTypeLabel }}</dd></div><div><dt>Detected At</dt><dd>{{ formatDate(current.detectedAt) }}</dd></div><div><dt>Generated At</dt><dd>{{ formatDate(current.generatedAt) }}</dd></div><div><dt>Building</dt><dd>{{ current.location.buildingName }}</dd></div><div><dt>Floor</dt><dd>{{ current.location.floorLabel || '—' }}</dd></div><div><dt>Zone</dt><dd>{{ current.location.zoneName }}</dd></div></dl></article>
+          <article class="card evidence-card"><div class="card-head"><div><h3>Detection Evidence</h3><p>Historical measurements provided by Risk Detection.</p></div></div>@if(current.evidence.length){<div class="evidence-list">@for(evidence of current.evidence;track evidence.deviceId + evidence.variableType){<section><div class="evidence-device"><span>◉</span><div><a [routerLink]="['/devices',evidence.deviceId]">{{ evidence.deviceName }}</a><small>{{ evidence.deviceCode }} · {{ evidence.hardware }}</small></div></div><div class="measurement"><span>{{ evidence.measurementName }}</span><b>{{ evidence.value }} {{ evidence.unit || '' }}</b></div><dl><div><dt>Measured</dt><dd>{{ formatDate(evidence.measuredAt) }}</dd></div><div><dt>Variable</dt><dd><code>{{ evidence.variableType }}</code></dd></div></dl></section>}</div>}@else{<p class="inline-empty">Detection evidence is unavailable in the current data source.</p>}</article>
+          <article class="card delivery-card"><div class="card-head"><div><h3>Notification Delivery</h3><p>Communication attempts associated with this alert.</p></div></div>@if(current.alert.deliveries.length){<div class="delivery-list">@for(delivery of current.alert.deliveries;track delivery.deliveryId){<section><div class="delivery-heading"><div><b>{{ delivery.channel }}</b><small>{{ delivery.deliveryId }}</small></div><resq-status-badge [status]="delivery.status" /></div><dl><div><dt>Recipient</dt><dd><code>{{ delivery.recipientUserId }}</code></dd></div><div><dt>Destination</dt><dd>{{ delivery.destination }}</dd></div><div><dt>Requested</dt><dd>{{ formatDate(delivery.requestedAt) }}</dd></div><div><dt>Completed</dt><dd>{{ delivery.completedAt ? formatDate(delivery.completedAt) : '—' }}</dd></div>@if(delivery.failureReason){<div class="failure"><dt>Failure reason</dt><dd>{{ delivery.failureReason }}</dd></div>}</dl></section>}</div>}@else{<p class="inline-empty">No notification deliveries were requested.</p>}</article>
+          @if(current.responseExecutions.length){<article class="card response-card"><div class="card-head"><div><h3>Response Activity</h3><p>Execution lifecycle belongs to Alert & Response Management.</p></div></div><div class="response-list">@for(execution of current.responseExecutions;track execution.responseExecutionId){<section><div class="response-heading"><div><b>{{ actionLabel(execution) }}</b><small>{{ execution.responseExecutionId }}</small></div><resq-status-badge [status]="execution.status" /></div><dl><div><dt>Target Device</dt><dd><a [routerLink]="['/devices',execution.action.targetDeviceId]">{{ execution.action.targetDeviceId }}</a></dd></div><div><dt>Capability</dt><dd><code>{{ execution.action.targetCapabilityCode }}</code></dd></div><div><dt>Authorization</dt><dd>{{ execution.action.authorizationMode === 'HUMAN_REQUIRED' ? 'Human required' : 'Automatic' }}</dd></div><div><dt>Requested</dt><dd>{{ formatDate(execution.requestedAt) }}</dd></div>@if(execution.authorization){<div><dt>Decision</dt><dd>{{ execution.authorization.decision }}</dd></div>}@if(execution.result){<div class="result"><dt>Result</dt><dd>{{ execution.result.message || execution.result.resultCode }}</dd></div>}</dl>@if(workspace.canDecideAuthorization(execution)){<div class="authorization-actions"><button type="button" (click)="decide(execution,'APPROVED')">Approve</button><button type="button" class="reject" (click)="decide(execution,'REJECTED')">Reject</button></div>}</section>}</div></article>}
+        </main>
+        <aside><article class="card incident-card"><div class="card-head"><div><h3>Incident Relation</h3><p>Incident lifecycle belongs to Incident Management.</p></div></div><p class="inline-empty">The current Incident API contract does not expose a direct Alert-to-Incident reference, so this frontend does not fabricate one.</p><a routerLink="/incidents">Open Incidents →</a></article></aside>
+      </div>
+    } @else {
+      <div class="not-found"><span>△</span><h2>Alert Not Found</h2><p>The requested alert does not exist or is unavailable.</p><a routerLink="/alerts">Return to Alert Center</a></div>
+    }
+  `,
+  styleUrl: './alert-detail.page.scss',
+})
+export class AlertDetailPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly snack = inject(MatSnackBar);
+  readonly workspace = inject(AlertWorkspaceFacade);
+  ngOnInit(): void { this.workspace.loadDetail(this.route.snapshot.paramMap.get('alertId') ?? '').subscribe({ error: () => undefined }); }
+  severityIcon(severity: string): string { return severity === 'Critical' ? '!' : severity === 'Warning' ? '△' : 'i'; }
+  formatDate(date: Date): string { return date.toLocaleString([], { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+  actionLabel(execution: ResponseExecutionRecord): string { return execution.action.actionCode.replace(/[_-]+/g,' ').replace(/\b\w/g,(value)=>value.toUpperCase()); }
+  decide(execution: ResponseExecutionRecord, decision: 'APPROVED' | 'REJECTED'): void { this.workspace.decideAuthorization(execution.responseExecutionId, decision).subscribe({ next: () => this.snack.open(`Response ${decision.toLowerCase()}.`, 'Close', { duration: 2200 }), error: () => undefined }); }
+}
+
+function periodCutoff(period: string): Date | undefined { const now = Date.now(); if(period==='24h') return new Date(now-86_400_000); if(period==='7d') return new Date(now-7*86_400_000); if(period==='30d') return new Date(now-30*86_400_000); return undefined; }

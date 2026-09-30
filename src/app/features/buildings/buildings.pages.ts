@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
+
 import {
   ActivatedRoute,
   Router,
@@ -15,9 +16,14 @@ import {
 } from '@angular/router';
 
 import { MatIconModule } from '@angular/material/icon';
-import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import {
+  MatSnackBar,
+  MatSnackBarModule,
+} from '@angular/material/snack-bar';
+
+import {
+  AlertListItem,
   Building,
   RiskStatus,
   riskRank,
@@ -27,8 +33,17 @@ import {
   ALERTS,
 } from '../../core/mock-data/resq.mock';
 
-import { BuildingStoreService } from '../../core/services/building-store.service';
-import { ThreeBuildingViewerComponent } from './three-building-viewer/three-building-viewer.component';
+import {
+  AlertService,
+} from '../../core/services/data.services';
+
+import {
+  BuildingStoreService,
+} from '../../core/services/building-store.service';
+
+import {
+  ThreeBuildingViewerComponent,
+} from './three-building-viewer/three-building-viewer.component';
 
 import {
   StatusBadgeComponent,
@@ -200,11 +215,11 @@ import {
           <div class="kpi-content">
 
             <strong>
-              {{ buildingsWithActiveAlerts() }}
+              {{ buildingsWithRecentAlerts() }}
             </strong>
 
             <span>
-              Buildings with Active Alerts
+              Buildings with Recent Alerts
             </span>
 
           </div>
@@ -461,7 +476,7 @@ import {
                 </div>
 
 
-                <!-- ACTIVE ALERTS -->
+                <!-- RECENT ALERTS -->
 
                 <div class="metric">
 
@@ -476,11 +491,11 @@ import {
                   <div class="metric-data">
 
                     <strong>
-                      {{ activeAlertsFor(building) }}
+                      {{ recentAlertsFor(building) }}
                     </strong>
 
                     <span>
-                      Active Alerts
+                      Recent Alerts
                     </span>
 
                   </div>
@@ -730,7 +745,7 @@ import {
                 <th>Floors</th>
                 <th>Spaces</th>
                 <th>Devices</th>
-                <th>Active Alerts</th>
+                <th>Recent Alerts</th>
                 <th>Critical Spaces</th>
                 <th>Offline</th>
                 <th></th>
@@ -811,7 +826,7 @@ import {
                   </td>
 
                   <td>
-                    {{ activeAlertsFor(building) }}
+                    {{ recentAlertsFor(building) }}
                   </td>
 
                   <td>
@@ -2638,15 +2653,63 @@ export class BuildingsPage {
   private readonly buildingStore =
     inject(BuildingStoreService);
 
-
   private readonly router =
     inject(Router);
+
+  private readonly alertService =
+    inject(AlertService);
 
 
   readonly buildings =
     this.buildingStore.buildings;
 
 
+  readonly recentAlertItems =
+    signal<AlertListItem[]>([]);
+
+
+  readonly query =
+    signal('');
+
+
+  readonly viewMode =
+    signal<'grid' | 'table'>('grid');
+
+
+  readonly statusFilter =
+    signal<'All' | RiskStatus>('All');
+
+
+  readonly sortMode =
+    signal<
+      'critical' |
+      'name' |
+      'devices' |
+      'alerts'
+    >('critical');
+
+
+  readonly floorSelectorBuilding =
+    signal<Building | undefined>(
+      undefined
+    );
+
+
+  readonly summaryStatuses:
+    RiskStatus[] = [
+      'Critical',
+      'Warning',
+      'Normal',
+    ];
+
+
+  constructor() {
+    this.alertService
+      .getRecentAlerts('24h')
+      .subscribe(items =>
+        this.recentAlertItems.set(items)
+      );
+  }
   readonly query =
     signal('');
 
@@ -2755,8 +2818,8 @@ export class BuildingsPage {
             if (sort === 'alerts') {
 
               return (
-                this.activeAlertsFor(b) -
-                this.activeAlertsFor(a)
+                this.recentAlertsFor(b) -
+                this.recentAlertsFor(a)
               );
 
             }
@@ -2798,11 +2861,11 @@ export class BuildingsPage {
   }
 
 
-  buildingsWithActiveAlerts(): number {
+  buildingsWithRecentAlerts(): number {
 
     return this.buildings().filter(
       building =>
-        this.activeAlertsFor(building) > 0
+        this.recentAlertsFor(building) > 0
     ).length;
 
   }
@@ -2889,15 +2952,12 @@ export class BuildingsPage {
   }
 
 
-  activeAlertsFor(
+  recentAlertsFor(
     building: Building
   ): number {
 
-    return ALERTS.filter(
-      alert =>
-        alert.buildingId ===
-          building.id &&
-        alert.status !== 'Resolved'
+    return this.recentAlertItems().filter(
+      alert => alert.location.buildingId === building.id
     ).length;
 
   }
@@ -2955,16 +3015,16 @@ export class BuildingsPage {
         building => {
 
           const latestAlert =
-            ALERTS
+            this.recentAlertItems()
               .filter(
                 alert =>
-                  alert.buildingId ===
+                  alert.location.buildingId ===
                   building.id
               )
               .sort(
                 (a, b) =>
-                  b.timestamp.getTime() -
-                  a.timestamp.getTime()
+                  b.generatedAt.getTime() -
+                  a.generatedAt.getTime()
               )[0];
 
 
@@ -3014,7 +3074,7 @@ export class BuildingsPage {
               building.address,
 
             timestamp:
-              latestAlert.timestamp,
+              latestAlert.generatedAt,
 
           };
 
@@ -3308,11 +3368,11 @@ export class BuildingsPage {
           <div>
 
             <strong>
-              {{ activeAlerts() }}
+              {{ recentAlerts() }}
             </strong>
 
             <span>
-              Active Alerts
+              Recent Alerts
             </span>
 
           </div>
@@ -4091,6 +4151,8 @@ export class BuildingsPage {
 export class BuildingDetailPage
   implements OnInit {
 
+  readonly recentAlertItems = signal<AlertListItem[]>([]);
+
   readonly building =
     signal<Building | undefined>(
       undefined
@@ -4112,6 +4174,8 @@ export class BuildingDetailPage
 
     private readonly snackBar:
       MatSnackBar,
+    private readonly alertService:
+      AlertService,
   ) {}
 
 
@@ -4128,6 +4192,10 @@ export class BuildingDetailPage
         ? this.buildingStore.getBuilding(buildingId)
         : undefined
     );
+
+    this.alertService
+      .getRecentAlerts('24h')
+      .subscribe(items => this.recentAlertItems.set(items));
 
   }
 
@@ -4191,11 +4259,8 @@ export class BuildingDetailPage
     }
 
 
-    return ALERTS.filter(
-      alert =>
-        alert.buildingId ===
-          buildingId &&
-        alert.status !== 'Resolved'
+    return this.recentAlertItems().filter(
+      alert => alert.location.buildingId === buildingId
     ).length;
 
   }

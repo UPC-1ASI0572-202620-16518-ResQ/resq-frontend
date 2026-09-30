@@ -42,10 +42,10 @@ import { AnalyticsPage } from './features/analytics/analytics.page';
 import { SettingsPage } from './features/settings/settings.page';
 
 import { NotFoundPage } from './features/not-found.page';
+import { authGuard } from './features/auth/auth.guard';
 
 
 export const routes: Routes = [
-
   {
     path: 'login',
     component: LoginPage,
@@ -54,9 +54,9 @@ export const routes: Routes = [
   {
     path: '',
     component: AppShellComponent,
+    canActivate: [authGuard],
 
     children: [
-
       {
         path: '',
         pathMatch: 'full',
@@ -95,12 +95,16 @@ export const routes: Routes = [
 
       {
         path: 'monitoring',
-        loadComponent: () => import('./features/monitoring/floor-monitoring.page').then(module => module.FloorMonitoringPage),
+        loadComponent: () =>
+          import('./features/monitoring/floor-monitoring.page')
+            .then(module => module.FloorMonitoringPage),
       },
 
       {
         path: 'monitoring/:buildingId/floors/:floorId',
-        loadComponent: () => import('./features/monitoring/floor-monitoring.page').then(module => module.FloorMonitoringPage),
+        loadComponent: () =>
+          import('./features/monitoring/floor-monitoring.page')
+            .then(module => module.FloorMonitoringPage),
       },
 
       {
@@ -157,9 +161,6 @@ export const routes: Routes = [
         path: '**',
         component: NotFoundPage,
       },
-
     ],
-
   },
-
 ];

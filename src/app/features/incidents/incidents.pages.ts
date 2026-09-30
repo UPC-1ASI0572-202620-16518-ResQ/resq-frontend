@@ -1,13 +1,246 @@
-import { ChangeDetectionStrategy, Component, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Incident, IncidentStatus } from '../../core/models/resq.models';
-import { ALERTS, BUILDINGS, FLOORS, INCIDENTS, SPACES } from '../../core/mock-data/resq.mock';
-import { IncidentService } from '../../core/services/data.services';
-import { KpiCardComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { EmptyStateComponent, KpiCardComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
+import { IncidentWorkspaceFacade, IncidentWorkspaceRow } from './incident-workspace.facade';
 
-@Component({selector:'resq-incidents-page',standalone:true,imports:[FormsModule,RouterLink,KpiCardComponent,StatusBadgeComponent],changeDetection:ChangeDetectionStrategy.OnPush,template:`<section class="kpis"><resq-kpi-card icon="◷" [value]="count('Open')" label="Open Incidents" tone="red"/><resq-kpi-card icon="↻" [value]="count('InProgress')" label="In Progress" tone="amber"/><resq-kpi-card icon="✓" [value]="count('Resolved')" label="Resolved" tone="green"/><resq-kpi-card icon="◴" value="42 min" label="Average Resolution"/></section><div class="filters"><label>⌕<input [(ngModel)]="query" (ngModelChange)="apply()" placeholder="Search incidents..."/></label><select [(ngModel)]="status" (ngModelChange)="apply()"><option value="">All statuses</option><option value="Open">Open</option><option value="InProgress">In Progress</option><option value="Resolved">Resolved</option></select><select><option>All severities</option><option>Critical</option><option>Warning</option></select></div><div class="incident-grid">@for(incident of filtered();track incident.id){<article><div class="card-head"><span [class]="'severity '+incident.severity.toLowerCase()">{{incident.severity}}</span><resq-status-badge [status]="incident.status"/></div><a [routerLink]="'/incidents/'+incident.id"><h3>{{incident.title}}</h3><p>{{incident.description}}</p></a><div class="meta"><span>⌖ {{location(incident)}}</span><span>◷ {{age(incident.createdAt)}}</span><span>△ {{incident.alertIds.length}} related alert</span></div><footer><b>{{incident.id}}</b><div>@if(incident.status==='Open'){<button (click)="change(incident,'InProgress')">Start investigation</button>}@if(incident.status==='InProgress'){<button (click)="change(incident,'Resolved')">Resolve</button>}<a [routerLink]="'/incidents/'+incident.id">Details →</a></div></footer></article>}</div>`,styleUrl:'./incidents.pages.scss'})
-export class IncidentsPage {readonly filtered=signal(INCIDENTS);query='';status='';constructor(private readonly service:IncidentService){}count(s:IncidentStatus){return INCIDENTS.filter(i=>i.status===s).length}apply():void{const q=this.query.toLowerCase();this.filtered.set(INCIDENTS.filter(i=>(!q||`${i.id} ${i.title}`.toLowerCase().includes(q))&&(!this.status||i.status===this.status)))}location(i:Incident){const s=SPACES.find(x=>x.id===i.spaceId);return `${s?.name??'Space'} · Room ${s?.roomNumber??'—'}`}age(d:Date){const h=Math.max(1,Math.round((Date.now()-d.getTime())/3600000));return `${h}h ago`}change(i:Incident,status:IncidentStatus):void{this.service.updateStatus(i.id,status);this.filtered.update(items=>items.map(item=>item.id===i.id?{...item,status,resolvedAt:status==='Resolved'?new Date():undefined}:item))}}
+@Component({
+  selector: 'resq-incidents-page',
+  standalone: true,
+  imports: [FormsModule, RouterLink, KpiCardComponent, StatusBadgeComponent, LoadingStateComponent, EmptyStateComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <section class="kpis" aria-label="Incident summary">
+      <resq-kpi-card icon="◷" [value]="count('ACTIVE')" label="Active Incidents" tone="red" />
+      <resq-kpi-card icon="↻" [value]="count('IN_PROGRESS')" label="In Progress" tone="amber" />
+      <resq-kpi-card icon="✓" [value]="count('RESOLVED')" label="Resolved" tone="green" />
+      <resq-kpi-card icon="◴" [value]="averageResolution()" label="Avg. Resolution" />
+    </section>
 
-@Component({selector:'resq-incident-detail',standalone:true,imports:[RouterLink,StatusBadgeComponent],changeDetection:ChangeDetectionStrategy.OnPush,template:`@if(incident()){<div class="detail-head"><div><a routerLink="/incidents">← Incidents</a><p>{{incident()!.id}}</p><h2>{{incident()!.title}}</h2><span>{{incident()!.description}}</span></div><div><resq-status-badge [status]="incident()!.severity"/><resq-status-badge [status]="incident()!.status"/></div></div><div class="actions">@if(incident()!.status==='Open'){<button (click)="change('InProgress')">Start Investigation</button>}@if(incident()!.status==='InProgress'){<button (click)="change('Resolved')">Mark as Resolved</button>}@if(incident()!.status==='Resolved'){<button disabled>✓ Incident Resolved</button>}</div><div class="grid"><article><h3>Incident Timeline</h3><div class="timeline"><div class="done"><i>✓</i><section><b>Condition detected</b><small>{{incident()!.createdAt.toLocaleString()}}</small><p>A sensor reading crossed its configured safety threshold.</p></section></div><div class="done"><i>✓</i><section><b>Alert generated</b><small>Immediately after detection</small><p>ResQ created and routed the alert to the response team.</p></section></div><div [class.done]="incident()!.status!=='Open'"><i>{{incident()!.status!=='Open'?'✓':'3'}}</i><section><b>Investigation</b><small>Facilities response</small><p>Site conditions and affected equipment are being reviewed.</p></section></div><div [class.done]="incident()!.status==='Resolved'"><i>{{incident()!.status==='Resolved'?'✓':'4'}}</i><section><b>Resolved</b><small>{{incident()!.resolvedAt?.toLocaleString()||'Pending'}}</small><p>The incident is closed when all conditions return to a safe state.</p></section></div></div><h3>Response Notes</h3><div class="note"><b>Facilities Team</b><small>Today, 14:46</small><p>Ventilation checked. Area secured while readings stabilize.</p></div></article><aside><h3>Location</h3><dl><dt>Building</dt><dd>{{buildingName()}}</dd><dt>Floor</dt><dd>{{floorName()}}</dd><dt>Space</dt><dd><a [routerLink]="'/spaces/'+incident()!.spaceId">{{space()?.name}}</a></dd><dt>Room</dt><dd>{{space()?.roomNumber}}</dd><dt>Created</dt><dd>{{incident()!.createdAt.toLocaleString()}}</dd><dt>Resolved</dt><dd>{{incident()!.resolvedAt?.toLocaleString()||'—'}}</dd></dl><h3>Related Alerts</h3>@for(alert of alerts();track alert.id){<a class="alert" [routerLink]="'/alerts/'+alert.id"><span>!</span><div><b>{{alert.title}}</b><small>{{alert.id}} · {{alert.status}}</small></div>→</a>}</aside></div>}@else{<div class="not-found"><h2>Incident not found</h2><a routerLink="/dashboard">Back to Dashboard</a></div>}`,styleUrl:'./incident-detail.page.scss'})
-export class IncidentDetailPage implements OnInit {readonly incident=signal<Incident|undefined>(undefined);constructor(private readonly route:ActivatedRoute,private readonly service:IncidentService){}ngOnInit():void{this.incident.set(INCIDENTS.find(i=>i.id===this.route.snapshot.paramMap.get('incidentId')))}change(status:IncidentStatus):void{const i=this.incident();if(i){this.service.updateStatus(i.id,status);this.incident.set({...i,status,resolvedAt:status==='Resolved'?new Date():undefined})}}space(){return SPACES.find(s=>s.id===this.incident()?.spaceId)}floorName(){return FLOORS.find(f=>f.id===this.incident()?.floorId)?.name??'—'}buildingName(){return BUILDINGS.find(b=>b.id===this.incident()?.buildingId)?.name??'—'}alerts(){return ALERTS.filter(a=>this.incident()?.alertIds.includes(a.id))}}
+    <section class="filters" aria-label="Incident filters">
+      <label>⌕<input [ngModel]="query()" (ngModelChange)="query.set($event)" placeholder="Search incidents, type or zone..." /></label>
+      <select [ngModel]="status()" (ngModelChange)="status.set($event)" aria-label="Incident status">
+        <option value="">All statuses</option>
+        <option value="ACTIVE">Active</option>
+        <option value="IN_PROGRESS">In Progress</option>
+        <option value="RESOLVED">Resolved</option>
+        <option value="CLOSED">Closed</option>
+      </select>
+      <select [ngModel]="type()" (ngModelChange)="type.set($event)" aria-label="Incident type">
+        <option value="">All types</option>
+        <option value="GAS_LEAK">Gas leak</option>
+        <option value="FIRE">Fire</option>
+        <option value="EARTHQUAKE">Earthquake</option>
+        <option value="UNKNOWN">Other</option>
+      </select>
+    </section>
+
+    @if (workspace.loading()) {
+      <resq-loading-state message="Loading incidents..." />
+    } @else if (workspace.error()) {
+      <resq-empty-state title="Incidents could not be loaded" [message]="workspace.error()!.message" />
+    } @else if (!filtered().length) {
+      <resq-empty-state title="No incidents found" message="Try changing the filters." />
+    } @else {
+      <div class="incident-grid">
+        @for (row of filtered(); track row.incident.incidentId) {
+          <article>
+            <div class="card-head">
+              <span [class]="'severity ' + levelClass(row)">{{ row.levelLabel }}</span>
+              <resq-status-badge [status]="row.incident.status" [label]="row.statusLabel" />
+            </div>
+
+            <a [routerLink]="['/incidents', row.incident.incidentId]">
+              <h3>{{ row.title }}</h3>
+              <p>{{ row.description }}</p>
+            </a>
+
+            <div class="meta">
+              <span>⌖ {{ row.location.buildingName }} · {{ row.location.zoneName }}</span>
+              <span>▱ {{ row.location.floorLabel || 'Floor not specified' }}</span>
+              <span>◷ {{ age(row.incident.createdAt) }}</span>
+              <span>◉ {{ row.assigneeLabel }}</span>
+            </div>
+
+            <footer>
+              <b>{{ row.incident.incidentId }}</b>
+              <a [routerLink]="['/incidents', row.incident.incidentId]">Details →</a>
+            </footer>
+          </article>
+        }
+      </div>
+    }
+  `,
+  styleUrl: './incidents.pages.scss',
+})
+export class IncidentsPage implements OnInit {
+  readonly workspace = inject(IncidentWorkspaceFacade);
+  readonly query = signal('');
+  readonly status = signal('');
+  readonly type = signal('');
+
+  readonly filtered = computed(() => {
+    const query = this.query().trim().toLowerCase();
+    return this.workspace.rows().filter((row) => {
+      const searchable = `${row.incident.incidentId} ${row.title} ${row.typeLabel} ${row.location.buildingName} ${row.location.zoneName}`.toLowerCase();
+      return (
+        (!query || searchable.includes(query)) &&
+        (!this.status() || row.incident.status === this.status()) &&
+        (!this.type() || row.incident.type === this.type())
+      );
+    });
+  });
+
+  ngOnInit(): void {
+    this.workspace.loadIncidents().subscribe({ error: () => undefined });
+  }
+
+  count(status: string): number {
+    return this.workspace.rows().filter((row) => row.incident.status === status).length;
+  }
+
+  averageResolution(): string {
+    const resolved = this.workspace
+      .rows()
+      .filter((row) => row.incident.resolvedAt)
+      .map((row) => Math.max(0, row.incident.resolvedAt!.getTime() - row.incident.createdAt.getTime()));
+    if (!resolved.length) return '—';
+    const minutes = Math.round(resolved.reduce((sum, value) => sum + value, 0) / resolved.length / 60_000);
+    return minutes >= 60 ? `${Math.round(minutes / 60)} h` : `${minutes} min`;
+  }
+
+  age(date: Date): string {
+    const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60_000));
+    if (minutes < 60) return `${Math.max(1, minutes)} min ago`;
+    const hours = Math.round(minutes / 60);
+    return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+  }
+
+  levelClass(row: IncidentWorkspaceRow): string {
+    return row.incident.level?.toLowerCase() ?? 'unknown';
+  }
+}
+
+@Component({
+  selector: 'resq-incident-detail',
+  standalone: true,
+  imports: [FormsModule, RouterLink, StatusBadgeComponent, LoadingStateComponent, EmptyStateComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (workspace.loading()) {
+      <resq-loading-state message="Loading incident..." />
+    } @else if (workspace.error()) {
+      <resq-empty-state title="Incident could not be loaded" [message]="workspace.error()!.message" />
+    } @else if (workspace.detail(); as row) {
+      <div class="detail-head">
+        <div>
+          <a routerLink="/incidents">← Incidents</a>
+          <p>{{ row.incident.incidentId }}</p>
+          <h2>{{ row.title }}</h2>
+          <span>{{ row.description }}</span>
+        </div>
+        <div>
+          <resq-status-badge [status]="row.incident.level || 'Info'" [label]="row.levelLabel" />
+          <resq-status-badge [status]="row.incident.status" [label]="row.statusLabel" />
+        </div>
+      </div>
+
+      <div class="actions">
+        @if (workspace.canAssign(row)) {
+          <button type="button" class="secondary" (click)="assignToMe()" [disabled]="busy()">
+            Assign to me
+          </button>
+        }
+        @if (workspace.canResolve(row)) {
+          <button type="button" (click)="showResolve.set(true)" [disabled]="busy()">Resolve incident</button>
+        }
+        @if (row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED') {
+          <button type="button" disabled>✓ {{ row.statusLabel }}</button>
+        }
+      </div>
+
+      @if (showResolve()) {
+        <section class="resolve-box">
+          <label>
+            Resolution notes
+            <textarea [(ngModel)]="resolutionNotes" rows="4" placeholder="Describe what was verified and how the incident was resolved."></textarea>
+          </label>
+          <div>
+            <button type="button" class="secondary" (click)="showResolve.set(false)">Cancel</button>
+            <button type="button" (click)="resolve()" [disabled]="!resolutionNotes.trim() || busy()">Confirm resolution</button>
+          </div>
+        </section>
+      }
+
+      <div class="grid">
+        <article>
+          <h3>Incident lifecycle</h3>
+          <div class="timeline">
+            <div class="done"><i>✓</i><section><b>Incident created</b><small>{{ row.incident.createdAt.toLocaleString() }}</small><p>The incident was created by the operational risk flow.</p></section></div>
+            <div [class.done]="row.incident.assignedTo"><i>{{ row.incident.assignedTo ? '✓' : '2' }}</i><section><b>Assignment</b><small>{{ row.assigneeLabel }}</small><p>Assignment is managed by Incident Management.</p></section></div>
+            <div [class.done]="row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED'"><i>{{ row.incident.resolvedAt ? '✓' : '3' }}</i><section><b>Resolution</b><small>{{ row.incident.resolvedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.incident.resolutionNotes || 'Resolution notes have not been registered yet.' }}</p></section></div>
+          </div>
+        </article>
+
+        <aside>
+          <h3>Incident context</h3>
+          <dl>
+            <dt>Type</dt><dd>{{ row.typeLabel }}</dd>
+            <dt>Risk level</dt><dd>{{ row.levelLabel }}</dd>
+            <dt>Status</dt><dd>{{ row.statusLabel }}</dd>
+            <dt>Assigned to</dt><dd>{{ row.assigneeLabel }}</dd>
+            <dt>Building</dt><dd>{{ row.location.buildingName }}</dd>
+            <dt>Floor</dt><dd>{{ row.location.floorLabel || '—' }}</dd>
+            <dt>Zone</dt><dd>{{ row.location.zoneName }}</dd>
+            <dt>Created</dt><dd>{{ row.incident.createdAt.toLocaleString() }}</dd>
+            <dt>Resolved</dt><dd>{{ row.incident.resolvedAt?.toLocaleString() || '—' }}</dd>
+          </dl>
+          <p class="contract-note">Incident creation is not exposed as a manual Web action. Assignment and resolution are the supported operator actions.</p>
+        </aside>
+      </div>
+    } @else {
+      <div class="not-found"><h2>Incident not found</h2><a routerLink="/incidents">Back to Incidents</a></div>
+    }
+  `,
+  styleUrl: './incident-detail.page.scss',
+})
+export class IncidentDetailPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly snack = inject(MatSnackBar);
+  readonly workspace = inject(IncidentWorkspaceFacade);
+  readonly busy = signal(false);
+  readonly showResolve = signal(false);
+  resolutionNotes = '';
+
+  ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('incidentId') ?? '';
+    this.workspace.loadDetail(id).subscribe({ error: () => undefined });
+  }
+
+  assignToMe(): void {
+    this.busy.set(true);
+    this.workspace.assignToCurrentUser().subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.snack.open('Incident assigned to your user.', 'Close', { duration: 2200 });
+      },
+      error: () => this.busy.set(false),
+    });
+  }
+
+  resolve(): void {
+    const notes = this.resolutionNotes.trim();
+    if (!notes) return;
+    this.busy.set(true);
+    this.workspace.resolve(notes).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.showResolve.set(false);
+        this.resolutionNotes = '';
+        this.snack.open('Incident resolved.', 'Close', { duration: 2200 });
+      },
+      error: () => this.busy.set(false),
+    });
+  }
+}
