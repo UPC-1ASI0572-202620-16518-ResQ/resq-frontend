@@ -1,7 +1,7 @@
 import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { DeviceStatus, Floor, RiskStatus } from '../../../core/models/resq.models';
+import { DeviceStatus, Floor, FloorPlanElement, FloorPlanPoint, RiskStatus } from '../../../core/models/resq.models';
 import { floorPlanShape, floorPlanToWorldCoordinates, riskColor } from '../../../shared/three/floor-plan-three.utils';
 import { visualDevicePosition } from '../../../shared/utils/floor-plan-device.utils';
 
@@ -33,7 +33,7 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
   private controls?: OrbitControls;
   private resizeObserver?: ResizeObserver;
   private animationFrame = 0;
-  private readonly roomMeshes = new Map<string, THREE.Mesh>();
+  private readonly roomMeshes = new Map<string, THREE.Mesh[]>();
   private readonly deviceMeshes: THREE.Mesh[] = [];
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
@@ -111,31 +111,60 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
 
       for (const space of floor.spaces) {
         if (space.polygon.length < 3) continue;
-        const geometry = new THREE.ExtrudeGeometry(
-          floorPlanShape(space.polygon),
-          { depth: ROOM_HEIGHT, bevelEnabled: false },
-        );
-        geometry.rotateX(-Math.PI / 2);
         const selected = activeFloor && space.id === this.selectedSpaceId;
-        const mesh = new THREE.Mesh(geometry, this.roomMaterial(space.status, activeFloor, selected));
-        mesh.position.y = baseY;
-        mesh.castShadow = activeFloor;
-        mesh.receiveShadow = true;
-        mesh.userData = { generated: true, floorId: floor.id, spaceId: space.id, status: space.status };
-        this.roomMeshes.set(space.id, mesh);
-        this.scene!.add(mesh);
+        const meshes: THREE.Mesh[] = [];
+        if (space.type === 'Stairs') {
+          const xs = space.polygon.map(point => point.x);
+          const ys = space.polygon.map(point => point.y);
+          const x = Math.min(...xs); const y = Math.min(...ys);
+          const width = Math.max(...xs) - x; const height = Math.max(...ys) - y;
+          const steps = 7;
+          for (let index = 0; index < steps; index++) {
+            const stepHeight = height / steps;
+            const stepPolygon = [
+              { x, y: y + index * stepHeight }, { x: x + width, y: y + index * stepHeight },
+              { x: x + width, y: y + (index + 1) * stepHeight }, { x, y: y + (index + 1) * stepHeight },
+            ];
+            const geometry = new THREE.ExtrudeGeometry(floorPlanShape(stepPolygon), {
+              depth: .12 + (index / (steps - 1)) * .58,
+              bevelEnabled: false,
+            });
+            geometry.rotateX(-Math.PI / 2);
+            const mesh = new THREE.Mesh(geometry, this.roomMaterial(space.status, activeFloor, selected));
+            mesh.position.y = baseY;
+            mesh.castShadow = activeFloor;
+            mesh.receiveShadow = true;
+            mesh.userData = { generated: true, floorId: floor.id, spaceId: space.id, status: space.status };
+            meshes.push(mesh);
+            this.scene!.add(mesh);
+          }
+        } else {
+          const geometry = new THREE.ExtrudeGeometry(
+            floorPlanShape(space.polygon),
+            { depth: ROOM_HEIGHT, bevelEnabled: false },
+          );
+          geometry.rotateX(-Math.PI / 2);
+          const mesh = new THREE.Mesh(geometry, this.roomMaterial(space.status, activeFloor, selected));
+          mesh.position.y = baseY;
+          mesh.castShadow = activeFloor;
+          mesh.receiveShadow = true;
+          mesh.userData = { generated: true, floorId: floor.id, spaceId: space.id, status: space.status };
+          meshes.push(mesh);
+          this.scene!.add(mesh);
 
-        const edges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(geometry),
-          new THREE.LineBasicMaterial({
-            color: selected ? 0x1570ef : 0x52677d,
-            transparent: true,
-            opacity: activeFloor ? .72 : .3,
-          }),
-        );
-        edges.position.y = baseY;
-        edges.userData = { generated: true, floorId: floor.id, spaceId: space.id };
-        this.scene!.add(edges);
+          const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(geometry),
+            new THREE.LineBasicMaterial({
+              color: selected ? 0x1570ef : 0x52677d,
+              transparent: true,
+              opacity: activeFloor ? .72 : .3,
+            }),
+          );
+          edges.position.y = baseY;
+          edges.userData = { generated: true, floorId: floor.id, spaceId: space.id };
+          this.scene!.add(edges);
+        }
+        this.roomMeshes.set(space.id, meshes);
 
         if (!activeFloor) continue;
         const activeDevices = space.devices.filter(device =>
@@ -149,7 +178,7 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
             new THREE.MeshStandardMaterial({ color: this.deviceColor(device.status), roughness: .5 }),
           );
           const world = floorPlanToWorldCoordinates(visualPosition);
-          marker.position.set(world.x, baseY + ROOM_HEIGHT + .18, world.z);
+          marker.position.set(world.x, baseY + (space.type === 'Stairs' ? .88 : ROOM_HEIGHT + .18), world.z);
           marker.castShadow = true;
           marker.userData = {
             generated: true,
@@ -166,11 +195,13 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
       // footprint from that same plan element and keep the actual Space as owner.
       const hallwaySpaces = floor.spaces.filter(space => space.type === 'Hallway' && space.polygon.length < 3);
       const hallwayElements = (floor.planElements ?? []).filter(element => element.type === 'Hallway');
+      const renderedStructuralIds = new Set<string>();
       hallwayElements.forEach((element, index) => {
         const hallway = hallwaySpaces.find(space => element.spaceId === space.id)
           ?? hallwaySpaces.find(space => !!element.label && space.name.toLowerCase() === element.label.toLowerCase())
           ?? hallwaySpaces[index];
         if (!hallway) return;
+        renderedStructuralIds.add(element.id);
 
         const polygon = [
           { x: element.x, y: element.y },
@@ -188,7 +219,7 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
         mesh.position.y = baseY;
         mesh.receiveShadow = true;
         mesh.userData = { generated: true, floorId: floor.id, spaceId: hallway.id, status: hallway.status };
-        this.roomMeshes.set(hallway.id, mesh);
+        this.roomMeshes.set(hallway.id, [mesh]);
         this.scene!.add(mesh);
 
         const edges = new THREE.LineSegments(
@@ -227,13 +258,20 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
           this.scene!.add(marker);
         }
       });
+
+      // Elements that do not own monitoring data are still part of the physical
+      // floor. Render them as context instead of silently dropping them in 3D.
+      for (const element of floor.planElements ?? []) {
+        if (element.type === 'Space' || renderedStructuralIds.has(element.id)) continue;
+        this.addStructuralElement(element, baseY, activeFloor);
+      }
     });
 
     this.fitCamera();
   }
 
   private updateSelection(): void {
-    for (const mesh of this.roomMeshes.values()) {
+    for (const mesh of [...this.roomMeshes.values()].flat()) {
       const material = mesh.material as THREE.MeshStandardMaterial;
       const status = mesh.userData['status'] as RiskStatus;
       const activeFloor = mesh.userData['floorId'] === this.selectedFloorId;
@@ -263,6 +301,99 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
     return ({ Online: 0x1570ef, Warning: 0xf79009, Critical: 0xf04438, Offline: 0x98a2b3 })[status];
   }
 
+  private addStructuralElement(element: FloorPlanElement, baseY: number, activeFloor: boolean): void {
+    if (!this.scene || element.width <= 0 || element.height <= 0) return;
+    if (element.type === 'Stairs') {
+      const steps = 7;
+      for (let index = 0; index < steps; index++) {
+        const stepHeight = element.height / steps;
+        const polygon = this.elementPolygon(element, element.x, element.y + index * stepHeight, element.width, stepHeight);
+        const geometry = new THREE.ExtrudeGeometry(floorPlanShape(polygon), {
+          depth: .12 + (index / (steps - 1)) * .58,
+          bevelEnabled: false,
+        });
+        geometry.rotateX(-Math.PI / 2);
+        const mesh = new THREE.Mesh(geometry, this.structuralMaterial(element, activeFloor));
+        mesh.position.y = baseY;
+        mesh.castShadow = activeFloor;
+        mesh.receiveShadow = true;
+        mesh.userData = { generated: true, floorId: element.id, structuralElementId: element.id };
+        this.scene.add(mesh);
+      }
+      return;
+    }
+
+    const geometry = new THREE.ExtrudeGeometry(
+      floorPlanShape(this.elementPolygon(element)),
+      { depth: this.structuralHeight(element), bevelEnabled: false },
+    );
+    geometry.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geometry, this.structuralMaterial(element, activeFloor));
+    mesh.position.y = baseY;
+    mesh.castShadow = activeFloor && element.type !== 'Hallway';
+    mesh.receiveShadow = true;
+    mesh.userData = { generated: true, floorId: element.id, structuralElementId: element.id };
+    this.scene.add(mesh);
+
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry),
+      new THREE.LineBasicMaterial({ color: 0x52677d, transparent: true, opacity: activeFloor ? .65 : .25 }),
+    );
+    edges.position.y = baseY;
+    edges.userData = { generated: true, floorId: element.id, structuralElementId: element.id };
+    this.scene.add(edges);
+  }
+
+  private elementPolygon(
+    element: FloorPlanElement,
+    x = element.x,
+    y = element.y,
+    width = element.width,
+    height = element.height,
+  ): FloorPlanPoint[] {
+    const points = [
+      { x, y }, { x: x + width, y },
+      { x: x + width, y: y + height }, { x, y: y + height },
+    ];
+    const rotation = THREE.MathUtils.degToRad(element.rotation ?? 0);
+    if (!rotation) return points;
+    const centerX = element.x + element.width / 2;
+    const centerY = element.y + element.height / 2;
+    const cosine = Math.cos(rotation);
+    const sine = Math.sin(rotation);
+    return points.map(point => {
+      const offsetX = point.x - centerX;
+      const offsetY = point.y - centerY;
+      return {
+        x: centerX + offsetX * cosine - offsetY * sine,
+        y: centerY + offsetX * sine + offsetY * cosine,
+      };
+    });
+  }
+
+  private structuralHeight(element: FloorPlanElement): number {
+    return ({ Hallway: .14, Restroom: .58, Wall: .82, Door: .68, Stairs: .7, Space: ROOM_HEIGHT })[element.type];
+  }
+
+  private structuralMaterial(element: FloorPlanElement, activeFloor: boolean): THREE.MeshStandardMaterial {
+    const color = ({
+      Hallway: 0xb8c4ce,
+      Restroom: 0x75b9cf,
+      Wall: 0x7d8996,
+      Door: 0xb9865b,
+      Stairs: 0x9aa8b5,
+      Space: CONTEXT_COLOR,
+    })[element.type];
+    return new THREE.MeshStandardMaterial({
+      color,
+      transparent: true,
+      opacity: activeFloor ? .9 : .34,
+      roughness: .78,
+      metalness: .02,
+      side: THREE.DoubleSide,
+    });
+  }
+
   private fitCamera(): void {
     if (!this.scene || !this.camera || !this.controls) return;
     const generated = this.scene.children.filter(child => child.userData['generated']);
@@ -289,7 +420,7 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
     const deviceHit = this.raycaster.intersectObjects(this.deviceMeshes, false)[0];
     const deviceId = deviceHit?.object.userData['deviceId'] as string | undefined;
     if (deviceId) { this.zone.run(() => this.deviceSelected.emit(deviceId)); return; }
-    const hit = this.raycaster.intersectObjects([...this.roomMeshes.values()], false)[0];
+    const hit = this.raycaster.intersectObjects([...this.roomMeshes.values()].flat(), false)[0];
     const spaceId = hit?.object.userData['spaceId'] as string | undefined;
     if (spaceId) this.zone.run(() => this.spaceSelected.emit(spaceId));
   };

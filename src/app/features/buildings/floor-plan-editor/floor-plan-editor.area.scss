@@ -57,6 +57,10 @@
 .device-marker { cursor: grab; }
 .device-marker:active { cursor: grabbing; }
 .device-marker.selected circle { stroke: #1570ef; stroke-width: 5; filter: drop-shadow(0 0 4px rgb(21 112 239 / 45%)); }
+.space-shape.stairs-space polygon { fill: #d8e1ea; }
+.space-shape .stair-step { pointer-events: none; fill: #f8fafc; stroke: #8293a5; stroke-width: 1.5; }
+.space-shape .stair-step.alternate { fill: #e5ebf1; }
+.space-shape .stair-direction { pointer-events: none; fill: none; stroke: #344e68; stroke-width: 2.5; }
 
 .properties-panel .apply-area {
   width: 100%;

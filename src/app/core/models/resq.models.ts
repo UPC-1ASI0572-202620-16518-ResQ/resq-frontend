@@ -8,6 +8,8 @@ export type SpaceType =
   | 'Storage'
   | 'Kitchen'
   | 'Hallway'
+  | 'Stairs'
+  | 'Restroom'
   | 'MeetingRoom'
   | 'ControlRoom'
   | 'Reception'

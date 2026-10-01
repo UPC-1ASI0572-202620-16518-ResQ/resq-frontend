@@ -47,3 +47,7 @@
 .monitor-context label { display: grid; grid-template-columns: auto minmax(220px, 320px); align-items: center; gap: 10px; color: #475467; font-size: 13px; font-weight: 700; }
 .monitor-context select { width: 100%; min-height: 42px; padding: 0 36px 0 12px; border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; color: #101828; font-size: 13px; }
 @media (max-width: 700px) { .monitor-context { align-items: stretch; flex-direction: column; } .monitor-context label { grid-template-columns: 1fr; } }
+.space.stairs-space polygon { fill: #d8e1ea; }
+.space .stair-step { pointer-events: none; fill: #f8fafc; stroke: #8293a5; stroke-width: 1.5; }
+.space .stair-step.alternate { fill: #e5ebf1; }
+.space .stair-direction { pointer-events: none; fill: none; stroke: #344e68; stroke-width: 2.5; }

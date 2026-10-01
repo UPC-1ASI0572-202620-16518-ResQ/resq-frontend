@@ -386,10 +386,10 @@ const scienceF2Specs: Array<
     'Normal',
     'Low',
     [
-      [70, 225],
-      [900, 225],
-      [900, 295],
-      [70, 295],
+      [145, 225],
+      [825, 225],
+      [825, 295],
+      [145, 295],
     ],
   ],
 ];
@@ -448,6 +448,21 @@ const rectanglePolygon = (x: number, y: number, width: number, height: number): 
   { x, y }, { x: x + width, y }, { x: x + width, y: y + height }, { x, y: y + height },
 ];
 
+function makeSpatialSpace(
+  id: string,
+  buildingId: string,
+  floorId: string,
+  name: string,
+  type: 'Hallway' | 'Stairs' | 'Restroom',
+  polygon: FloorPlanPoint[],
+): Space {
+  return {
+    id, buildingId, floorId, name, type,
+    sensitivity: type === 'Hallway' || type === 'Stairs' ? 'Low' : 'Normal',
+    status: 'Normal', thresholds: threshold(type), polygon, devices: [],
+  };
+}
+
 function positionDevices(space: Space): Space {
   if (space.polygon.length < 3) return space;
   const xs = space.polygon.map(point => point.x);
@@ -482,9 +497,19 @@ function configureDemoFloor(floor: Floor, variant = 0): Floor {
       polygon: rectanglePolygon(padding + index * (width + gap), y, width, height),
     }));
   };
-  const configuredSpaces = [
+  const configuredRooms = [
     ...row(spaces.slice(0, topCount), 45 + variant * 3, 155),
     ...row(spaces.slice(topCount), 305 - variant * 2, 145),
+  ];
+  const stairsX = 445 + variant * 8;
+  const restroomX = 535 + variant * 6;
+  const rightEdge = padding + usableWidth;
+  const configuredSpaces = [
+    ...configuredRooms,
+    makeSpatialSpace(`${floor.id}-hall-west`, floor.buildingId, floor.id, 'West Hallway', 'Hallway', rectanglePolygon(padding, 220, stairsX - padding - 10, 65)),
+    makeSpatialSpace(`${floor.id}-stairs`, floor.buildingId, floor.id, 'Stairs', 'Stairs', rectanglePolygon(stairsX, 220, 70, 65)),
+    makeSpatialSpace(`${floor.id}-wc`, floor.buildingId, floor.id, 'Restroom', 'Restroom', rectanglePolygon(restroomX, 220, 65, 65)),
+    makeSpatialSpace(`${floor.id}-hall-east`, floor.buildingId, floor.id, 'East Hallway', 'Hallway', rectanglePolygon(restroomX + 75, 220, rightEdge - restroomX - 75, 65)),
   ];
   const areaElements: FloorPlanElement[] = configuredSpaces.map(space => {
     const xs = space.polygon.map(point => point.x); const ys = space.polygon.map(point => point.y);
@@ -497,12 +522,7 @@ function configureDemoFloor(floor: Floor, variant = 0): Floor {
       label: space.name,
     };
   });
-  const structural: FloorPlanElement[] = [
-    { id: `${floor.id}-hall`, type: 'Hallway', x: padding, y: 220, width: usableWidth, height: 65, label: 'Central Hallway' },
-    { id: `${floor.id}-stairs`, type: 'Stairs', x: 445 + variant * 8, y: 220, width: 70, height: 65, label: 'Stairs' },
-    { id: `${floor.id}-wc`, type: 'Restroom', x: 535 + variant * 6, y: 220, width: 65, height: 65, label: 'WC' },
-  ];
-  return { ...floor, spaces: configuredSpaces, planElements: [...structural, ...areaElements], planConfigured: configuredSpaces.length > 0 };
+  return { ...floor, spaces: configuredSpaces, planElements: areaElements, planConfigured: configuredSpaces.length > 0 };
 }
 
 const genericNames = ['Reception','Open Office','Meeting Room','Control Room','Training Room','Kitchen','Archive','Operations'];
@@ -515,21 +535,19 @@ function makeGenericFloor(buildingId: string, level: number, index: number): Flo
   return configureDemoFloor({ id: floorId, buildingId, name: `Floor ${level}`, level, spaces, status: spaces.some(space => space.status === 'Warning') ? 'Warning' : 'Normal' }, index % 3);
 }
 
-const scienceF2Spaces = scienceF2Specs.map(spec => {
-  const space = positionDevices(makeSpace(spec, 'science', 'science-f2'));
-  return space.type === 'Hallway' ? { ...space, polygon: [] } : space;
-});
+const scienceF2Spaces = [
+  ...scienceF2Specs.map(spec => positionDevices(makeSpace(spec, 'science', 'science-f2'))),
+  makeSpatialSpace('science-f2-stairs-a', 'science', 'science-f2', 'Stairs A', 'Stairs', rectanglePolygon(445, 310, 45, 145)),
+  makeSpatialSpace('science-f2-stairs-b', 'science', 'science-f2', 'Stairs B', 'Stairs', rectanglePolygon(70, 232, 55, 56)),
+  makeSpatialSpace('science-f2-wc-a', 'science', 'science-f2', 'Restroom A', 'Restroom', rectanglePolygon(505, 310, 45, 145)),
+  makeSpatialSpace('science-f2-wc-b', 'science', 'science-f2', 'Restroom B', 'Restroom', rectanglePolygon(845, 232, 55, 56)),
+];
 const scienceFloors: Floor[] = [1,2,3,4].map((level, index) => level === 2
   ? {
       id: 'science-f2', buildingId: 'science', name: 'Floor 2', level: 2,
       spaces: scienceF2Spaces, status: 'Critical', planConfigured: true,
       planElements: [
-        { id: 'science-f2-hall', type: 'Hallway', x: 70, y: 225, width: 830, height: 70, label: 'Central Hallway' },
-        { id: 'science-f2-stairs-a', type: 'Stairs', x: 445, y: 310, width: 45, height: 145, label: 'Stairs' },
-        { id: 'science-f2-stairs-b', type: 'Stairs', x: 70, y: 232, width: 55, height: 56, label: 'Stairs' },
-        { id: 'science-f2-wc-a', type: 'Restroom', x: 505, y: 310, width: 45, height: 145, label: 'WC' },
-        { id: 'science-f2-wc-b', type: 'Restroom', x: 845, y: 232, width: 55, height: 56, label: 'WC' },
-        ...scienceF2Spaces.filter(space => space.type !== 'Hallway').map(space => {
+        ...scienceF2Spaces.map(space => {
           const xs = space.polygon.map(point => point.x); const ys = space.polygon.map(point => point.y);
           return { id: `plan-area-${space.id}`, type: 'Space' as const, spaceId: space.id, label: space.name, x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
         }),

@@ -95,6 +95,7 @@ export class FloorMonitoringPage {
     return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
   }
   elementLabel(element: FloorPlanElement): string { return element.label ?? element.type; }
+  isStairSpace(type: string): boolean { return type === 'Stairs'; }
   deviceLetter(device: Device): string { return device.type.charAt(0); }
   deviceLabel(device: Device): string { return device.displayName || device.name; }
   devicePosition(devices: Device[], index: number): FloorPlanPoint | undefined { return visualDevicePosition(devices, index); }
