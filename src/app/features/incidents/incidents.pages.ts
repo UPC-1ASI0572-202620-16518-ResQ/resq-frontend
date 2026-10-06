@@ -161,6 +161,10 @@ export class IncidentsPage implements OnInit {
         }
       </div>
 
+      @if (row.incident.status === 'IN_PROGRESS' && row.currentCondition !== 'Normal') {
+        <p class="contract-note">Resolution is blocked: the current measurement must be below the warning threshold. Current condition: {{ row.currentCondition }}.</p>
+      }
+
       @if (showResolve()) {
         <section class="resolve-box">
           <label>
@@ -175,7 +179,7 @@ export class IncidentsPage implements OnInit {
       }
 
       <article class="critical-evidence">
-        <header><div><h3>Critical Detection Evidence</h3><p>The Incident exists because Risk Detection classified the measurement as CRITICAL.</p></div><span>Critical threshold exceeded</span></header>
+        <header><div><h3>Critical Detection Evidence</h3><p>The Incident exists because Risk Detection classified the measurement as CRITICAL. Actor: SYSTEM.</p></div><span>Critical threshold exceeded</span></header>
         @if (row.evidence.length) {
           @for (evidence of row.evidence; track evidence.deviceId + evidence.metric) {
             <div class="critical-reading">
@@ -190,15 +194,50 @@ export class IncidentsPage implements OnInit {
         } @else {
           <p class="contract-note">Critical evidence is unavailable in the current HTTP compatibility record.</p>
         }
+        @if (row.currentEvidence; as current) {
+          <div class="critical-reading">
+            <section><small>Current measurement</small><b>{{ current.value }} {{ current.unit || '' }}</b></section>
+            <section><small>Current condition</small><b>{{ row.currentCondition }}</b></section>
+            <section><small>Safe to resolve</small><b>{{ row.currentCondition === 'Normal' ? 'Yes' : 'No' }}</b></section>
+            <section><small>Latest reading at</small><b>{{ current.measuredAt.toLocaleString() }}</b></section>
+          </div>
+        }
+      </article>
+
+      <article class="critical-evidence">
+        <header><div><h3>Critical Response Actions</h3><p>These actions require an assigned Administrator. Unsupported device capabilities are not invented.</p></div><span>HUMAN_REQUIRED</span></header>
+        @if (row.responseExecutions.length) {
+          @for (execution of row.responseExecutions; track execution.responseExecutionId) {
+            <div class="critical-reading">
+              <section><small>Action</small><b>{{ actionLabel(execution.action.actionCode) }}</b></section>
+              <section><small>Capability</small><b>{{ execution.action.targetCapabilityCode }}</b></section>
+              <section><small>Status</small><b>{{ execution.status }}</b></section>
+              @if (execution.status === 'SUCCEEDED') {<section><small>Lifecycle</small><b>AUTHORIZED → EXECUTION_REQUESTED → SUCCEEDED</b></section>}
+              <section><small>Actor</small><b>{{ execution.authorization?.decidedByUserId || 'Administrator pending' }}</b></section>
+              @if (execution.result) {<section><small>Result</small><b>{{ execution.result.message || execution.result.resultCode }}</b></section>}
+              @if (workspace.canAuthorize(execution)) {
+                <section><small>Decision</small><b><button type="button" (click)="decide(execution.responseExecutionId, 'APPROVED')" [disabled]="busy()">Approve</button> <button type="button" class="secondary" (click)="decide(execution.responseExecutionId, 'REJECTED')" [disabled]="busy()">Reject</button></b></section>
+              }
+            </div>
+          }
+        } @else {
+          <p class="contract-note">No supported critical actuator capability is available for this Incident's device.</p>
+        }
       </article>
 
       <div class="grid">
         <article>
           <h3>Incident lifecycle</h3>
           <div class="timeline">
+            @if (row.evidence.at(0); as detected) {<div class="done"><i>✓</i><section><b>Critical condition detected</b><small>{{ detected.measuredAt.toLocaleString() }}</small><p>Risk Detection classified the measurement as CRITICAL.</p></section></div>}
             <div class="done"><i>✓</i><section><b>Incident created</b><small>{{ row.incident.createdAt.toLocaleString() }}</small><p>Risk Detection created this Incident independently after the critical threshold was reached.</p></section></div>
-            <div [class.done]="row.incident.assignedTo"><i>{{ row.incident.assignedTo ? '✓' : '2' }}</i><section><b>Assignment</b><small>{{ row.assigneeLabel }}</small><p>Assignment is managed by Incident Management.</p></section></div>
-            <div [class.done]="row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED'"><i>{{ row.incident.resolvedAt ? '✓' : '3' }}</i><section><b>Resolution</b><small>{{ row.incident.resolvedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.incident.resolutionNotes || 'Resolution notes have not been registered yet.' }}</p></section></div>
+            <div [class.done]="row.incident.assignedTo"><i>{{ row.incident.assignedTo ? '✓' : '2' }}</i><section><b>Assignment</b><small>{{ row.incident.assignedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.assigneeLabel }}</p></section></div>
+            @for (execution of row.responseExecutions; track execution.responseExecutionId) {
+              <div [class.done]="execution.authorization"><i>{{ execution.authorization ? '✓' : '3' }}</i><section><b>{{ actionLabel(execution.action.actionCode) }}</b><small>{{ execution.authorization?.decidedAt?.toLocaleString() || 'Authorization pending' }}</small><p>{{ execution.authorization ? execution.authorization.decision + ' by ' + execution.authorization.decidedByUserId : 'Administrator decision required.' }}</p></section></div>
+              @if (execution.result) {<div class="done"><i>✓</i><section><b>Action result</b><small>{{ execution.result.completedAt.toLocaleString() }}</small><p>{{ execution.result.message || execution.result.resultCode }}</p></section></div>}
+            }
+            <div [class.done]="row.incident.safeAt"><i>{{ row.incident.safeAt ? '✓' : '4' }}</i><section><b>Safe condition verified</b><small>{{ row.incident.safeAt?.toLocaleString() || 'Pending' }}</small><p>The current measurement must be below the warning threshold.</p></section></div>
+            <div [class.done]="row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED'"><i>{{ row.incident.resolvedAt ? '✓' : '5' }}</i><section><b>Resolution</b><small>{{ row.incident.resolvedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.incident.resolutionNotes || 'Resolution notes have not been registered yet.' }}</p></section></div>
           </div>
         </article>
 
@@ -210,11 +249,15 @@ export class IncidentsPage implements OnInit {
             <dt>Risk level</dt><dd>{{ row.levelLabel }}</dd>
             <dt>Status</dt><dd>{{ row.statusLabel }}</dd>
             <dt>Assigned to</dt><dd>{{ row.assigneeLabel }}</dd>
+            <dt>Assigned at</dt><dd>{{ row.incident.assignedAt?.toLocaleString() || '—' }}</dd>
+            <dt>Current condition</dt><dd>{{ row.currentCondition }}</dd>
+            <dt>Safe at</dt><dd>{{ row.incident.safeAt?.toLocaleString() || '—' }}</dd>
             <dt>Building</dt><dd>{{ row.location.buildingName }}</dd>
             <dt>Floor</dt><dd>{{ row.location.floorLabel || '—' }}</dd>
             <dt>Zone</dt><dd>{{ row.location.zoneName }}</dd>
             <dt>Created</dt><dd>{{ row.incident.createdAt.toLocaleString() }}</dd>
             <dt>Resolved</dt><dd>{{ row.incident.resolvedAt?.toLocaleString() || '—' }}</dd>
+            <dt>Resolved by</dt><dd>{{ row.incident.resolvedBy || '—' }}</dd>
           </dl>
           <p class="contract-note">Incident creation is not exposed as a manual Web action. Assignment and resolution are the supported operator actions.</p>
         </aside>
@@ -245,7 +288,10 @@ export class IncidentDetailPage implements OnInit {
         this.busy.set(false);
         this.snack.open('Incident assigned to your user.', 'Close', { duration: 2200 });
       },
-      error: () => this.busy.set(false),
+      error: (error: { message?: string }) => {
+        this.busy.set(false);
+        this.snack.open(error.message ?? 'Incident assignment failed.', 'Close', { duration: 3500 });
+      },
     });
   }
 
@@ -260,7 +306,34 @@ export class IncidentDetailPage implements OnInit {
         this.resolutionNotes = '';
         this.snack.open('Incident resolved.', 'Close', { duration: 2200 });
       },
-      error: () => this.busy.set(false),
+      error: (error: { message?: string }) => {
+        this.busy.set(false);
+        this.snack.open(error.message ?? 'Incident resolution failed.', 'Close', { duration: 3500 });
+      },
     });
+  }
+
+  decide(executionId: string, decision: 'APPROVED' | 'REJECTED'): void {
+    this.busy.set(true);
+    this.workspace.decideAuthorization(executionId, decision).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.snack.open(
+          decision === 'APPROVED'
+            ? 'Critical action authorized and completed.'
+            : 'Critical action rejected.',
+          'Close',
+          { duration: 2600 },
+        );
+      },
+      error: (error: { message?: string }) => {
+        this.busy.set(false);
+        this.snack.open(error.message ?? 'Authorization failed.', 'Close', { duration: 3500 });
+      },
+    });
+  }
+
+  actionLabel(value: string): string {
+    return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 }

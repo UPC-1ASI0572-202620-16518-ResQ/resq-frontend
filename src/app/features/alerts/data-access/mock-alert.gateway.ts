@@ -375,13 +375,26 @@ export class MockAlertGateway
       (item) => item.responseExecutionId === responseExecutionId,
     );
     if (source) {
-      this.events.updateResponseExecution({
+      const decided = {
         ...source,
-        status: next.status,
-        executionRequestedAt: next.executionRequestedAt,
         authorization: next.authorization,
-        result: next.result,
-      });
+        status: decision === 'APPROVED' ? 'AUTHORIZED' : 'REJECTED',
+      } as const;
+      this.events.updateResponseExecution(decided);
+
+      if (decision === 'APPROVED') {
+        const requested = {
+          ...decided,
+          status: 'EXECUTION_REQUESTED' as const,
+          executionRequestedAt: decidedAt,
+        };
+        this.events.updateResponseExecution(requested);
+        this.events.updateResponseExecution({
+          ...requested,
+          status: 'SUCCEEDED',
+          result: next.result,
+        });
+      }
     }
 
     return of(

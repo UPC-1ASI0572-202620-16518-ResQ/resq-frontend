@@ -108,6 +108,26 @@ export function mapLegacyIncidentToRecord(
     riskDetectionId:
       incident.riskDetectionId,
 
+    detectedEvidence: {
+      deviceId: incident.evidence.deviceId,
+      metric: incident.evidence.metric,
+      value: incident.evidence.value,
+      unit: incident.evidence.unit,
+      warningThreshold: incident.evidence.warningThreshold,
+      criticalThreshold: incident.evidence.criticalThreshold,
+      measuredAt: new Date(incident.evidence.capturedAt),
+    },
+
+    currentEvidence: {
+      deviceId: incident.currentEvidence.deviceId,
+      metric: incident.currentEvidence.metric,
+      value: incident.currentEvidence.value,
+      unit: incident.currentEvidence.unit,
+      warningThreshold: incident.currentEvidence.warningThreshold,
+      criticalThreshold: incident.currentEvidence.criticalThreshold,
+      measuredAt: new Date(incident.currentEvidence.capturedAt),
+    },
+
     /*
      * The current legacy frontend calls this
      * field spaceId. In the final Building
@@ -172,6 +192,13 @@ export function cloneIncident(
 
   return {
     ...incident,
+
+    detectedEvidence: incident.detectedEvidence
+      ? { ...incident.detectedEvidence, measuredAt: new Date(incident.detectedEvidence.measuredAt) }
+      : undefined,
+    currentEvidence: incident.currentEvidence
+      ? { ...incident.currentEvidence, measuredAt: new Date(incident.currentEvidence.measuredAt) }
+      : undefined,
 
     createdAt:
       new Date(

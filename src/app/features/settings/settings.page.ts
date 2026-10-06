@@ -13,6 +13,7 @@ import { Router } from '@angular/router';
 import { AuthSessionFacade } from '../auth/auth-session.facade';
 import { UserFacade } from '../users/data-access/user.facade';
 import { AppLanguage, LanguageService } from '../../core/services/language.service';
+import { AuthorizationService } from '../auth/authorization.service';
 
 @Component({
   selector: 'resq-settings-page',
@@ -58,7 +59,7 @@ import { AppLanguage, LanguageService } from '../../core/services/language.servi
             <h3 class="section-heading">{{language.t('accountOverview','Account overview')}}</h3>
             <dl class="profile-meta">
               <div><dt>{{language.t('userId','User ID')}}</dt><dd>{{profile()?.userId || language.t('unavailable','Unavailable')}}</dd></div>
-              <div><dt>{{language.t('role','Role')}}</dt><dd>{{language.t('administrator','Administrator')}}</dd></div>
+              <div><dt>{{language.t('role','Role')}}</dt><dd>{{ authorization.roleLabel() }}</dd></div>
               <div><dt>{{language.t('accountStatus','Account status')}}</dt><dd class="active-state">{{language.t('active','Active')}}</dd></div>
               <div><dt>{{language.t('applicationLanguage','Application language')}}</dt><dd>{{language.language()==='es' ? language.t('spanish','Spanish') : language.t('english','English')}}</dd></div>
               <div><dt>{{language.t('timeZone','Time zone')}}</dt><dd>{{profile()?.preferences?.timeZone || 'America/Lima'}}</dd></div>
@@ -196,6 +197,7 @@ export class SettingsPage implements OnInit {
   readonly user = inject(UserFacade);
   readonly session = inject(AuthSessionFacade);
   readonly language = inject(LanguageService);
+  readonly authorization = inject(AuthorizationService);
 
   readonly section = signal<'profile' | 'preferences' | 'security'>('profile');
   readonly sections = [

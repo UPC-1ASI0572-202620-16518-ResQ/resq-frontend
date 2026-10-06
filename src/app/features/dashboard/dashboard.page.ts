@@ -1,9 +1,9 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DeviceType } from '../../core/models/resq.models';
-import { INCIDENTS } from '../../core/mock-data/resq.mock';
 import { AlertService } from '../../core/services/data.services';
 import { BuildingStoreService } from '../../core/services/building-store.service';
+import { RiskEventStoreService } from '../../core/services/risk-event-store.service';
 import { BarChartComponent, DoughnutChartComponent, KpiCardComponent, LineChartComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { AnalyticsWorkspaceFacade } from '../analytics/analytics-workspace.facade';
 
@@ -21,7 +21,7 @@ import { AnalyticsWorkspaceFacade } from '../analytics/analytics-workspace.facad
     <section class="lower-grid">
       <article class="card"><div class="card-head"><div><h2>Active Alerts</h2><p>Latest classified risks</p></div><a routerLink="/alerts">View all →</a></div><div class="feed">@for(alert of alerts();track alert.id){<a [routerLink]="'/alerts/'+alert.id"><span class="alert-icon" [class.critical]="alert.severity==='Critical'">!</span><div><b>{{alert.title}}</b><small>{{alert.location.zoneName}} · {{alert.severity}}</small></div><time>{{minutesAgo(alert.generatedAt)}} min</time></a>}</div></article>
       <article class="card device-card"><div class="card-head"><div><h2>Device Status</h2><p>Fleet connectivity</p></div><span>Total: {{store.devices().length}}</span></div><div class="device-content"><resq-doughnut-chart [values]="deviceStatusValues()" [centerValue]="store.devices().length" centerLabel="Devices"/><ul>@for(status of deviceStatuses;track status){<li><i [class]="status.toLowerCase()"></i>{{status}} <b>{{deviceStatusCount(status)}}</b><em>{{deviceStatusPercent(status)}}%</em></li>}</ul></div></article>
-      <article class="card"><div class="card-head"><div><h2>Recent Incidents</h2><p>Response activity</p></div><a routerLink="/incidents">View all →</a></div><div class="incident-list">@for(incident of incidents;track incident.id){<a [routerLink]="'/incidents/'+incident.id"><div><b>{{incident.title}}</b><small>{{incident.id}} · {{spaceName(incident.spaceId)}}</small></div><resq-status-badge [status]="incident.status"/></a>}</div></article>
+      <article class="card"><div class="card-head"><div><h2>Recent Incidents</h2><p>Response activity</p></div><a routerLink="/incidents">View all →</a></div><div class="incident-list">@for(incident of incidents();track incident.id){<a [routerLink]="'/incidents/'+incident.id"><div><b>{{incident.title}}</b><small>{{incident.id}} · {{spaceName(incident.spaceId)}}</small></div><resq-status-badge [status]="incident.status"/></a>}</div></article>
     </section>
     <section class="insights-head"><div><h2>Operational Analytics</h2><p>Trends from alerts, incidents and monitored zones</p></div><div class="period">@for(item of periods;track item.value){<button type="button" [class.active]="period()===item.value" (click)="period.set(item.value)">{{item.label}}</button>}</div></section>
     <section class="analytics-grid">
@@ -37,9 +37,10 @@ export class DashboardPage implements OnInit {
   private readonly alertService = inject(AlertService);
   readonly analytics = inject(AnalyticsWorkspaceFacade);
   readonly store = inject(BuildingStoreService);
+  private readonly events = inject(RiskEventStoreService);
   readonly alerts = this.alertService.latestAlerts;
   readonly recentAlertCount = this.alertService.recentAlertCount;
-  readonly incidents = INCIDENTS.slice(0, 4);
+  readonly incidents = computed(() => this.events.incidents().slice(0, 4));
   readonly period = signal<'24h' | '7d' | '30d'>('7d');
   readonly periods = [{ value: '24h' as const, label: 'Last 24 Hours' }, { value: '7d' as const, label: 'Last 7 Days' }, { value: '30d' as const, label: 'Last 30 Days' }];
   readonly environmentalMetric = signal<DeviceType>('Temperature');

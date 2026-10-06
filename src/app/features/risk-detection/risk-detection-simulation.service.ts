@@ -110,15 +110,7 @@ export class RiskDetectionSimulationService {
     };
 
     if (classification === 'Warning') {
-      const operationalIncident = this.events.updateCurrentIncidentEvidence(correlation, evidence);
-      if (operationalIncident) {
-        return {
-          classification,
-          created: false,
-          incidentId: operationalIncident.id,
-          message: `Warning: ${metricLabel} is below critical but the existing Incident remains open until a safe reading is verified.`,
-        };
-      }
+      this.events.updateCurrentIncidentEvidence(correlation, evidence);
 
       const alertId = `alert-warning-${suffix}`;
       const alert: Alert = {

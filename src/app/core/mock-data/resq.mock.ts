@@ -805,7 +805,7 @@ export const ALERTS: Alert[] = warningScenarios.map((scenario) => {
     generatedAt,
     status: scenario.alertId === 'alert-warning-gas-demo' ? 'CLEARED' : 'ACTIVE',
     clearedAt:
-      scenario.alertId === 'alert-warning-gas-demo' ? after(detectedAt, 31 * 60) : undefined,
+      scenario.alertId === 'alert-warning-gas-demo' ? after(detectedAt, 28 * 60) : undefined,
     clearReason:
       scenario.alertId === 'alert-warning-gas-demo'
         ? 'CRITICAL_THRESHOLD_REACHED'
@@ -902,12 +902,19 @@ export const INCIDENTS: Incident[] = criticalScenarios.map((scenario) => {
       scenario.incidentStatus === 'Resolved'
         ? new Date(Math.min(detectedAt.getTime() + 45 * 60_000, now - 60_000))
         : undefined;
+    const safeAt =
+      resolvedAt ? new Date(resolvedAt.getTime() - 5 * 60_000) : undefined;
+    const currentEvidence = structuredClone(detection.evidence[0]);
+    if (safeAt) {
+      currentEvidence.value = Math.max(0, currentEvidence.warningThreshold - 10);
+      currentEvidence.capturedAt = safeAt;
+    }
     return {
       id: scenario.incidentId,
       riskDetectionId: scenario.riskDetectionId,
       riskTypeCode: scenario.riskTypeCode,
       evidence: structuredClone(detection.evidence[0]),
-      currentEvidence: structuredClone(detection.evidence[0]),
+      currentEvidence,
       buildingId: space.buildingId,
       floorId: space.floorId,
       spaceId: space.id,
@@ -928,10 +935,7 @@ export const INCIDENTS: Incident[] = criticalScenarios.map((scenario) => {
       createdAt: after(detectedAt, 8),
       resolvedAt,
       resolvedBy: scenario.incidentStatus === 'Resolved' ? 'user-1' : undefined,
-      safeAt:
-        scenario.incidentStatus === 'Resolved' && resolvedAt
-          ? new Date(resolvedAt.getTime() - 5 * 60_000)
-          : undefined,
+      safeAt,
     };
   });
 

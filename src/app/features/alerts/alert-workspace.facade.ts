@@ -69,6 +69,9 @@ export interface AlertWorkspaceRow {
   title: string;
   description: string;
   severity: string;
+  status: 'ACTIVE' | 'CLEARED';
+  clearedAt?: Date;
+  clearReason?: 'RETURNED_TO_NORMAL' | 'CRITICAL_THRESHOLD_REACHED';
   detectedAt: Date;
   generatedAt: Date;
   location: AlertWorkspaceLocation;
@@ -84,8 +87,8 @@ export interface AlertWorkspaceDetail extends AlertWorkspaceRow {
 
 export interface AlertWorkspaceSummary {
   total: number;
-  critical: number;
-  warning: number;
+  active: number;
+  cleared: number;
   notificationFailures: number;
 }
 
@@ -107,8 +110,8 @@ export class AlertWorkspaceFacade {
     const rows = this.rowsState();
     return {
       total: rows.length,
-      critical: 0,
-      warning: rows.filter((item) => normalizeSeverity(item.severity) === 'warning').length,
+      active: rows.filter((item) => item.status === 'ACTIVE').length,
+      cleared: rows.filter((item) => item.status === 'CLEARED').length,
       notificationFailures: rows.reduce((sum, item) => sum + item.delivery.failed, 0),
     };
   });
@@ -230,6 +233,9 @@ export class AlertWorkspaceFacade {
       title: `${label} warning`,
       description: 'Warning threshold exceeded. The critical threshold has not been reached.',
       severity: alert.context.severityCode,
+      status: alert.status,
+      clearedAt: alert.clearedAt,
+      clearReason: alert.clearReason,
       detectedAt: alert.context.detectedAt,
       generatedAt: alert.generatedAt,
       location: locationFor(alert, building, zone),
@@ -276,7 +282,6 @@ function locationFor(
     available: Boolean(building || zone),
   };
 }
-
 function summarizeDelivery(deliveries: NotificationDeliveryRecord[]): AlertDeliverySummary {
   const delivered = deliveries.filter((item) => item.status === 'DELIVERED').length;
   const pending = deliveries.filter((item) => item.status === 'PENDING').length;
@@ -296,8 +301,4 @@ function summarizeDelivery(deliveries: NotificationDeliveryRecord[]): AlertDeliv
       ? `${delivered}/${deliveries.length} delivered`
       : 'No deliveries',
   };
-}
-
-function normalizeSeverity(value: string): string {
-  return value.trim().toLowerCase();
 }

@@ -29,11 +29,25 @@ export type IncidentRiskLevel =
   | 'HIGH'
   | 'CRITICAL';
 
+export interface IncidentEvidenceRecord {
+  deviceId: string;
+  metric: string;
+  value: number;
+  unit?: string;
+  warningThreshold?: number;
+  criticalThreshold?: number;
+  measuredAt: Date;
+}
+
 export interface IncidentRecord {
   incidentId: string;
 
   /** Originating CRITICAL Risk Detection. Optional only for HTTP compatibility. */
   riskDetectionId?: string;
+
+  /** Mock-compatible evidence until the final backend/OpenAPI contract is published. */
+  detectedEvidence?: IncidentEvidenceRecord;
+  currentEvidence?: IncidentEvidenceRecord;
 
   zoneId: string;
 

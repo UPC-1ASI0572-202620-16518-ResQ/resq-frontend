@@ -19,8 +19,20 @@ import {
   RiskDetectionGateway,
 } from '../risk-detection/data-access/risk-detection.gateway';
 import { capabilityLabel } from '../../shared/presentation/domain-labels';
+import { evaluateMeasurement } from '../../core/services/risk-evaluation.service';
+import { AlertFacade } from '../alerts/data-access/alert.facade';
+import {
+  ALERT_RESPONSE_GATEWAY,
+  AlertResponseGateway,
+  AuthorizationDecision,
+  ResponseExecutionRecord,
+} from '../alerts/data-access/alert.gateway';
 import { IncidentFacade } from './data-access/incident.facade';
-import { IncidentRecord, IncidentStatus } from './data-access/incident.gateway';
+import {
+  IncidentEvidenceRecord,
+  IncidentRecord,
+  IncidentStatus,
+} from './data-access/incident.gateway';
 
 export interface IncidentWorkspaceLocation {
   buildingId?: string;
@@ -55,6 +67,9 @@ export interface IncidentWorkspaceEvidence {
 
 export interface IncidentWorkspaceDetail extends IncidentWorkspaceRow {
   evidence: IncidentWorkspaceEvidence[];
+  currentEvidence?: IncidentWorkspaceEvidence;
+  currentCondition: 'Normal' | 'Warning' | 'Critical' | 'Unknown';
+  responseExecutions: ResponseExecutionRecord[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -74,6 +89,8 @@ export class IncidentWorkspaceFacade {
     @Inject(BUILDING_GATEWAY) private readonly buildings: BuildingGateway,
     @Inject(DEVICE_GATEWAY) private readonly devices: DeviceGateway,
     @Inject(RISK_DETECTION_GATEWAY) private readonly risk: RiskDetectionGateway,
+    @Inject(ALERT_RESPONSE_GATEWAY) private readonly responses: AlertResponseGateway,
+    private readonly alertFacade: AlertFacade,
     private readonly user: UserFacade,
   ) {}
 
@@ -115,12 +132,35 @@ export class IncidentWorkspaceFacade {
       switchMap(({ incident, buildings, devices }) => {
         if (!incident) return of(undefined);
         const row = this.toRow(incident, buildings.items);
-        if (!incident.riskDetectionId) return of({ ...row, evidence: [] });
-        return this.risk.getRiskDetectionEvidence(incident.riskDetectionId).pipe(
-          map((detection) => ({
+        if (!incident.riskDetectionId) {
+          return of({
             ...row,
-            evidence: this.mapEvidence(detection?.evidence ?? [], devices.items),
-          })),
+            evidence: [],
+            currentCondition: 'Unknown' as const,
+            responseExecutions: [],
+          });
+        }
+        return forkJoin({
+          detection: this.risk.getRiskDetectionEvidence(incident.riskDetectionId),
+          executions: this.responses.getResponseExecutions({
+            riskDetectionId: incident.riskDetectionId,
+          }),
+        }).pipe(
+          map(({ detection, executions }) => {
+            const detectedEvidence = incident.detectedEvidence
+              ? [this.mapIncidentEvidence(incident.detectedEvidence, devices.items)]
+              : this.mapEvidence(detection?.evidence ?? [], devices.items);
+            const currentEvidence = incident.currentEvidence
+              ? this.mapIncidentEvidence(incident.currentEvidence, devices.items)
+              : detectedEvidence.at(-1);
+            return {
+              ...row,
+              evidence: detectedEvidence,
+              currentEvidence,
+              currentCondition: classifyEvidence(currentEvidence),
+              responseExecutions: executions,
+            };
+          }),
         );
       }),
       tap({
@@ -162,7 +202,42 @@ export class IncidentWorkspaceFacade {
   }
 
   canResolve(row: IncidentWorkspaceRow): boolean {
-    return this.incidents.canResolve(row.incident);
+    const detail = this.detailState();
+    return (
+      this.incidents.canResolve(row.incident) &&
+      row.incident.assignedTo === this.user.profile()?.userId &&
+      detail?.currentCondition === 'Normal'
+    );
+  }
+
+  canAuthorize(execution: ResponseExecutionRecord): boolean {
+    const detail = this.detailState();
+    return Boolean(
+      detail &&
+      detail.incident.status === 'IN_PROGRESS' &&
+      detail.incident.assignedTo === this.user.profile()?.userId &&
+      this.alertFacade.canDecideAuthorization(execution),
+    );
+  }
+
+  decideAuthorization(
+    executionId: string,
+    decision: AuthorizationDecision,
+  ): Observable<ResponseExecutionRecord> {
+    return this.alertFacade.decideAuthorization(executionId, decision).pipe(
+      tap((updated) => {
+        this.detailState.update((detail) =>
+          detail
+            ? {
+                ...detail,
+                responseExecutions: detail.responseExecutions.map((item) =>
+                  item.responseExecutionId === updated.responseExecutionId ? updated : item,
+                ),
+              }
+            : detail,
+        );
+      }),
+    );
   }
 
   private refreshCurrent(incident: IncidentRecord): void {
@@ -228,6 +303,40 @@ export class IncidentWorkspaceFacade {
       };
     });
   }
+
+  private mapIncidentEvidence(
+    item: IncidentEvidenceRecord,
+    devices: DeviceCatalogRecord[],
+  ): IncidentWorkspaceEvidence {
+    const device = devices.find((candidate) => candidate.id === item.deviceId);
+    return {
+      deviceId: item.deviceId,
+      deviceName: device?.name ?? item.deviceId,
+      deviceCode: device?.deviceCode ?? item.deviceId,
+      metric: item.metric,
+      value: item.value,
+      unit: item.unit,
+      warningThreshold: item.warningThreshold,
+      criticalThreshold: item.criticalThreshold,
+      measuredAt: item.measuredAt,
+    };
+  }
+}
+
+function classifyEvidence(
+  evidence?: IncidentWorkspaceEvidence,
+): 'Normal' | 'Warning' | 'Critical' | 'Unknown' {
+  if (
+    !evidence ||
+    evidence.warningThreshold === undefined ||
+    evidence.criticalThreshold === undefined
+  ) {
+    return 'Unknown';
+  }
+  return evaluateMeasurement(evidence.value, {
+    warning: evidence.warningThreshold,
+    critical: evidence.criticalThreshold,
+  });
 }
 
 function locateIncident(

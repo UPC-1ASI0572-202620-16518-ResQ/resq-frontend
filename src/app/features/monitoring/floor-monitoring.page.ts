@@ -57,9 +57,9 @@ export class FloorMonitoringPage {
   readonly zoom = signal(1);
   readonly detailTab = signal('Overview');
   readonly alertItems = signal<AlertListItem[]>([]);
-  readonly recentAlerts = computed(() => this.alertItems().filter(alert => alert.location.floorId === this.floorId()).slice(0, 4));
-  readonly selectedAlerts = computed(() => this.alertItems().filter(alert => alert.location.zoneId === this.selected()?.id).slice(0, 5));
-  readonly buildingAlertCount = computed(() => this.alertItems().filter(alert => alert.location.buildingId === this.buildingId()).length);
+  readonly recentAlerts = computed(() => this.alertItems().filter(alert => alert.status === 'ACTIVE' && alert.location.floorId === this.floorId()).slice(0, 4));
+  readonly selectedAlerts = computed(() => this.alertItems().filter(alert => alert.status === 'ACTIVE' && alert.location.zoneId === this.selected()?.id).slice(0, 5));
+  readonly buildingAlertCount = computed(() => this.alertItems().filter(alert => alert.status === 'ACTIVE' && alert.location.buildingId === this.buildingId()).length);
   readonly lastSimulation = signal('');
 
   constructor() {

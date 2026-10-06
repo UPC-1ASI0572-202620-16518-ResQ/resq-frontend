@@ -345,6 +345,9 @@ export interface AlertListItem {
   riskTypeCode: RiskTypeCode;
   riskTypeLabel: string;
   severity: AlertSeverity;
+  status: AlertStatus;
+  clearedAt?: Date;
+  clearReason?: AlertClearReason;
   detectedAt: Date;
   generatedAt: Date;
   location: AlertLocationViewModel;

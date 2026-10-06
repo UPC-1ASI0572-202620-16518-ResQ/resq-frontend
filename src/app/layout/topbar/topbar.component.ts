@@ -4,9 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { SearchResult } from '../../core/models/resq.models';
-import { AlertService, SearchService } from '../../core/services/data.services';
+import { SearchService } from '../../core/services/data.services';
 import { LanguageService } from '../../core/services/language.service';
+import { RiskEventStoreService } from '../../core/services/risk-event-store.service';
 import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
+import { AuthorizationService } from '../../features/auth/authorization.service';
 
 @Component({
   selector: 'resq-topbar',
@@ -37,26 +39,27 @@ import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
       <div class="notification-wrap" #notificationWrap>
         <button type="button" class="icon-button" aria-label="Notifications" title="Notifications" (click)="notificationsOpen.update(value => !value)">
           <mat-icon>notifications_none</mat-icon>
-          @if (activeAlerts().length) { <i></i> }
+          @if (notificationItems().length) { <i></i> }
         </button>
         @if (notificationsOpen()) {
           <div class="notifications">
-            <h3>{{language.t('notifications','Notifications')}} <span>{{ activeAlerts().length }}</span></h3>
-            @for (alert of activeAlerts().slice(0, 3); track alert.id) {
-              <a [routerLink]="'/alerts/' + alert.id" (click)="notificationsOpen.set(false)"><i [class.critical]="alert.severity === 'Critical'">!</i><div><b>{{ alert.title }}</b><small>{{ alert.severity }} · {{language.t('recent','recently')}}</small></div></a>
+            <h3>{{language.t('notifications','Notifications')}} <span>{{ notificationItems().length }}</span></h3>
+            @for (item of notificationItems().slice(0, 6); track item.id) {
+              <a [routerLink]="item.route" (click)="notificationsOpen.set(false)"><i [class.critical]="item.kind === 'Incident'">!</i><div><b>{{ item.title }}</b><small>{{ item.kind }} · {{ item.status }}</small></div></a>
             }
-            <a class="view-all" routerLink="/alerts" (click)="notificationsOpen.set(false)">{{language.t('viewAlerts','View all alerts')}} →</a>
+            <a class="view-all" routerLink="/alerts" (click)="notificationsOpen.set(false)">View Alerts</a>
+            <a class="view-all" routerLink="/incidents" (click)="notificationsOpen.set(false)">View Incidents →</a>
           </div>
         }
       </div>
 
       <div class="user-wrap" #userWrap>
         <button type="button" class="user" title="User profile" (click)="userMenuOpen.update(value => !value)">
-          <span>{{initials()}}</span><div><b>{{userName()}}</b><small>{{language.t('administrator','Administrator')}}</small></div><mat-icon [class.open]="userMenuOpen()">expand_more</mat-icon>
+          <span>{{initials()}}</span><div><b>{{userName()}}</b><small>{{roleLabel()}}</small></div><mat-icon [class.open]="userMenuOpen()">expand_more</mat-icon>
         </button>
         @if(userMenuOpen()) {
           <div class="user-menu">
-            <div class="user-menu-header"><span>{{initials()}}</span><div><b>{{userName()}}</b><small>{{language.t('administrator','Administrator')}}</small></div></div>
+            <div class="user-menu-header"><span>{{initials()}}</span><div><b>{{userName()}}</b><small>{{roleLabel()}}</small></div></div>
             <div class="user-menu-separator"></div>
             <a routerLink="/settings" (click)="userMenuOpen.set(false)"><mat-icon>settings</mat-icon><span>{{language.t('settings','Settings')}}</span></a>
             <a class="sign-out" routerLink="/login"><mat-icon>logout</mat-icon><span>{{language.t('signOut','Sign out')}}</span></a>
@@ -69,15 +72,38 @@ import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
 })
 export class TopbarComponent {
   private readonly searchService = inject(SearchService);
-  private readonly alertService = inject(AlertService);
+  private readonly events = inject(RiskEventStoreService);
   private readonly session = inject(AuthSessionFacade);
+  private readonly authorization = inject(AuthorizationService);
   readonly language = inject(LanguageService);
 
   @Output() readonly menuClick = new EventEmitter<void>();
   readonly results = signal<SearchResult[]>([]);
   readonly notificationsOpen = signal(false);
   readonly userMenuOpen = signal(false);
-  readonly activeAlerts = this.alertService.latestAlerts;
+  readonly roleLabel = this.authorization.roleLabel;
+  readonly notificationItems = computed(() => [
+    ...this.events.alerts()
+      .filter((alert) => alert.status === 'ACTIVE')
+      .map((alert) => ({
+        id: alert.alertId,
+        kind: 'Alert' as const,
+        title: `${alert.context.riskTypeCode === 'GAS_LEAK' ? 'Gas' : 'Fire'} warning threshold exceeded`,
+        status: 'Active',
+        route: `/alerts/${alert.alertId}`,
+        at: alert.generatedAt,
+      })),
+    ...this.events.incidents()
+      .filter((incident) => incident.status === 'Open' || incident.status === 'InProgress')
+      .map((incident) => ({
+        id: incident.id,
+        kind: 'Incident' as const,
+        title: `Critical incident: ${incident.currentEvidence.measurementName}`,
+        status: incident.status === 'Open' ? 'Active' : 'In Progress',
+        route: `/incidents/${incident.id}`,
+        at: incident.createdAt,
+      })),
+  ].sort((left, right) => right.at.getTime() - left.at.getTime()));
   readonly userName = computed(() => this.session.fullName() || 'Sofia Ramirez');
   readonly initials = computed(() => this.userName().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('').toUpperCase());
   query = '';

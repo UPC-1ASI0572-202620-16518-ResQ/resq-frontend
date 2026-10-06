@@ -3,8 +3,6 @@ import { Observable, delay, of } from 'rxjs';
 
 import {
   DEMO_USER,
-  INCIDENTS,
-  RESPONSE_EXECUTIONS,
 } from '../mock-data/resq.mock';
 
 import {
@@ -34,9 +32,10 @@ import { invalidThresholdMetrics } from './risk-evaluation.service';
 @Injectable({ providedIn: 'root' })
 export class ResqStore {
   private readonly buildingStore = inject(BuildingStoreService);
+  private readonly eventStore = inject(RiskEventStoreService);
   readonly buildings = this.buildingStore.buildings;
   readonly devices = this.buildingStore.devices;
-  readonly incidents = signal<Incident[]>(INCIDENTS);
+  readonly incidents = this.eventStore.incidents;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -127,9 +126,11 @@ export class AlertService {
       .map((alert) => this.toListItem(alert))
       .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime()),
   );
-  readonly latestAlerts = computed(() => this.listItems().slice(0, 3));
+  readonly latestAlerts = computed(() =>
+    this.listItems().filter((item) => item.status === 'ACTIVE').slice(0, 3),
+  );
   readonly recentAlertCount = computed(
-    () => this.filterByPeriod(this.listItems(), '24h').length,
+    () => this.filterByPeriod(this.listItems(), '24h').filter((item) => item.status === 'ACTIVE').length,
   );
   getAlerts(): Observable<AlertListItem[]> {
     return of(this.listItems()).pipe(delay(120));
@@ -185,7 +186,7 @@ export class AlertService {
           hardware: capability?.hardware ?? 'Hardware unavailable',
         };
       }) ?? [];
-    const responseExecutions = RESPONSE_EXECUTIONS.filter(
+    const responseExecutions = this.events.responseExecutions().filter(
       (execution) => execution.riskDetectionId === alert.context.riskDetectionId,
     ).map((execution) => {
       const device = this.store.devices().find((item) => item.id === execution.action.targetDeviceId);
@@ -226,6 +227,9 @@ export class AlertService {
       riskTypeCode: alert.context.riskTypeCode,
       riskTypeLabel,
       severity: alert.context.severityCode,
+      status: alert.status,
+      clearedAt: alert.clearedAt,
+      clearReason: alert.clearReason,
       detectedAt: alert.context.detectedAt,
       generatedAt: alert.generatedAt,
       location: {
@@ -276,22 +280,23 @@ export class AlertService {
 
 @Injectable({ providedIn: 'root' })
 export class IncidentService {
-  private readonly items = signal<Incident[]>(INCIDENTS);
-  readonly incidents = this.items.asReadonly();
+  private readonly events = inject(RiskEventStoreService);
+  readonly incidents = this.events.incidents;
   getIncidents(): Observable<Incident[]> {
-    return of(this.items()).pipe(delay(120));
+    return of(this.events.incidents()).pipe(delay(120));
   }
   getIncidentById(id: string): Observable<Incident | undefined> {
-    return of(this.items().find((item) => item.id === id)).pipe(delay(80));
+    return of(this.events.incidents().find((item) => item.id === id)).pipe(delay(80));
   }
   updateStatus(id: string, status: IncidentStatus): void {
-    this.items.update((items) =>
-      items.map((item) =>
-        item.id === id
-          ? { ...item, status, resolvedAt: status === 'Resolved' ? new Date() : undefined }
-          : item,
-      ),
-    );
+    const incident = this.events.incidents().find((item) => item.id === id);
+    if (incident) {
+      this.events.updateIncident({
+        ...incident,
+        status,
+        resolvedAt: status === 'Resolved' ? new Date() : undefined,
+      });
+    }
   }
 }
 
