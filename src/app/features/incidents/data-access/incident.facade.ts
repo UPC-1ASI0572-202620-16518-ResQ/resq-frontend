@@ -29,6 +29,7 @@ import {
   IncidentQueryFilters,
   IncidentRecord,
 } from './incident.gateway';
+import { AuthorizationService } from '../../auth/authorization.service';
 
 const EMPTY_PAGE:
   PagedResult<
@@ -119,6 +120,8 @@ export class IncidentFacade {
 
     private readonly gateway:
       IncidentGateway,
+
+    private readonly authorization: AuthorizationService,
   ) {}
 
   loadIncidents(
@@ -247,12 +250,7 @@ export class IncidentFacade {
       IncidentRecord,
   ): boolean {
 
-    return (
-      incident.status ===
-        'ACTIVE' ||
-      incident.status ===
-        'IN_PROGRESS'
-    );
+    return this.authorization.canManageIncidents() && incident.status === 'ACTIVE';
   }
 
   canResolve(
@@ -260,12 +258,7 @@ export class IncidentFacade {
       IncidentRecord,
   ): boolean {
 
-    return (
-      incident.status ===
-        'ACTIVE' ||
-      incident.status ===
-        'IN_PROGRESS'
-    );
+    return this.authorization.canManageIncidents() && incident.status === 'IN_PROGRESS';
   }
 
   isReadOnly(
