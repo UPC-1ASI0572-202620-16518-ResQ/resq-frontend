@@ -93,13 +93,16 @@ export function mapLegacyIncidentToRecord(
     LegacyIncident,
 
   riskType:
-    IncidentRiskType = 'UNKNOWN',
+    IncidentRiskType = incident.riskTypeCode,
 ):
   IncidentRecord {
 
   return {
     incidentId:
       incident.id,
+
+    riskDetectionId:
+      incident.riskDetectionId,
 
     /*
      * The current legacy frontend calls this
@@ -133,6 +136,9 @@ export function mapLegacyIncidentToRecord(
         incident.status,
       ),
 
+    assignedTo:
+      incident.assignedTo,
+
     createdAt:
       new Date(
         incident.createdAt,
@@ -144,6 +150,9 @@ export function mapLegacyIncidentToRecord(
             incident.resolvedAt,
           )
         : undefined,
+
+    resolutionNotes:
+      incident.resolutionNotes,
   };
 }
 

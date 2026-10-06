@@ -2,15 +2,9 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, delay, of } from 'rxjs';
 
 import {
-  ALERTS,
-  BUILDINGS,
   DEMO_USER,
-  DEVICES,
-  FLOORS,
   INCIDENTS,
   RESPONSE_EXECUTIONS,
-  RISK_DETECTIONS,
-  SPACES,
 } from '../mock-data/resq.mock';
 
 import {
@@ -18,7 +12,6 @@ import {
   AlertDetailViewModel,
   AlertListItem,
   AlertPeriod,
-  AlertSeverity,
   AlertSummary,
   Building,
   Device,
@@ -35,6 +28,8 @@ import {
 } from '../models/resq.models';
 
 import { BuildingStoreService } from './building-store.service';
+import { RiskEventStoreService } from './risk-event-store.service';
+import { invalidThresholdMetrics } from './risk-evaluation.service';
 
 @Injectable({ providedIn: 'root' })
 export class ResqStore {
@@ -71,6 +66,12 @@ export class SpaceService {
     thresholds: SpaceThresholds,
     thresholdProfiles?: Space['thresholdProfiles'],
   ): void {
+    const invalidMetrics = invalidThresholdMetrics(thresholds);
+    if (invalidMetrics.length) {
+      throw new Error(
+        `Warning threshold must be lower than the critical threshold for: ${invalidMetrics.join(', ')}.`,
+      );
+    }
     const space = this.store.spaces().find(item => item.id === id);
     if (space) this.store.updateSpace(space.buildingId, space.floorId, {
       ...space,
@@ -120,9 +121,9 @@ export class DeviceService {
 @Injectable({ providedIn: 'root' })
 export class AlertService {
   private readonly store = inject(BuildingStoreService);
-  private readonly items = signal<Alert[]>(ALERTS);
+  private readonly events = inject(RiskEventStoreService);
   private readonly listItems = computed(() =>
-    this.items()
+    this.events.alerts()
       .map((alert) => this.toListItem(alert))
       .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime()),
   );
@@ -134,7 +135,7 @@ export class AlertService {
     return of(this.listItems()).pipe(delay(120));
   }
   getAlertById(id: string): Observable<Alert | undefined> {
-    return of(this.items().find((item) => item.alertId === id)).pipe(delay(80));
+    return of(this.events.alerts().find((item) => item.alertId === id)).pipe(delay(80));
   }
   getAlertsByZone(zoneId: string): Observable<AlertListItem[]> {
     return of(this.listItems().filter((item) => item.location.zoneId === zoneId)).pipe(delay(80));
@@ -144,7 +145,7 @@ export class AlertService {
   }
   getAlertsByDevice(deviceId: string): Observable<AlertListItem[]> {
     const detectionIds = new Set(
-      RISK_DETECTIONS.filter((detection) =>
+      this.events.detections().filter((detection) =>
         detection.evidence.some((evidence) => evidence.deviceId === deviceId),
       ).map((detection) => detection.riskDetectionId),
     );
@@ -159,16 +160,16 @@ export class AlertService {
     const alerts = this.filterByPeriod(this.listItems(), period);
     return of({
       total: alerts.length,
-      critical: alerts.filter((item) => item.severity === 'Critical').length,
+      critical: 0,
       warning: alerts.filter((item) => item.severity === 'Warning').length,
       notificationFailures: alerts.reduce((total, item) => total + item.delivery.failed, 0),
     }).pipe(delay(80));
   }
   getAlertDetail(id: string): Observable<AlertDetailViewModel | undefined> {
-    const alert = this.items().find((item) => item.alertId === id);
+    const alert = this.events.alerts().find((item) => item.alertId === id);
     if (!alert) return of(undefined).pipe(delay(80));
     const listItem = this.toListItem(alert);
-    const detection = RISK_DETECTIONS.find(
+    const detection = this.events.detections().find(
       (item) => item.riskDetectionId === alert.context.riskDetectionId,
     );
     const evidence =
@@ -197,7 +198,7 @@ export class AlertService {
     return of({ ...listItem, alert, evidence, responseExecutions }).pipe(delay(100));
   }
   private toListItem(alert: Alert): AlertListItem {
-    const detection = RISK_DETECTIONS.find(
+    const detection = this.events.detections().find(
       (item) => item.riskDetectionId === alert.context.riskDetectionId,
     );
     const space = this.store.spaces().find((item) => item.id === alert.context.zoneId);
@@ -208,20 +209,19 @@ export class AlertService {
     const capability = device?.capabilities.find(
       (item) => item.code === evidence?.capabilityCode,
     );
-    const incident = INCIDENTS.find((item) => item.alertIds.includes(alert.alertId));
     const delivered = alert.deliveries.filter((item) => item.status === 'DELIVERED').length;
     const pending = alert.deliveries.filter((item) => item.status === 'PENDING').length;
     const failed = alert.deliveries.filter((item) => item.status === 'FAILED').length;
     const deliveryStatus = failed ? 'FAILED' : pending ? 'PENDING' : 'DELIVERED';
     const title =
       alert.context.riskTypeCode === 'GAS_LEAK'
-        ? 'High gas level detected'
-        : 'Fire risk detected';
+        ? 'Gas warning'
+        : 'Fire risk warning';
     const riskTypeLabel = this.riskTypeLabel(alert.context.riskTypeCode);
     return {
       id: alert.alertId,
       title,
-      description: `${riskTypeLabel} was classified from recorded detection evidence.`,
+      description: 'Warning threshold exceeded. The measurement remains below the critical threshold.',
       riskDetectionId: alert.context.riskDetectionId,
       riskTypeCode: alert.context.riskTypeCode,
       riskTypeLabel,
@@ -254,14 +254,6 @@ export class AlertService {
         failed,
         label: this.deliveryLabel(delivered, pending, failed),
       },
-      relatedIncident: incident
-        ? {
-            id: incident.id,
-            title: incident.title,
-            severity: incident.severity,
-            status: incident.status,
-          }
-        : undefined,
     };
   }
   private filterByPeriod(items: AlertListItem[], period: AlertPeriod): AlertListItem[] {

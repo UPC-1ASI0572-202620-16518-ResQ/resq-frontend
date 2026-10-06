@@ -1,12 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { AlertListItem, Device, DeviceType, FloorPlanElement, FloorPlanPoint } from '../../core/models/resq.models';
 import { BuildingStoreService } from '../../core/services/building-store.service';
 import { AlertService } from '../../core/services/data.services';
 import { DoughnutChartComponent, KpiCardComponent, LineChartComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { ThreeFloorViewerComponent } from './three-floor-viewer/three-floor-viewer.component';
 import { visualDevicePosition } from '../../shared/utils/floor-plan-device.utils';
+import { RiskDetectionSimulationService } from '../risk-detection/risk-detection-simulation.service';
 
 @Component({
   selector: 'resq-floor-monitoring',
@@ -20,6 +22,8 @@ export class FloorMonitoringPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly alertService = inject(AlertService);
+  private readonly simulation = inject(RiskDetectionSimulationService);
+  private readonly snack = inject(MatSnackBar);
   readonly store = inject(BuildingStoreService);
   readonly buildingId = signal(this.route.snapshot.paramMap.get('buildingId') ?? 'science');
   readonly floorId = signal(this.route.snapshot.paramMap.get('floorId') ?? 'science-f2');
@@ -56,6 +60,7 @@ export class FloorMonitoringPage {
   readonly recentAlerts = computed(() => this.alertItems().filter(alert => alert.location.floorId === this.floorId()).slice(0, 4));
   readonly selectedAlerts = computed(() => this.alertItems().filter(alert => alert.location.zoneId === this.selected()?.id).slice(0, 5));
   readonly buildingAlertCount = computed(() => this.alertItems().filter(alert => alert.location.buildingId === this.buildingId()).length);
+  readonly lastSimulation = signal('');
 
   constructor() {
     this.alertService.getRecentAlerts('24h').subscribe(alerts => this.alertItems.set(alerts));
@@ -111,4 +116,22 @@ export class FloorMonitoringPage {
     return `${space?.name ?? 'Space'}${space?.roomNumber ? ' (Room ' + space.roomNumber + ')' : ''}`;
   }
   minutesAgo(alert: AlertListItem): number { return Math.max(1, Math.round((Date.now() - alert.generatedAt.getTime()) / 60000)); }
+  simulateGas(value: number): void {
+    const device = this.selected()?.devices.find((item) => item.type === 'Gas');
+    if (!device) {
+      this.snack.open('Select a space with a Gas device to run the threshold demo.', 'Close', { duration: 3000 });
+      return;
+    }
+    const result = this.simulation.simulateMeasurement(device.id, value);
+    if (!result) {
+      this.snack.open('The measurement could not be classified because thresholds are unavailable.', 'Close', { duration: 3000 });
+      return;
+    }
+    this.lastSimulation.set(result.message);
+    this.alertService.getRecentAlerts('24h').subscribe((alerts) => this.alertItems.set(alerts));
+    this.snack.open(result.message, 'Close', {
+      duration: result.classification === 'Critical' ? 6000 : 4000,
+      panelClass: `risk-notification-${result.classification.toLowerCase()}`,
+    });
+  }
 }

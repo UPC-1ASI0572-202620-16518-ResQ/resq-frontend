@@ -215,6 +215,18 @@
   padding: 14px 10px;
 }
 
+.thresholds > div.invalid-threshold {
+  border-left: 3px solid #d92d20;
+  background: #fef3f2;
+}
+
+.thresholds .threshold-error {
+  grid-column: 2 / -1;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .thresholds span b {
   font-size: 14px;
 }

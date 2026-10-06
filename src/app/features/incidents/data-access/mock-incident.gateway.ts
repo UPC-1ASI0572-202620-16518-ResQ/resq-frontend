@@ -1,6 +1,5 @@
 import {
   Injectable,
-  signal,
 } from '@angular/core';
 
 import {
@@ -20,16 +19,12 @@ import {
   paginateInMemory,
 } from '../../../core/api/pagination';
 
-import {
-  ALERTS,
-  INCIDENTS,
-} from '../../../core/mock-data/resq.mock';
+import { RiskEventStoreService } from '../../../core/services/risk-event-store.service';
 
 import {
   IncidentGateway,
   IncidentQueryFilters,
   IncidentRecord,
-  IncidentRiskType,
 } from './incident.gateway';
 
 import {
@@ -41,20 +36,7 @@ import {
 export class MockIncidentGateway
   implements IncidentGateway {
 
-  private readonly items =
-    signal<
-      IncidentRecord[]
-    >(
-      INCIDENTS.map(
-        incident =>
-          mapLegacyIncidentToRecord(
-            incident,
-            resolveRiskType(
-              incident.alertIds,
-            ),
-          ),
-      ),
-    );
+  constructor(private readonly events: RiskEventStoreService) {}
 
   getIncidents(
     filters:
@@ -70,7 +52,7 @@ export class MockIncidentGateway
     > {
 
     const result =
-      this.items()
+      this.incidentRecords()
         .filter(
           incident =>
             !filters.zoneId ||
@@ -140,7 +122,7 @@ export class MockIncidentGateway
     > {
 
     const incident =
-      this.items().find(
+      this.incidentRecords().find(
         item =>
           item.incidentId ===
           incidentId,
@@ -167,7 +149,7 @@ export class MockIncidentGateway
     > {
 
     const current =
-      this.items().find(
+      this.incidentRecords().find(
         item =>
           item.incidentId ===
           incidentId,
@@ -252,7 +234,7 @@ export class MockIncidentGateway
     > {
 
     const current =
-      this.items().find(
+      this.incidentRecords().find(
         item =>
           item.incidentId ===
           incidentId,
@@ -346,55 +328,25 @@ export class MockIncidentGateway
       IncidentRecord,
   ): void {
 
-    this.items.update(
-      items =>
-        items.map(
-          item =>
-            item.incidentId ===
-            incident.incidentId
-              ? incident
-              : item,
-        ),
-    );
-  }
-}
-
-function resolveRiskType(
-  alertIds:
-    string[],
-):
-  IncidentRiskType {
-
-  for (
-    const alertId
-    of alertIds
-  ) {
-
-    const alert =
-      ALERTS.find(
-        item =>
-          item.alertId ===
-          alertId,
-      );
-
-    if (!alert) {
-      continue;
-    }
-
-    switch (
-      alert.context
-        .riskTypeCode
-    ) {
-
-      case 'FIRE':
-        return 'FIRE';
-
-      case 'GAS_LEAK':
-        return 'GAS_LEAK';
-    }
+    const legacy = this.events.incidents().find((item) => item.id === incident.incidentId);
+    if (!legacy) return;
+    this.events.updateIncident({
+      ...legacy,
+      status:
+        incident.status === 'ACTIVE'
+          ? 'Open'
+          : incident.status === 'IN_PROGRESS'
+            ? 'InProgress'
+            : 'Resolved',
+      assignedTo: incident.assignedTo,
+      resolvedAt: incident.resolvedAt,
+      resolutionNotes: incident.resolutionNotes,
+    });
   }
 
-  return 'UNKNOWN';
+  private incidentRecords(): IncidentRecord[] {
+    return this.events.incidents().map((incident) => mapLegacyIncidentToRecord(incident));
+  }
 }
 
 function normalizePage(

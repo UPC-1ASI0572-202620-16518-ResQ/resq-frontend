@@ -6,8 +6,12 @@ import {
   Floor,
   FloorPlanElement,
   FloorPlanPosition,
+  RiskStatus,
+  SensorReading,
   Space,
+  riskRank,
 } from '../models/resq.models';
+import { evaluateMeasurement } from './risk-evaluation.service';
 
 export interface FloorPlanUpdate {
   planImageUrl?: string;
@@ -21,25 +25,16 @@ export interface FloorPlanUpdate {
  */
 @Injectable({ providedIn: 'root' })
 export class BuildingStoreService {
-  private readonly devicesState = signal<Device[]>(structuredClone(DEVICES));
-  private readonly buildingsState = signal<Building[]>(this.attachDevicesToSpaces(structuredClone(BUILDINGS), this.devicesState()));
+  private readonly devicesState = signal<Device[]>([]);
+  private readonly buildingsState = signal<Building[]>([]);
 
   readonly buildings = this.buildingsState.asReadonly();
   readonly devices = this.devicesState.asReadonly();
   readonly floors = computed(() => this.buildingsState().flatMap(building => building.floors));
   readonly spaces = computed(() => this.floors().flatMap(floor => floor.spaces));
 
-  private attachDevicesToSpaces(buildings: Building[], devices: Device[]): Building[] {
-    return buildings.map(building => ({
-      ...building,
-      floors: building.floors.map(floor => ({
-        ...floor,
-        spaces: floor.spaces.map(space => ({
-          ...space,
-          devices: structuredClone(devices.filter(device => device.spaceId === space.id)),
-        })),
-      })),
-    }));
+  constructor() {
+    this.applyRiskProjection(structuredClone(BUILDINGS), structuredClone(DEVICES));
   }
 
   getBuilding(id: string): Building | undefined {
@@ -63,6 +58,7 @@ export class BuildingStoreService {
       throw new Error(`Building with id "${building.id}" already exists.`);
     }
     this.buildingsState.update(buildings => [...buildings, structuredClone(building)]);
+    this.refreshRiskProjection();
   }
 
   updateBuilding(building: Building): void {
@@ -71,6 +67,7 @@ export class BuildingStoreService {
     ));
     const validSpaceIds = new Set(this.spaces().map(space => space.id));
     this.devicesState.update(devices => devices.filter(device => validSpaceIds.has(device.spaceId)));
+    this.refreshRiskProjection();
   }
 
   deleteBuilding(id: string): void {
@@ -79,6 +76,7 @@ export class BuildingStoreService {
     );
     this.buildingsState.update(buildings => buildings.filter(building => building.id !== id));
     this.devicesState.update(devices => devices.filter(device => !removedSpaceIds.has(device.spaceId)));
+    this.refreshRiskProjection();
   }
 
   addFloor(buildingId: string, floor: Floor): void {
@@ -97,6 +95,7 @@ export class BuildingStoreService {
     );
     this.updateFloors(buildingId, floors => floors.filter(floor => floor.id !== floorId));
     this.devicesState.update(devices => devices.filter(device => !removedSpaceIds.has(device.spaceId)));
+    this.refreshRiskProjection();
   }
 
   addSpace(buildingId: string, floorId: string, space: Space): void {
@@ -112,6 +111,7 @@ export class BuildingStoreService {
   deleteSpace(buildingId: string, floorId: string, spaceId: string): void {
     this.updateSpaces(buildingId, floorId, spaces => spaces.filter(space => space.id !== spaceId));
     this.devicesState.update(devices => devices.filter(device => device.spaceId !== spaceId));
+    this.refreshRiskProjection();
   }
 
   updateFloorPlan(buildingId: string, floorId: string, update: FloorPlanUpdate): void {
@@ -142,6 +142,7 @@ export class BuildingStoreService {
       devices: space.devices.map(updateDevice),
     });
     this.devicesState.update(devices => devices.map(updateDevice));
+    this.refreshRiskProjection();
   }
 
   createDevice(device: Device): void {
@@ -150,6 +151,7 @@ export class BuildingStoreService {
     }
     this.devicesState.update(devices => [...devices, structuredClone(device)]);
     this.addDeviceToAssignedSpace(device);
+    this.refreshRiskProjection();
   }
 
   updateDevice(device: Device): void {
@@ -159,6 +161,37 @@ export class BuildingStoreService {
     );
     this.removeDeviceFromAllSpaces(device.id);
     this.addDeviceToAssignedSpace(device);
+    this.refreshRiskProjection();
+  }
+
+  updateLatestReading(deviceId: string, value: number, measuredAt = new Date()): Device | undefined {
+    const current = this.devicesState().find((device) => device.id === deviceId);
+    if (!current || !Number.isFinite(value)) return undefined;
+
+    const latest = current.readings.at(-1);
+    const reading: SensorReading = {
+      id: `${deviceId}-demo-${measuredAt.getTime()}`,
+      deviceId,
+      metric: current.type,
+      value,
+      unit: latest?.unit ?? current.capabilities.find((item) => item.kind === 'MEASUREMENT')?.unit ?? '',
+      timestamp: measuredAt,
+    };
+    this.devicesState.update((devices) =>
+      devices.map((device) =>
+        device.id === deviceId
+          ? {
+              ...device,
+              readings: [...device.readings, reading],
+              lastSeen: measuredAt,
+              updatedAt: measuredAt,
+              version: device.version + 1,
+            }
+          : device,
+      ),
+    );
+    this.refreshRiskProjection();
+    return this.devicesState().find((device) => device.id === deviceId);
   }
 
   moveDevice(deviceId: string, spaceId: string, position: FloorPlanPosition): void {
@@ -188,6 +221,7 @@ export class BuildingStoreService {
   deleteDevice(deviceId: string): void {
     this.devicesState.update(devices => devices.filter(device => device.id !== deviceId));
     this.removeDeviceFromAllSpaces(deviceId);
+    this.refreshRiskProjection();
   }
 
   syncFloorDevices(buildingId: string, floorId: string, devices: Device[]): void {
@@ -233,6 +267,7 @@ export class BuildingStoreService {
     this.buildingsState.update(buildings => buildings.map(building =>
       building.id === buildingId ? { ...building, floors: update(building.floors) } : building
     ));
+    this.refreshRiskProjection();
   }
 
   private updateSpaces(
@@ -244,4 +279,66 @@ export class BuildingStoreService {
       floor.id === floorId ? { ...floor, spaces: update(floor.spaces) } : floor
     ));
   }
+
+  private refreshRiskProjection(): void {
+    this.applyRiskProjection(this.buildingsState(), this.devicesState());
+  }
+
+  private applyRiskProjection(buildings: Building[], devices: Device[]): void {
+    const spaces = buildings.flatMap((building) => building.floors.flatMap((floor) => floor.spaces));
+    const classifiedDevices = devices.map((device) => {
+      const space = spaces.find((item) => item.id === device.spaceId);
+      const reading = device.readings.at(-1);
+      const risk: RiskStatus =
+        device.connectivityStatus === 'OFFLINE' || device.status === 'Offline'
+          ? 'Offline'
+          : reading && space
+            ? evaluateMeasurement(reading.value, space.thresholds[reading.metric])
+            : 'Normal';
+      return {
+        ...device,
+        status: risk === 'Normal' ? 'Online' : risk,
+        healthStatus:
+          risk === 'Critical' ? 'CRITICAL' : risk === 'Warning' ? 'WARNING' : 'NORMAL',
+      } satisfies Device;
+    });
+
+    const projectedBuildings = buildings.map((building) => {
+      const floors = building.floors.map((floor) => {
+        const projectedSpaces = floor.spaces.map((space) => {
+          const spaceDevices = classifiedDevices.filter((device) => device.spaceId === space.id);
+          return {
+            ...space,
+            devices: structuredClone(spaceDevices),
+            status: highestRisk(
+              spaceDevices.map((device) =>
+                device.status === 'Online' ? 'Normal' : device.status,
+              ),
+            ),
+          } satisfies Space;
+        });
+        return {
+          ...floor,
+          spaces: projectedSpaces,
+          status: highestRisk(projectedSpaces.map((space) => space.status)),
+        } satisfies Floor;
+      });
+      return {
+        ...building,
+        floors,
+        status: highestRisk(floors.map((floor) => floor.status)),
+      } satisfies Building;
+    });
+
+    this.devicesState.set(classifiedDevices);
+    this.buildingsState.set(projectedBuildings);
+  }
+}
+
+function highestRisk(statuses: RiskStatus[]): RiskStatus {
+  if (statuses.length > 0 && statuses.every((status) => status === 'Offline')) return 'Offline';
+  return statuses.reduce(
+    (highest, status) => (riskRank[status] > riskRank[highest] ? status : highest),
+    'Normal' as RiskStatus,
+  );
 }

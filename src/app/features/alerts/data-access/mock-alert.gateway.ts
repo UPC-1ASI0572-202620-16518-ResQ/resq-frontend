@@ -14,10 +14,8 @@ import {
   ApiError,
 } from '../../../core/api/api-error';
 
-import {
-  ALERTS,
-  RESPONSE_EXECUTIONS,
-} from '../../../core/mock-data/resq.mock';
+import { RESPONSE_EXECUTIONS } from '../../../core/mock-data/resq.mock';
+import { RiskEventStoreService } from '../../../core/services/risk-event-store.service';
 
 import {
   UserFacade,
@@ -45,13 +43,6 @@ import {
 export class MockAlertGateway
   implements AlertResponseGateway {
 
-  private readonly alerts =
-    signal<AlertRecord[]>(
-      ALERTS.map(
-        mapLegacyAlertToRecord,
-      ),
-    );
-
   private readonly executions =
     signal<
       ResponseExecutionRecord[]
@@ -78,6 +69,9 @@ export class MockAlertGateway
   constructor(
     private readonly user:
       UserFacade,
+
+    private readonly events:
+      RiskEventStoreService,
   ) {}
 
   getAlerts(
@@ -89,7 +83,7 @@ export class MockAlertGateway
     > {
 
     const result =
-      this.alerts()
+      this.alertRecords()
         .filter(
           alert =>
             !filters.buildingId ||
@@ -157,7 +151,7 @@ export class MockAlertGateway
     > {
 
     const alert =
-      this.alerts().find(
+      this.alertRecords().find(
         item =>
           item.alertId ===
           alertId,
@@ -690,6 +684,10 @@ export class MockAlertGateway
     ).pipe(
       delay(90),
     );
+  }
+
+  private alertRecords(): AlertRecord[] {
+    return this.events.alerts().map(mapLegacyAlertToRecord);
   }
 }
 

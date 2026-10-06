@@ -174,11 +174,29 @@ export class IncidentsPage implements OnInit {
         </section>
       }
 
+      <article class="critical-evidence">
+        <header><div><h3>Critical Detection Evidence</h3><p>The Incident exists because Risk Detection classified the measurement as CRITICAL.</p></div><span>Critical threshold exceeded</span></header>
+        @if (row.evidence.length) {
+          @for (evidence of row.evidence; track evidence.deviceId + evidence.metric) {
+            <div class="critical-reading">
+              <section><small>Metric</small><b>{{ evidence.metric }}</b></section>
+              <section><small>Measured value</small><b>{{ evidence.value }} {{ evidence.unit || '' }}</b></section>
+              <section><small>Critical threshold</small><b>{{ evidence.criticalThreshold ?? 'Unavailable' }} {{ evidence.unit || '' }}</b></section>
+              <section><small>Device</small><b><a [routerLink]="['/devices', evidence.deviceId]">{{ evidence.deviceName }}</a></b><em>{{ evidence.deviceCode }}</em></section>
+              <section><small>Zone</small><b>{{ row.location.zoneName }}</b></section>
+              <section><small>Detected at</small><b>{{ evidence.measuredAt.toLocaleString() }}</b></section>
+            </div>
+          }
+        } @else {
+          <p class="contract-note">Critical evidence is unavailable in the current HTTP compatibility record.</p>
+        }
+      </article>
+
       <div class="grid">
         <article>
           <h3>Incident lifecycle</h3>
           <div class="timeline">
-            <div class="done"><i>✓</i><section><b>Incident created</b><small>{{ row.incident.createdAt.toLocaleString() }}</small><p>The incident was created by the operational risk flow.</p></section></div>
+            <div class="done"><i>✓</i><section><b>Incident created</b><small>{{ row.incident.createdAt.toLocaleString() }}</small><p>Risk Detection created this Incident independently after the critical threshold was reached.</p></section></div>
             <div [class.done]="row.incident.assignedTo"><i>{{ row.incident.assignedTo ? '✓' : '2' }}</i><section><b>Assignment</b><small>{{ row.assigneeLabel }}</small><p>Assignment is managed by Incident Management.</p></section></div>
             <div [class.done]="row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED'"><i>{{ row.incident.resolvedAt ? '✓' : '3' }}</i><section><b>Resolution</b><small>{{ row.incident.resolvedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.incident.resolutionNotes || 'Resolution notes have not been registered yet.' }}</p></section></div>
           </div>
@@ -188,6 +206,7 @@ export class IncidentsPage implements OnInit {
           <h3>Incident context</h3>
           <dl>
             <dt>Type</dt><dd>{{ row.typeLabel }}</dd>
+            <dt>Risk Detection</dt><dd>{{ row.incident.riskDetectionId || 'Unavailable' }}</dd>
             <dt>Risk level</dt><dd>{{ row.levelLabel }}</dd>
             <dt>Status</dt><dd>{{ row.statusLabel }}</dd>
             <dt>Assigned to</dt><dd>{{ row.assigneeLabel }}</dd>

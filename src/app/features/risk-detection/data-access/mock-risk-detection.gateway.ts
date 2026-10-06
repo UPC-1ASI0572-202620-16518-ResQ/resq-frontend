@@ -14,9 +14,7 @@ import {
   ApiError,
 } from '../../../core/api/api-error';
 
-import {
-  RISK_DETECTIONS,
-} from '../../../core/mock-data/resq.mock';
+import { RiskEventStoreService } from '../../../core/services/risk-event-store.service';
 
 import {
   cloneRiskDetection,
@@ -35,15 +33,6 @@ import {
 export class MockRiskDetectionGateway
   implements RiskDetectionGateway {
 
-  private readonly detections =
-    signal<
-      RiskDetectionRecord[]
-    >(
-      RISK_DETECTIONS.map(
-        mapLegacyRiskDetectionToRecord,
-      ),
-    );
-
   /*
    * The current legacy frontend has no
    * persisted detection-rule catalog.
@@ -58,6 +47,30 @@ export class MockRiskDetectionGateway
       [],
     );
 
+  constructor(private readonly events: RiskEventStoreService) {
+    const seeded = new Map<string, DetectionRuleRecord>();
+    for (const detection of events.detections()) {
+      const evidence = detection.evidence[0];
+      const threshold =
+        detection.severityCode === 'Critical'
+          ? evidence?.criticalThreshold
+          : evidence?.warningThreshold;
+      if (!evidence || threshold === undefined) continue;
+      seeded.set(detection.ruleId, {
+        ruleId: detection.ruleId,
+        riskTypeCode: detection.riskTypeCode,
+        severityCode: detection.severityCode,
+        condition: {
+          variableType: evidence.metric,
+          operator: 'GREATER_THAN_OR_EQUAL',
+          threshold,
+        },
+        status: 'ACTIVE',
+      });
+    }
+    this.rules.set([...seeded.values()]);
+  }
+
   getRiskDetectionById(
     riskDetectionId: string,
   ):
@@ -67,7 +80,7 @@ export class MockRiskDetectionGateway
     > {
 
     const detection =
-      this.detections().find(
+      this.detectionRecords().find(
         item =>
           item.riskDetectionId ===
           riskDetectionId,
@@ -100,7 +113,7 @@ export class MockRiskDetectionGateway
      * through a dedicated query resource.
      */
     const detection =
-      this.detections().find(
+      this.detectionRecords().find(
         item =>
           item.riskDetectionId ===
           riskDetectionId,
@@ -294,6 +307,10 @@ export class MockRiskDetectionGateway
     ).pipe(
       delay(90),
     );
+  }
+
+  private detectionRecords(): RiskDetectionRecord[] {
+    return this.events.detections().map(mapLegacyRiskDetectionToRecord);
   }
 }
 

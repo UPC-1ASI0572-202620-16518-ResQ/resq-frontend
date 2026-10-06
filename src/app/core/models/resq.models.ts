@@ -1,4 +1,5 @@
 export type RiskStatus = 'Normal' | 'Warning' | 'Critical' | 'Offline';
+export type MeasurementRiskLevel = Exclude<RiskStatus, 'Offline'>;
 export type SensitivityLevel = 'Low' | 'Normal' | 'High' | 'Custom';
 export type SpaceType =
   | 'Laboratory'
@@ -255,13 +256,17 @@ export interface Alert {
 export interface DetectionEvidence {
   deviceId: string;
   capabilityCode: string;
+  metric: SensorMetric;
   measurementName: string;
   value: number;
   unit: string;
+  warningThreshold: number;
+  criticalThreshold: number;
   capturedAt: Date;
 }
 export interface RiskDetectionSummary {
   riskDetectionId: string;
+  ruleId: string;
   riskTypeCode: RiskTypeCode;
   severityCode: AlertSeverity;
   detectedAt: Date;
@@ -333,6 +338,7 @@ export interface AlertListItem {
   location: AlertLocationViewModel;
   primaryEvidence?: AlertDetectionEvidenceViewModel;
   delivery: NotificationDeliverySummary;
+  /** @deprecated Compatibility only. Alerts do not originate or own Incidents. */
   relatedIncident?: RelatedIncidentViewModel;
 }
 export interface ResponseExecutionViewModel extends ResponseExecution {
@@ -353,7 +359,14 @@ export interface AlertSummary {
 }
 export interface Incident {
   id: string;
-  alertIds: string[];
+  riskDetectionId: string;
+  riskTypeCode: RiskTypeCode;
+  evidence: DetectionEvidence;
+  /**
+   * @deprecated Compatibility only. Incidents are not created from Alerts and
+   * this field must never be used to derive Incident data.
+   */
+  alertIds?: string[];
   buildingId: string;
   floorId: string;
   spaceId: string;
@@ -361,6 +374,8 @@ export interface Incident {
   description: string;
   severity: AlertSeverity;
   status: IncidentStatus;
+  assignedTo?: string;
+  resolutionNotes?: string;
   createdAt: Date;
   resolvedAt?: Date;
 }

@@ -32,6 +32,9 @@ export type IncidentRiskLevel =
 export interface IncidentRecord {
   incidentId: string;
 
+  /** Originating CRITICAL Risk Detection. Optional only for HTTP compatibility. */
+  riskDetectionId?: string;
+
   zoneId: string;
 
   type:

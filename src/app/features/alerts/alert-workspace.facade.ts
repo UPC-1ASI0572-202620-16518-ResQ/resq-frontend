@@ -56,6 +56,8 @@ export interface AlertWorkspaceEvidence {
   hardware: string;
   value: number;
   unit?: string;
+  warningThreshold?: number;
+  criticalThreshold?: number;
   measuredAt: Date;
 }
 
@@ -105,7 +107,7 @@ export class AlertWorkspaceFacade {
     const rows = this.rowsState();
     return {
       total: rows.length,
-      critical: rows.filter((item) => normalizeSeverity(item.severity) === 'critical').length,
+      critical: 0,
       warning: rows.filter((item) => normalizeSeverity(item.severity) === 'warning').length,
       notificationFailures: rows.reduce((sum, item) => sum + item.delivery.failed, 0),
     };
@@ -225,8 +227,8 @@ export class AlertWorkspaceFacade {
       riskDetectionId: alert.context.riskDetectionId,
       riskTypeCode: alert.context.riskTypeCode,
       riskTypeLabel: label,
-      title: `${label} detected`,
-      description: `Risk detection ${alert.context.riskDetectionId}`,
+      title: `${label} warning`,
+      description: 'Warning threshold exceeded. The critical threshold has not been reached.',
       severity: alert.context.severityCode,
       detectedAt: alert.context.detectedAt,
       generatedAt: alert.generatedAt,
@@ -251,7 +253,9 @@ export class AlertWorkspaceFacade {
         measurementName: capabilityLabel(item.variableType),
         hardware: capabilityHardware(item.variableType),
         value: item.value,
-        unit: capability?.unit,
+        unit: item.unit ?? capability?.unit,
+        warningThreshold: item.warningThreshold,
+        criticalThreshold: item.criticalThreshold,
         measuredAt: item.measuredAt,
       };
     });

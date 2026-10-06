@@ -167,7 +167,7 @@ export function mapLegacyRiskDetectionToRecord(
         .riskDetectionId,
 
     ruleId:
-      undefined,
+      detection.ruleId,
 
     riskTypeCode:
       detection
@@ -209,8 +209,20 @@ export function mapLegacyRiskDetectionToRecord(
           variableType:
             evidence.capabilityCode,
 
+          metric:
+            evidence.metric,
+
           value:
             evidence.value,
+
+          unit:
+            evidence.unit,
+
+          warningThreshold:
+            evidence.warningThreshold,
+
+          criticalThreshold:
+            evidence.criticalThreshold,
 
           measuredAt:
             new Date(

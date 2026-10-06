@@ -9,7 +9,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DeviceAdministrativeStatus } from '../../core/models/resq.models';
 import { EmptyStateComponent, KpiCardComponent, LineChartComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
-import { BuildingCatalogRecord, ZoneCatalogRecord } from '../buildings/data-access/building.gateway';
+import { ZoneCatalogRecord } from '../buildings/data-access/building.gateway';
 import { CapabilityDefinitionResourceDto } from './data-access/device.dto';
 import { DeviceCatalogRecord } from './data-access/device.gateway';
 import { DeviceWorkspaceFacade, DeviceWorkspaceRow } from './device-workspace.facade';

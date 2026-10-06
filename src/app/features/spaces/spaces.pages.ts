@@ -1,6 +1,13 @@
 import { ChangeDetectionStrategy, Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  FormBuilder,
+  ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -24,7 +31,7 @@ export class SpacesPage {private readonly store=inject(BuildingStoreService);pri
     @if(tab()==='Overview'){<div class="overview-grid"><article><h3>Current Conditions</h3><div class="reading-grid">@for(device of space()!.devices.slice(0,4);track device.id){<div><span>{{device.type}}</span><b>{{device.readings.at(-1)?.value}} {{device.readings.at(-1)?.unit}}</b><resq-status-badge [status]="device.status"/></div>}</div><h3>Environmental History</h3><resq-line-chart [multi]="true"/></article><aside><h3>Space information</h3><dl><dt>Room</dt><dd>{{space()!.roomNumber}}</dd><dt>Type</dt><dd>{{space()!.type}}</dd><dt>Sensitivity</dt><dd>{{space()!.sensitivity}}</dd><dt>Devices</dt><dd>{{space()!.devices.length}}</dd><dt>Risk status</dt><dd><resq-status-badge [status]="space()!.status"/></dd></dl></aside></div>}
     @if(tab()==='Devices'){<div class="list-panel">@for(device of space()!.devices;track device.id){<a [routerLink]="'/devices/'+device.id"><span><mat-icon>sensors</mat-icon></span><div><b>{{device.displayName || device.name}}</b><small>{{device.code}} · {{device.name}} · {{device.type}}</small></div><resq-status-badge [status]="device.status"/><mat-icon>chevron_right</mat-icon></a>}</div>}
     @if(tab()==='Alerts'){<div class="list-panel">@for(alert of alerts();track alert.id){<a [routerLink]="'/alerts/'+alert.id"><span><mat-icon>warning_amber</mat-icon></span><div><b>{{alert.title}}</b><small>{{alert.riskTypeLabel}} · {{alert.description}}</small></div><resq-status-badge [status]="alert.severity"/><mat-icon>chevron_right</mat-icon></a>}</div>}
-    @if(tab()==='Monitoring Configuration'){<form class="config" [formGroup]="form" (ngSubmit)="save()"><div class="config-intro"><h3>Monitoring Configuration</h3><p>Each sensitivity level keeps its own warning and critical thresholds.</p></div><label>Sensitivity level<select formControlName="sensitivity" (change)="changeSensitivity($any($event.target).value)"><option>Low</option><option>Normal</option><option>High</option><option>Custom</option></select></label><h4>Environmental thresholds for {{activeSensitivity()}}</h4><div class="thresholds">@for(metric of metrics;track metric){<div><span><b>{{metric}}</b><small>{{unit(metric)}}</small></span><label>Warning<input type="number" [formControlName]="metric+'Warning'"/></label><label>Critical<input type="number" [formControlName]="metric+'Critical'"/></label></div>}</div><button type="submit" [disabled]="form.invalid">Save {{activeSensitivity()}} configuration</button></form>}
+    @if(tab()==='Monitoring Configuration'){<form class="config" [formGroup]="form" (ngSubmit)="save()"><div class="config-intro"><h3>Monitoring Configuration</h3><p>Each sensitivity level keeps its own warning and critical thresholds. Warning must always be lower than Critical.</p></div><label>Sensitivity level<select formControlName="sensitivity" (change)="changeSensitivity($any($event.target).value)"><option>Low</option><option>Normal</option><option>High</option><option>Custom</option></select></label><h4>Environmental thresholds for {{activeSensitivity()}}</h4><div class="thresholds">@for(metric of metrics;track metric){<div [class.invalid-threshold]="thresholdError(metric)"><span><b>{{metric}}</b><small>{{unit(metric)}}</small></span><label>Warning<input type="number" [formControlName]="metric+'Warning'"/></label><label>Critical<input type="number" [formControlName]="metric+'Critical'"/></label>@if(thresholdError(metric)){<small class="threshold-error">Warning threshold must be lower than the critical threshold.</small>}</div>}</div><button type="submit" [disabled]="form.invalid">Save {{activeSensitivity()}} configuration</button></form>}
     @if(tab()==='History'){<article class="history"><h3>Risk History</h3><p><i class="critical"></i><b>Today, 14:32</b><span>Critical</span><small>Gas crossed critical threshold</small></p><p><i class="warning"></i><b>Today, 14:10</b><span>Warning</span><small>Smoke levels increasing</small></p><p><i class="normal"></i><b>Today, 13:48</b><span>Normal</span><small>All conditions within range</small></p><resq-line-chart [multi]="true"/></article>}
   }@else{<div class="not-found"><h2>Space not found</h2><a routerLink="/dashboard">Back to Dashboard</a></div>}
 `,styleUrls: ['./space-detail.page.scss','./space-detail.improvements.scss']})
@@ -40,7 +47,7 @@ export class SpaceDetailPage implements OnInit {
   readonly tab = signal('Overview');
   readonly activeSensitivity = signal<SensitivityLevel>('Normal');
   readonly thresholdProfiles = signal<Partial<Record<SensitivityLevel, SpaceThresholds>>>({});
-  readonly metrics = ['Temperature', 'Smoke', 'Gas', 'Humidity'] as const;
+  readonly metrics = ['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion'] as const;
   readonly sensitivityLevels: SensitivityLevel[] = ['Low', 'Normal', 'High', 'Custom'];
   readonly form = this.fb.nonNullable.group({
     sensitivity: ['Normal' as SensitivityLevel, Validators.required],
@@ -48,7 +55,8 @@ export class SpaceDetailPage implements OnInit {
     SmokeWarning: [80, Validators.required], SmokeCritical: [120, Validators.required],
     GasWarning: [200, Validators.required], GasCritical: [300, Validators.required],
     HumidityWarning: [70, Validators.required], HumidityCritical: [85, Validators.required],
-  });
+    MotionWarning: [5, Validators.required], MotionCritical: [10, Validators.required],
+  }, { validators: thresholdOrderValidator(['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion']) });
 
   ngOnInit(): void {
     const found = this.store.spaces().find(space => space.id === this.route.snapshot.paramMap.get('spaceId'));
@@ -76,17 +84,24 @@ export class SpaceDetailPage implements OnInit {
   alerts() { return this.alertItems().filter(alert => alert.location.zoneId === this.space()?.id).slice(0, 8); }
   buildingName() { const id = this.space()?.buildingId; return id ? this.store.getBuilding(id)?.name ?? '—' : '—'; }
   floorName() { const id = this.space()?.floorId; return id ? this.store.getFloorById(id)?.name ?? '—' : '—'; }
-  unit(metric: string) { return metric === 'Temperature' ? '°C' : metric === 'Humidity' ? '%' : 'ppm'; }
+  unit(metric: string) { return metric === 'Temperature' ? '°C' : metric === 'Humidity' ? '%' : metric === 'Motion' ? 'events' : 'ppm'; }
+  thresholdError(metric: typeof this.metrics[number]): boolean {
+    return Boolean(this.form.errors?.['thresholdOrder']?.[metric]);
+  }
 
   save(): void {
     const space = this.space();
-    if (!space || this.form.invalid) return;
+    if (!space || this.form.invalid) {
+      this.form.markAllAsTouched();
+      this.snack.open('Warning threshold must be lower than the critical threshold for every metric.', 'Close', { duration: 3500 });
+      return;
+    }
     const sensitivity = this.activeSensitivity();
     const thresholds = this.thresholdsFromForm();
     const profiles = { ...this.thresholdProfiles(), [sensitivity]: thresholds };
     this.thresholdProfiles.set(profiles);
     this.service.updateConfiguration(space.id, sensitivity, thresholds, profiles);
-    this.space.set({ ...space, sensitivity, thresholds, thresholdProfiles: profiles });
+    this.space.set(this.store.spaces().find((item) => item.id === space.id));
     this.snack.open(`${sensitivity} sensitivity configuration updated.`, 'Close', { duration: 2500 });
   }
 
@@ -97,6 +112,7 @@ export class SpaceDetailPage implements OnInit {
       Smoke: { warning: value.SmokeWarning, critical: value.SmokeCritical },
       Gas: { warning: value.GasWarning, critical: value.GasCritical },
       Humidity: { warning: value.HumidityWarning, critical: value.HumidityCritical },
+      Motion: { warning: value.MotionWarning, critical: value.MotionCritical },
     };
   }
 
@@ -107,10 +123,26 @@ export class SpaceDetailPage implements OnInit {
       SmokeWarning: thresholds.Smoke?.warning, SmokeCritical: thresholds.Smoke?.critical,
       GasWarning: thresholds.Gas?.warning, GasCritical: thresholds.Gas?.critical,
       HumidityWarning: thresholds.Humidity?.warning, HumidityCritical: thresholds.Humidity?.critical,
+      MotionWarning: thresholds.Motion?.warning, MotionCritical: thresholds.Motion?.critical,
     }, { emitEvent: false });
   }
 
   private cloneThresholds(thresholds: SpaceThresholds): SpaceThresholds {
     return Object.fromEntries(Object.entries(thresholds).map(([metric, value]) => [metric, value ? { ...value } : value])) as SpaceThresholds;
   }
+}
+
+function thresholdOrderValidator(metrics: readonly string[]): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const invalid = Object.fromEntries(
+      metrics
+        .filter((metric) => {
+          const warning = Number(control.get(`${metric}Warning`)?.value);
+          const critical = Number(control.get(`${metric}Critical`)?.value);
+          return !Number.isFinite(warning) || !Number.isFinite(critical) || warning >= critical;
+        })
+        .map((metric) => [metric, true]),
+    );
+    return Object.keys(invalid).length ? { thresholdOrder: invalid } : null;
+  };
 }
