@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  signal,
-} from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 
 import {
   Observable,
@@ -14,14 +11,8 @@ import {
   ApiError,
 } from '../../../core/api/api-error';
 
-import {
-  ALERTS,
-  RESPONSE_EXECUTIONS,
-} from '../../../core/mock-data/resq.mock';
-
-import {
-  UserFacade,
-} from '../../users/data-access/user.facade';
+import { RiskEventStoreService } from '../../../core/services/risk-event-store.service';
+import { AuthorizationService } from '../../auth/authorization.service';
 
 import {
   AlertQueryFilters,
@@ -45,22 +36,6 @@ import {
 export class MockAlertGateway
   implements AlertResponseGateway {
 
-  private readonly alerts =
-    signal<AlertRecord[]>(
-      ALERTS.map(
-        mapLegacyAlertToRecord,
-      ),
-    );
-
-  private readonly executions =
-    signal<
-      ResponseExecutionRecord[]
-    >(
-      RESPONSE_EXECUTIONS.map(
-        mapLegacyResponseExecutionToRecord,
-      ),
-    );
-
   /*
    * The current frontend mock has no predefined
    * ResponsePolicy catalog.
@@ -76,8 +51,9 @@ export class MockAlertGateway
     );
 
   constructor(
-    private readonly user:
-      UserFacade,
+    private readonly authorization: AuthorizationService,
+    private readonly events:
+      RiskEventStoreService,
   ) {}
 
   getAlerts(
@@ -89,7 +65,7 @@ export class MockAlertGateway
     > {
 
     const result =
-      this.alerts()
+      this.alertRecords()
         .filter(
           alert =>
             !filters.buildingId ||
@@ -157,7 +133,7 @@ export class MockAlertGateway
     > {
 
     const alert =
-      this.alerts().find(
+      this.alertRecords().find(
         item =>
           item.alertId ===
           alertId,
@@ -183,7 +159,7 @@ export class MockAlertGateway
     > {
 
     const result =
-      this.executions()
+      this.executionRecords()
         .filter(
           execution =>
             !filters.riskDetectionId ||
@@ -244,7 +220,7 @@ export class MockAlertGateway
     > {
 
     const execution =
-      this.executions().find(
+      this.executionRecords().find(
         item =>
           item.responseExecutionId ===
           responseExecutionId,
@@ -272,7 +248,7 @@ export class MockAlertGateway
     > {
 
     const execution =
-      this.executions().find(
+      this.executionRecords().find(
         item =>
           item.responseExecutionId ===
           responseExecutionId,
@@ -335,22 +311,25 @@ export class MockAlertGateway
       );
     }
 
-    const currentUser =
-      this.user.profile();
+    let currentUserId: string;
+    try {
+      currentUserId = this.authorization.requireCriticalResponseAuthorizer().userId!;
+    } catch (error) {
+      return throwError(() => error);
+    }
 
-    if (!currentUser) {
-
+    const incident = this.events.incidentForDetection(execution.riskDetectionId);
+    if (!incident || incident.status !== 'InProgress' || incident.assignedTo !== currentUserId) {
       return throwError(
         () =>
-          apiError(
-            401,
-
-            'UNAUTHORIZED',
-
-            'Authentication is required to authorize a response.',
+          conflict(
+            'INCIDENT_ASSIGNMENT_REQUIRED',
+            'Assign this Incident to your administrator user before authorizing critical actions.',
           ),
       );
     }
+
+    const decidedAt = new Date();
 
     const next:
       ResponseExecutionRecord = {
@@ -362,7 +341,7 @@ export class MockAlertGateway
       status:
         decision ===
         'APPROVED'
-          ? 'AUTHORIZED'
+          ? 'SUCCEEDED'
           : 'REJECTED',
 
       authorization: {
@@ -374,25 +353,49 @@ export class MockAlertGateway
 
         decision,
 
-        decidedByUserId:
-          currentUser.userId,
+        decidedByUserId: currentUserId,
 
-        decidedAt:
-          new Date(),
+        decidedAt,
       },
+
+      executionRequestedAt: decision === 'APPROVED' ? decidedAt : undefined,
+
+      result:
+        decision === 'APPROVED'
+          ? {
+              successful: true,
+              resultCode: 'ACTUATOR_CONFIRMED',
+              message: 'Authorized action was requested and completed successfully.',
+              completedAt: decidedAt,
+            }
+          : undefined,
     };
 
-    this.executions.update(
-      items =>
-        items.map(
-          item =>
-            item
-              .responseExecutionId ===
-              responseExecutionId
-                ? next
-                : item,
-        ),
+    const source = this.events.responseExecutions().find(
+      (item) => item.responseExecutionId === responseExecutionId,
     );
+    if (source) {
+      const decided = {
+        ...source,
+        authorization: next.authorization,
+        status: decision === 'APPROVED' ? 'AUTHORIZED' : 'REJECTED',
+      } as const;
+      this.events.updateResponseExecution(decided);
+
+      if (decision === 'APPROVED') {
+        const requested = {
+          ...decided,
+          status: 'EXECUTION_REQUESTED' as const,
+          executionRequestedAt: decidedAt,
+        };
+        this.events.updateResponseExecution(requested);
+        this.events.updateResponseExecution({
+          ...requested,
+          status: 'SUCCEEDED',
+          result: next.result,
+        });
+      }
+    }
 
     return of(
       cloneExecution(
@@ -691,6 +694,14 @@ export class MockAlertGateway
       delay(90),
     );
   }
+
+  private alertRecords(): AlertRecord[] {
+    return this.events.alerts().map(mapLegacyAlertToRecord);
+  }
+
+  private executionRecords(): ResponseExecutionRecord[] {
+    return this.events.responseExecutions().map(mapLegacyResponseExecutionToRecord);
+  }
 }
 
 function validatePolicyInput(
@@ -841,6 +852,8 @@ function cloneAlert(
         alert.generatedAt,
       ),
 
+    clearedAt: alert.clearedAt ? new Date(alert.clearedAt) : undefined,
+
     deliveries:
       alert.deliveries.map(
         delivery => ({
@@ -880,6 +893,10 @@ function cloneExecution(
       new Date(
         execution.requestedAt,
       ),
+
+    executionRequestedAt: execution.executionRequestedAt
+      ? new Date(execution.executionRequestedAt)
+      : undefined,
 
     authorization:
       execution.authorization

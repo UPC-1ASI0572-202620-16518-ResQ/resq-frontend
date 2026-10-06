@@ -75,6 +75,12 @@ export interface AlertRecord {
 
   generatedAt: Date;
 
+  status: 'ACTIVE' | 'CLEARED';
+
+  clearedAt?: Date;
+
+  clearReason?: 'RETURNED_TO_NORMAL' | 'CRITICAL_THRESHOLD_REACHED';
+
   deliveries:
     NotificationDeliveryRecord[];
 }
@@ -131,6 +137,8 @@ export interface ResponseExecutionRecord {
     ResponseExecutionStatus;
 
   requestedAt: Date;
+
+  executionRequestedAt?: Date;
 
   authorization?:
     ResponseAuthorizationRecord;

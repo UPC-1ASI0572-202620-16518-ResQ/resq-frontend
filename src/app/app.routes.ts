@@ -15,17 +15,10 @@ import {
   BuildingCreatePage,
 } from './features/buildings/building-create/building-create.page';
 
-import { FloorPlanEditorPage } from './features/buildings/floor-plan-editor/floor-plan-editor.page';
 
-import {
-  SpacesPage,
-  SpaceDetailPage,
-} from './features/spaces/spaces.pages';
 
-import {
-  DevicesPage,
-  DeviceDetailPage,
-} from './features/devices/devices.pages';
+
+
 
 import {
   AlertsPage,
@@ -84,7 +77,7 @@ export const routes: Routes = [
 
       {
         path: 'buildings/:buildingId/floors/:floorId/editor',
-        component: FloorPlanEditorPage,
+        loadComponent: () => import('./features/buildings/floor-plan-editor/floor-plan-editor.page').then(module => module.FloorPlanEditorPage),
       },
 
       {
@@ -108,22 +101,22 @@ export const routes: Routes = [
 
       {
         path: 'spaces',
-        component: SpacesPage,
+        loadComponent: () => import('./features/spaces/spaces.pages').then(module => module.SpacesPage),
       },
 
       {
         path: 'spaces/:spaceId',
-        component: SpaceDetailPage,
+        loadComponent: () => import('./features/spaces/spaces.pages').then(module => module.SpaceDetailPage),
       },
 
       {
         path: 'devices',
-        component: DevicesPage,
+        loadComponent: () => import('./features/devices/devices.pages').then(module => module.DevicesPage),
       },
 
       {
         path: 'devices/:deviceId',
-        component: DeviceDetailPage,
+        loadComponent: () => import('./features/devices/devices.pages').then(module => module.DeviceDetailPage),
       },
 
       {

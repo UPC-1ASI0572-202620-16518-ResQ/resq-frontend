@@ -42,6 +42,10 @@ export function mapIncidentResourceDto(
       dto.assignedTo ??
       undefined,
 
+    assignedAt: dto.assignedAt ? new Date(dto.assignedAt) : undefined,
+    safeAt: dto.safeAt ? new Date(dto.safeAt) : undefined,
+    resolvedBy: dto.resolvedBy ?? undefined,
+
     createdAt:
       new Date(
         dto.createdAt,
@@ -93,13 +97,36 @@ export function mapLegacyIncidentToRecord(
     LegacyIncident,
 
   riskType:
-    IncidentRiskType = 'UNKNOWN',
+    IncidentRiskType = incident.riskTypeCode,
 ):
   IncidentRecord {
 
   return {
     incidentId:
       incident.id,
+
+    riskDetectionId:
+      incident.riskDetectionId,
+
+    detectedEvidence: {
+      deviceId: incident.evidence.deviceId,
+      metric: incident.evidence.metric,
+      value: incident.evidence.value,
+      unit: incident.evidence.unit,
+      warningThreshold: incident.evidence.warningThreshold,
+      criticalThreshold: incident.evidence.criticalThreshold,
+      measuredAt: new Date(incident.evidence.capturedAt),
+    },
+
+    currentEvidence: {
+      deviceId: incident.currentEvidence.deviceId,
+      metric: incident.currentEvidence.metric,
+      value: incident.currentEvidence.value,
+      unit: incident.currentEvidence.unit,
+      warningThreshold: incident.currentEvidence.warningThreshold,
+      criticalThreshold: incident.currentEvidence.criticalThreshold,
+      measuredAt: new Date(incident.currentEvidence.capturedAt),
+    },
 
     /*
      * The current legacy frontend calls this
@@ -133,6 +160,13 @@ export function mapLegacyIncidentToRecord(
         incident.status,
       ),
 
+    assignedTo:
+      incident.assignedTo,
+
+    assignedAt: incident.assignedAt ? new Date(incident.assignedAt) : undefined,
+    safeAt: incident.safeAt ? new Date(incident.safeAt) : undefined,
+    resolvedBy: incident.resolvedBy,
+
     createdAt:
       new Date(
         incident.createdAt,
@@ -144,6 +178,9 @@ export function mapLegacyIncidentToRecord(
             incident.resolvedAt,
           )
         : undefined,
+
+    resolutionNotes:
+      incident.resolutionNotes,
   };
 }
 
@@ -156,6 +193,13 @@ export function cloneIncident(
   return {
     ...incident,
 
+    detectedEvidence: incident.detectedEvidence
+      ? { ...incident.detectedEvidence, measuredAt: new Date(incident.detectedEvidence.measuredAt) }
+      : undefined,
+    currentEvidence: incident.currentEvidence
+      ? { ...incident.currentEvidence, measuredAt: new Date(incident.currentEvidence.measuredAt) }
+      : undefined,
+
     createdAt:
       new Date(
         incident.createdAt,
@@ -167,6 +211,9 @@ export function cloneIncident(
             incident.resolvedAt,
           )
         : undefined,
+
+    assignedAt: incident.assignedAt ? new Date(incident.assignedAt) : undefined,
+    safeAt: incident.safeAt ? new Date(incident.safeAt) : undefined,
   };
 }
 

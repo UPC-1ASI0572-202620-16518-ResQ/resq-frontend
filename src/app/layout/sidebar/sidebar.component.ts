@@ -18,6 +18,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { AlertWorkspaceFacade } from '../../features/alerts/alert-workspace.facade';
 import { LanguageService } from '../../core/services/language.service';
 import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
+import { AuthorizationService } from '../../features/auth/authorization.service';
 
 @Component({
   selector: 'resq-sidebar',
@@ -97,7 +98,7 @@ import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
       </button>
       @if (mobileNotificationsOpen()) {
         <div class="mobile-alert-list">
-          @for (alert of alerts.rows().slice(0, 3); track alert.id) {
+          @for (alert of activeAlerts().slice(0, 3); track alert.id) {
             <a [routerLink]="'/alerts/' + alert.id" (click)="navigate.emit()">
               <mat-icon>{{ alert.severity === 'Critical' ? 'error_outline' : 'warning_amber' }}</mat-icon>
               <div><b>{{ alert.title }}</b><small>{{ alert.severity }}</small></div>
@@ -108,7 +109,7 @@ import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
       }
       <a routerLink="/settings" (click)="navigate.emit()" class="mobile-user">
         <span class="avatar">{{ initials() }}</span>
-        <div><b>{{ userName() }}</b><small>{{ language.t('administrator', 'Administrator') }}</small></div>
+        <div><b>{{ userName() }}</b><small>{{ roleLabel() }}</small></div>
         <mat-icon>chevron_right</mat-icon>
       </a>
     </section>
@@ -126,9 +127,11 @@ export class SidebarComponent implements OnInit {
 
   readonly alerts = inject(AlertWorkspaceFacade);
   private readonly session = inject(AuthSessionFacade);
+  private readonly authorization = inject(AuthorizationService);
   readonly language = inject(LanguageService);
   readonly userName = computed(() => this.session.fullName() || 'Sofia Ramirez');
   readonly initials = computed(() => this.userName().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('').toUpperCase());
+  readonly roleLabel = this.authorization.roleLabel;
   readonly mobileNotificationsOpen = signal(false);
 
   readonly logoFailed =
@@ -136,7 +139,10 @@ export class SidebarComponent implements OnInit {
       false,
     );
 
-  readonly alertCount = this.alerts.recentCount;
+  readonly activeAlerts = computed(() =>
+    this.alerts.rows().filter((alert) => alert.status === 'ACTIVE'),
+  );
+  readonly alertCount = computed(() => this.activeAlerts().length);
   ngOnInit(): void {
     if (!this.alerts.rows().length) this.alerts.loadAlerts().subscribe({ error: () => undefined });
   }

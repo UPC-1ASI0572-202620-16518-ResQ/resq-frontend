@@ -29,6 +29,7 @@ import {
   ResponsePolicyRecord,
   UpdateResponsePolicyInput,
 } from './alert.gateway';
+import { AuthorizationService } from '../../auth/authorization.service';
 
 @Injectable()
 export class AlertFacade {
@@ -129,6 +130,8 @@ export class AlertFacade {
 
     private readonly gateway:
       AlertResponseGateway,
+
+    private readonly authorization: AuthorizationService,
   ) {}
 
   loadAlerts(
@@ -440,6 +443,7 @@ export class AlertFacade {
   ): boolean {
 
     return (
+      this.authorization.canAuthorizeCriticalResponses() &&
       execution
         .action
         .authorizationMode ===

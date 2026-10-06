@@ -16,6 +16,8 @@ import {
   ApiError,
   isApiError,
 } from '../../../core/api/api-error';
+import { MeasurementRiskLevel, MetricThreshold } from '../../../core/models/resq.models';
+import { RiskEvaluationService } from '../../../core/services/risk-evaluation.service';
 
 import {
   ConfigureDetectionRuleInput,
@@ -102,7 +104,14 @@ export class RiskDetectionFacade {
 
     private readonly gateway:
       RiskDetectionGateway,
+
+    private readonly evaluator:
+      RiskEvaluationService,
   ) {}
+
+  classifyMeasurement(value: number, thresholds: MetricThreshold): MeasurementRiskLevel {
+    return this.evaluator.evaluateMetric(value, thresholds);
+  }
 
   loadRiskDetection(
     riskDetectionId:

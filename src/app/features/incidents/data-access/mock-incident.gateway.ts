@@ -1,6 +1,5 @@
 import {
   Injectable,
-  signal,
 } from '@angular/core';
 
 import {
@@ -20,16 +19,15 @@ import {
   paginateInMemory,
 } from '../../../core/api/pagination';
 
-import {
-  ALERTS,
-  INCIDENTS,
-} from '../../../core/mock-data/resq.mock';
+import { RiskEventStoreService } from '../../../core/services/risk-event-store.service';
+import { BuildingStoreService } from '../../../core/services/building-store.service';
+import { evaluateMeasurement } from '../../../core/services/risk-evaluation.service';
+import { AuthorizationService } from '../../auth/authorization.service';
 
 import {
   IncidentGateway,
   IncidentQueryFilters,
   IncidentRecord,
-  IncidentRiskType,
 } from './incident.gateway';
 
 import {
@@ -41,20 +39,11 @@ import {
 export class MockIncidentGateway
   implements IncidentGateway {
 
-  private readonly items =
-    signal<
-      IncidentRecord[]
-    >(
-      INCIDENTS.map(
-        incident =>
-          mapLegacyIncidentToRecord(
-            incident,
-            resolveRiskType(
-              incident.alertIds,
-            ),
-          ),
-      ),
-    );
+  constructor(
+    private readonly events: RiskEventStoreService,
+    private readonly buildings: BuildingStoreService,
+    private readonly authorization: AuthorizationService,
+  ) {}
 
   getIncidents(
     filters:
@@ -70,7 +59,7 @@ export class MockIncidentGateway
     > {
 
     const result =
-      this.items()
+      this.incidentRecords()
         .filter(
           incident =>
             !filters.zoneId ||
@@ -140,7 +129,7 @@ export class MockIncidentGateway
     > {
 
     const incident =
-      this.items().find(
+      this.incidentRecords().find(
         item =>
           item.incidentId ===
           incidentId,
@@ -166,8 +155,15 @@ export class MockIncidentGateway
       IncidentRecord
     > {
 
+    let administratorId: string;
+    try {
+      administratorId = this.authorization.requireIncidentManager().userId!;
+    } catch (error) {
+      return throwError(() => error);
+    }
+
     const current =
-      this.items().find(
+      this.incidentRecords().find(
         item =>
           item.incidentId ===
           incidentId,
@@ -215,6 +211,17 @@ export class MockIncidentGateway
       );
     }
 
+    if (normalizedAttendantId !== administratorId) {
+      return throwError(
+        () =>
+          apiError(
+            403,
+            'INCIDENT_ASSIGNMENT_FORBIDDEN',
+            'An administrator may only use Assign to me for the current session user.',
+          ),
+      );
+    }
+
     const next:
       IncidentRecord = {
 
@@ -224,6 +231,8 @@ export class MockIncidentGateway
 
       assignedTo:
         normalizedAttendantId,
+
+      assignedAt: new Date(),
 
       status:
         'IN_PROGRESS',
@@ -251,8 +260,15 @@ export class MockIncidentGateway
       IncidentRecord
     > {
 
+    let administratorId: string;
+    try {
+      administratorId = this.authorization.requireIncidentManager().userId!;
+    } catch (error) {
+      return throwError(() => error);
+    }
+
     const current =
-      this.items().find(
+      this.incidentRecords().find(
         item =>
           item.incidentId ===
           incidentId,
@@ -266,10 +282,7 @@ export class MockIncidentGateway
       );
     }
 
-    if (
-      current.status ===
-      'CLOSED'
-    ) {
+    if (current.status === 'CLOSED') {
 
       return throwError(
         () =>
@@ -292,6 +305,44 @@ export class MockIncidentGateway
             'INCIDENT_ALREADY_RESOLVED',
 
             'The incident has already been resolved.',
+          ),
+      );
+    }
+
+    if (current.status !== 'IN_PROGRESS') {
+      return throwError(
+        () =>
+          conflict(
+            'INCIDENT_NOT_IN_PROGRESS',
+            'Assign the Incident and move it to IN_PROGRESS before resolving it.',
+          ),
+      );
+    }
+
+    if (current.assignedTo !== administratorId) {
+      return throwError(
+        () =>
+          apiError(
+            403,
+            'INCIDENT_ASSIGNEE_REQUIRED',
+            'Only the administrator assigned to this Incident may resolve it.',
+          ),
+      );
+    }
+
+    const source = this.events.incidents().find((item) => item.id === incidentId);
+    const device = this.buildings.devices().find(
+      (item) => item.id === source?.currentEvidence.deviceId,
+    );
+    const space = this.buildings.spaces().find((item) => item.id === source?.spaceId);
+    const reading = device?.readings.at(-1);
+    const thresholds = reading && space ? space.thresholds[reading.metric] : undefined;
+    if (!reading || evaluateMeasurement(reading.value, thresholds) !== 'Normal') {
+      return throwError(
+        () =>
+          conflict(
+            'INCIDENT_CONDITION_NOT_SAFE',
+            'The current measurement must be below the warning threshold before the Incident can be resolved.',
           ),
       );
     }
@@ -326,6 +377,10 @@ export class MockIncidentGateway
 
       resolvedAt:
         new Date(),
+
+      safeAt: current.safeAt ?? new Date(),
+
+      resolvedBy: administratorId,
     };
 
     this.replace(
@@ -346,55 +401,28 @@ export class MockIncidentGateway
       IncidentRecord,
   ): void {
 
-    this.items.update(
-      items =>
-        items.map(
-          item =>
-            item.incidentId ===
-            incident.incidentId
-              ? incident
-              : item,
-        ),
-    );
-  }
-}
-
-function resolveRiskType(
-  alertIds:
-    string[],
-):
-  IncidentRiskType {
-
-  for (
-    const alertId
-    of alertIds
-  ) {
-
-    const alert =
-      ALERTS.find(
-        item =>
-          item.alertId ===
-          alertId,
-      );
-
-    if (!alert) {
-      continue;
-    }
-
-    switch (
-      alert.context
-        .riskTypeCode
-    ) {
-
-      case 'FIRE':
-        return 'FIRE';
-
-      case 'GAS_LEAK':
-        return 'GAS_LEAK';
-    }
+    const legacy = this.events.incidents().find((item) => item.id === incident.incidentId);
+    if (!legacy) return;
+    this.events.updateIncident({
+      ...legacy,
+      status:
+        incident.status === 'ACTIVE'
+          ? 'Open'
+          : incident.status === 'IN_PROGRESS'
+            ? 'InProgress'
+            : 'Resolved',
+      assignedTo: incident.assignedTo,
+      assignedAt: incident.assignedAt,
+      safeAt: incident.safeAt,
+      resolvedAt: incident.resolvedAt,
+      resolvedBy: incident.resolvedBy,
+      resolutionNotes: incident.resolutionNotes,
+    });
   }
 
-  return 'UNKNOWN';
+  private incidentRecords(): IncidentRecord[] {
+    return this.events.incidents().map((incident) => mapLegacyIncidentToRecord(incident));
+  }
 }
 
 function normalizePage(

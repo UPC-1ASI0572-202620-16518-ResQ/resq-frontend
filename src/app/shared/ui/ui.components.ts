@@ -43,6 +43,7 @@ import { ChartConfiguration } from 'chart.js';
         background: #ecfdf3;
       }
       .status-warning,
+      .status-moving,
       .status-acknowledged,
       .status-inprogress,
       .status-in_progress,
@@ -55,6 +56,8 @@ import { ChartConfiguration } from 'chart.js';
         background: #fffaeb;
       }
       .status-critical,
+      .status-alert,
+      .status-error,
       .status-new,
       .status-open,
       .status-failed,
@@ -63,6 +66,7 @@ import { ChartConfiguration } from 'chart.js';
         background: #fef3f2;
       }
       .status-offline,
+      .status-planned,
       .status-timeout,
       .status-unavailable,
       .status-unknown,
@@ -123,54 +127,20 @@ export class KpiCardComponent {
   ],
 })
 export class LineChartComponent {
-  @Input() labels = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'];
+  @Input() labels: string[] = [];
   @Input() values: number[] = [];
-  @Input() datasetLabel = 'Temperature';
+  @Input() datasetLabel = 'Measurement';
   @Input() unit = '';
-  @Input() multi = false;
+
   get data(): ChartConfiguration<'line'>['data'] {
     return {
       labels: this.labels,
-      datasets: this.multi
-        ? [
-            {
-              label: 'Temperature (°C)',
-              data: [19, 20, 21, 25, 29, 31, 28],
-              borderColor: '#1570ef',
-              backgroundColor: '#1570ef18',
-              tension: 0.4,
-              fill: true,
-              pointRadius: 2,
-            },
-            {
-              label: 'Smoke (ppm)',
-              data: [80, 92, 88, 130, 210, 330, 260],
-              borderColor: '#f04438',
-              backgroundColor: 'transparent',
-              tension: 0.4,
-              pointRadius: 2,
-            },
-            {
-              label: 'Gas (ppm)',
-              data: [140, 170, 150, 250, 420, 480, 390],
-              borderColor: '#fdb022',
-              backgroundColor: 'transparent',
-              tension: 0.4,
-              pointRadius: 2,
-            },
-          ]
-        : [
-            {
-              label: `${this.datasetLabel}${this.unit ? ` (${this.unit})` : ''}`,
-              data: this.values.length ? this.values : [18, 20, 19, 25, 27, 31, 28],
-              borderColor: '#1570ef',
-              backgroundColor: '#1570ef18',
-              fill: true,
-              tension: 0.35,
-              pointRadius: this.values.length > 12 ? 0 : 2,
-              pointHoverRadius: 4,
-            },
-          ],
+      datasets: [{
+        label: `${this.datasetLabel}${this.unit ? ` (${this.unit})` : ''}`,
+        data: this.values,
+        borderColor: '#1570ef', backgroundColor: '#1570ef18', fill: true,
+        tension: 0.35, pointRadius: this.values.length > 12 ? 0 : 2, pointHoverRadius: 4,
+      }],
     };
   }
   get options(): ChartConfiguration<'line'>['options'] {

@@ -59,7 +59,15 @@ export interface DetectionEvidenceRecord {
 
   variableType: string;
 
+  metric?: string;
+
   value: number;
+
+  unit?: string;
+
+  warningThreshold?: number;
+
+  criticalThreshold?: number;
 
   measuredAt: Date;
 }

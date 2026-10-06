@@ -1,48 +1,459 @@
 @if (floor() && building()) {
   <section class="monitor-context">
-    <div class="monitor-context-title"><span><mat-icon>monitoring</mat-icon></span><div><h1>Floor Monitoring</h1><p>Live building and floor overview</p></div></div>
-    <label><span>Building</span><select [value]="buildingId()" (change)="chooseBuilding($any($event.target).value)">@for(item of store.buildings();track item.id){<option [value]="item.id">{{item.name}}</option>}</select></label>
+    <div class="monitor-context-title">
+      <span><mat-icon>monitoring</mat-icon></span>
+      <div>
+        <h1>Floor Monitoring</h1>
+        <p>Live building and floor overview</p>
+      </div>
+    </div>
+    <label
+      ><span>Building</span
+      ><select [value]="buildingId()" (change)="chooseBuilding($any($event.target).value)">
+        @for (item of store.buildings(); track item.id) {
+          <option [value]="item.id">{{ item.name }}</option>
+        }
+      </select></label
+    >
   </section>
-  <div class="monitor-layout"><div class="monitor-main">
-    <section class="kpis"><resq-kpi-card icon="layers" [value]="building()!.floors.length" label="Floors"/><resq-kpi-card icon="grid_view" [value]="buildingSpaces().length" label="Monitored Spaces"/><resq-kpi-card icon="sensors" [value]="buildingDevices().length" label="Connected Devices" tone="green"/><resq-kpi-card icon="warning_amber" [value]="buildingAlertCount()" label="Active Alerts" tone="red"/></section>
-    <article class="floor-card">
-      <div class="card-title"><h2>{{ building()!.name }} · {{ floor()!.name }}</h2><div class="controls"><button [class.active]="view()==='2d'" (click)="view.set('2d')"><mat-icon>map</mat-icon>2D View</button><button [class.active]="view()==='3d'" (click)="view.set('3d')"><mat-icon>view_in_ar</mat-icon>3D View</button><i></i><button aria-label="Zoom in" (click)="zoomIn()"><mat-icon>zoom_in</mat-icon></button><button aria-label="Zoom out" (click)="zoomOut()"><mat-icon>zoom_out</mat-icon></button><button aria-label="Fit" (click)="fit()"><mat-icon>fit_screen</mat-icon></button></div></div>
-      @if (!floor()!.planConfigured) {
-        <div class="plan-empty"><mat-icon>map</mat-icon><h3>Floor plan not configured</h3><p>Create a visual plan to monitor spaces and devices on this floor.</p><a [routerLink]="['/buildings', buildingId(), 'floors', floorId(), 'editor']"><mat-icon>edit</mat-icon>Configure Floor Plan</a></div>
-      } @else if (view() === '2d') {
-        <div class="plan-viewport"><svg viewBox="0 0 1000 500" role="img" [attr.aria-label]="building()!.name + ' ' + floor()!.name + ' floor plan'"><defs><pattern id="monitorGrid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M25 0H0V25" fill="none" stroke="#d5e5d7" stroke-width=".5"/></pattern><filter id="shadow"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-opacity=".2"/></filter></defs><rect width="1000" height="500" rx="12" fill="#eef5f0"/><rect width="1000" height="500" rx="12" fill="url(#monitorGrid)" opacity=".6"/>
-          <g class="building" [attr.transform]="'scale(' + zoom() + ')'">
-            @if (floor()!.planImageUrl) { <image [attr.href]="floor()!.planImageUrl" width="1000" height="500" preserveAspectRatio="none" opacity=".62"/> }
-            @for (element of floor()!.planElements || []; track element.id) { @if (element.type !== 'Space') { <g class="monitor-element"><rect [attr.x]="element.x" [attr.y]="element.y" [attr.width]="element.width" [attr.height]="element.height" [attr.class]="element.type.toLowerCase()" rx="3"/><text [attr.x]="element.x + element.width / 2" [attr.y]="element.y + element.height / 2">{{ elementLabel(element) }}</text>@if(element.type==='Stairs'){@for(line of [1,2,3,4,5,6];track line){<line [attr.x1]="element.x+8" [attr.x2]="element.x+element.width-8" [attr.y1]="element.y+line*element.height/7" [attr.y2]="element.y+line*element.height/7"/>}}</g> } }
-            @for (space of floorSpaces(); track space.id) { @if (space.polygon.length >= 3) { <g tabindex="0" role="button" [attr.aria-label]="space.name + ', Room ' + space.roomNumber + ', ' + space.status" [class]="'space status-' + space.status.toLowerCase() + (isStairSpace(space.type) ? ' stairs-space' : '') + (selected()?.id === space.id ? ' selected' : '')" (click)="selectSpace(space.id)" (keydown.enter)="selectSpace(space.id)" (keydown.space)="selectSpaceKey($event, space.id)"><polygon [attr.points]="points(space.polygon)"/>@if(isStairSpace(space.type)){@for(step of [0,1,2,3,4,5,6];track step){<rect class="stair-step" [class.alternate]="step%2===0" [attr.x]="bounds(space.polygon).x+5" [attr.y]="bounds(space.polygon).y+step*bounds(space.polygon).height/7+2" [attr.width]="bounds(space.polygon).width-10" [attr.height]="bounds(space.polygon).height/7-4" rx="1"/>}<path class="stair-direction" [attr.d]="'M '+(bounds(space.polygon).x+bounds(space.polygon).width/2)+' '+(bounds(space.polygon).y+bounds(space.polygon).height-10)+' V '+(bounds(space.polygon).y+10)+' M '+(bounds(space.polygon).x+bounds(space.polygon).width/2)+' '+(bounds(space.polygon).y+10)+' l -6 8 M '+(bounds(space.polygon).x+bounds(space.polygon).width/2)+' '+(bounds(space.polygon).y+10)+' l 6 8'"/>}<title>{{ space.name }} — Room {{ space.roomNumber || '—' }} — {{ space.status }}</title><text class="room-name" [attr.x]="bounds(space.polygon).x + bounds(space.polygon).width / 2" [attr.y]="bounds(space.polygon).y + bounds(space.polygon).height / 2 - 5">{{ space.name }}</text><text class="room-number" [attr.x]="bounds(space.polygon).x + bounds(space.polygon).width / 2" [attr.y]="bounds(space.polygon).y + bounds(space.polygon).height / 2 + 14">{{ space.roomNumber }}</text></g> }
-              @for (device of space.devices; track device.id; let deviceIndex = $index) { @if (devicePosition(space.devices, deviceIndex); as marker) { <g [attr.class]="'monitor-device ' + device.status.toLowerCase()" [attr.transform]="'translate(' + marker.x + ' ' + marker.y + ')'" (click)="$event.stopPropagation();selectDevice(device.id,space.id)"><circle r="11"/><text y="4">{{ deviceLetter(device) }}</text><title>{{ deviceLabel(device) }} · {{ device.name }} · {{ device.code }} · {{ device.type }} · {{ device.status }} · {{ device.readings.at(-1)?.value }} {{ device.readings.at(-1)?.unit }}</title></g> } }
+  <div class="monitor-layout">
+    <div class="monitor-main">
+      <section class="kpis">
+        <resq-kpi-card
+          icon="layers"
+          [value]="building()!.floors.length"
+          label="Floors"
+        /><resq-kpi-card
+          icon="grid_view"
+          [value]="buildingSpaces().length"
+          label="Monitored Spaces"
+        /><resq-kpi-card
+          icon="sensors"
+          [value]="buildingDevices().length"
+          label="Connected Devices"
+          tone="green"
+        /><resq-kpi-card
+          icon="warning_amber"
+          [value]="buildingAlertCount()"
+          label="Active Alerts"
+          tone="red"
+        />
+      </section>
+      <article class="floor-card">
+        <div class="card-title">
+          <h2>{{ building()!.name }} · {{ floor()!.name }}</h2>
+          <div class="controls">
+            <button [class.active]="view() === '2d'" (click)="view.set('2d')">
+              <mat-icon>map</mat-icon>2D View</button
+            ><button [class.active]="view() === '3d'" (click)="view.set('3d')">
+              <mat-icon>view_in_ar</mat-icon>3D View</button
+            ><i></i
+            ><button aria-label="Zoom in" (click)="zoomIn()"><mat-icon>zoom_in</mat-icon></button
+            ><button aria-label="Zoom out" (click)="zoomOut()"><mat-icon>zoom_out</mat-icon></button
+            ><button aria-label="Fit" (click)="fit()"><mat-icon>fit_screen</mat-icon></button>
+          </div>
+        </div>
+        @if (!floor()!.planConfigured) {
+          <div class="plan-empty">
+            <mat-icon>map</mat-icon>
+            <h3>Floor plan not configured</h3>
+            <p>Create a visual plan to monitor spaces and devices on this floor.</p>
+            <a [routerLink]="['/buildings', buildingId(), 'floors', floorId(), 'editor']"
+              ><mat-icon>edit</mat-icon>Configure Floor Plan</a
+            >
+          </div>
+        } @else if (view() === '2d') {
+          <div class="plan-viewport">
+            <svg
+              viewBox="0 0 1000 500"
+              role="img"
+              [attr.aria-label]="building()!.name + ' ' + floor()!.name + ' floor plan'"
+            >
+              <defs>
+                <pattern id="monitorGrid" width="25" height="25" patternUnits="userSpaceOnUse">
+                  <path d="M25 0H0V25" fill="none" stroke="#d5e5d7" stroke-width=".5" />
+                </pattern>
+                <filter id="shadow">
+                  <feDropShadow dx="0" dy="5" stdDeviation="4" flood-opacity=".2" />
+                </filter>
+              </defs>
+              <rect width="1000" height="500" rx="12" fill="#eef5f0" />
+              <rect width="1000" height="500" rx="12" fill="url(#monitorGrid)" opacity=".6" />
+              <g class="building" [attr.transform]="'scale(' + zoom() + ')'">
+                @if (floor()!.planImageUrl) {
+                  <image
+                    [attr.href]="floor()!.planImageUrl"
+                    width="1000"
+                    height="500"
+                    preserveAspectRatio="none"
+                    opacity=".62"
+                  />
+                }
+                @for (element of floor()!.planElements || []; track element.id) {
+                  @if (element.type !== 'Space') {
+                    <g class="monitor-element">
+                      <rect
+                        [attr.x]="element.x"
+                        [attr.y]="element.y"
+                        [attr.width]="element.width"
+                        [attr.height]="element.height"
+                        [attr.class]="element.type.toLowerCase()"
+                        rx="3"
+                      />
+                      <text
+                        [attr.x]="element.x + element.width / 2"
+                        [attr.y]="element.y + element.height / 2"
+                      >
+                        {{ elementLabel(element) }}
+                      </text>
+                      @if (element.type === 'Stairs') {
+                        @for (line of [1, 2, 3, 4, 5, 6]; track line) {
+                          <line
+                            [attr.x1]="element.x + 8"
+                            [attr.x2]="element.x + element.width - 8"
+                            [attr.y1]="element.y + (line * element.height) / 7"
+                            [attr.y2]="element.y + (line * element.height) / 7"
+                          />
+                        }
+                      }
+                    </g>
+                  }
+                }
+                @for (space of floorSpaces(); track space.id) {
+                  @if (space.polygon.length >= 3) {
+                    <g
+                      tabindex="0"
+                      role="button"
+                      [attr.aria-label]="
+                        space.name + ', Room ' + space.roomNumber + ', ' + space.status
+                      "
+                      [class]="
+                        'space status-' +
+                        space.status.toLowerCase() +
+                        (isStairSpace(space.type) ? ' stairs-space' : '') +
+                        (selected()?.id === space.id ? ' selected' : '')
+                      "
+                      (click)="selectSpace(space.id)"
+                      (keydown.enter)="selectSpace(space.id)"
+                      (keydown.space)="selectSpaceKey($event, space.id)"
+                    >
+                      <polygon [attr.points]="points(space.polygon)" />
+                      @if (isStairSpace(space.type)) {
+                        @for (step of [0, 1, 2, 3, 4, 5, 6]; track step) {
+                          <rect
+                            class="stair-step"
+                            [class.alternate]="step % 2 === 0"
+                            [attr.x]="bounds(space.polygon).x + 5"
+                            [attr.y]="
+                              bounds(space.polygon).y +
+                              (step * bounds(space.polygon).height) / 7 +
+                              2
+                            "
+                            [attr.width]="bounds(space.polygon).width - 10"
+                            [attr.height]="bounds(space.polygon).height / 7 - 4"
+                            rx="1"
+                          />
+                        }
+                        <path
+                          class="stair-direction"
+                          [attr.d]="
+                            'M ' +
+                            (bounds(space.polygon).x + bounds(space.polygon).width / 2) +
+                            ' ' +
+                            (bounds(space.polygon).y + bounds(space.polygon).height - 10) +
+                            ' V ' +
+                            (bounds(space.polygon).y + 10) +
+                            ' M ' +
+                            (bounds(space.polygon).x + bounds(space.polygon).width / 2) +
+                            ' ' +
+                            (bounds(space.polygon).y + 10) +
+                            ' l -6 8 M ' +
+                            (bounds(space.polygon).x + bounds(space.polygon).width / 2) +
+                            ' ' +
+                            (bounds(space.polygon).y + 10) +
+                            ' l 6 8'
+                          "
+                        />
+                      }
+                      <title>
+                        {{ space.name }} — Room {{ space.roomNumber || '—' }} — {{ space.status }}
+                      </title>
+                      <text
+                        class="room-name"
+                        [attr.x]="bounds(space.polygon).x + bounds(space.polygon).width / 2"
+                        [attr.y]="bounds(space.polygon).y + bounds(space.polygon).height / 2 - 5"
+                      >
+                        {{ space.name }}
+                      </text>
+                      <text
+                        class="room-number"
+                        [attr.x]="bounds(space.polygon).x + bounds(space.polygon).width / 2"
+                        [attr.y]="bounds(space.polygon).y + bounds(space.polygon).height / 2 + 14"
+                      >
+                        {{ space.roomNumber }}
+                      </text>
+                    </g>
+                  }
+                  @for (device of space.devices; track device.id; let deviceIndex = $index) {
+                    @if (devicePosition(space.devices, deviceIndex); as marker) {
+                      <g
+                        [attr.class]="'monitor-device ' + device.status.toLowerCase()"
+                        [attr.transform]="'translate(' + marker.x + ' ' + marker.y + ')'"
+                        (click)="$event.stopPropagation(); selectDevice(device.id, space.id)"
+                      >
+                        <circle r="11" />
+                        <text y="4">{{ deviceLetter(device) }}</text>
+                        <title>
+                          {{ deviceLabel(device) }} · {{ device.name }} · {{ device.code }} ·
+                          {{ device.type }} · {{ device.status }} ·
+                          {{ device.readings.at(-1)?.value }} {{ device.readings.at(-1)?.unit }}
+                        </title>
+                      </g>
+                    }
+                  }
+                }
+              </g>
+            </svg>
+          </div>
+        } @else {
+          <resq-three-floor-viewer
+            [floors]="visibleFloors()"
+            [selectedFloorId]="floorId()"
+            [selectedSpaceId]="selected()?.id || ''"
+            (spaceSelected)="selectSpace($event)"
+            (deviceSelected)="selectDevice($event)"
+          />
+        }
+        <div class="legend">
+          <span><i class="normal"></i>Normal</span><span><i class="warning"></i>Warning</span
+          ><span><i class="critical"></i>Critical</span><span><i class="offline"></i>Offline</span
+          ><em>Click any room to inspect details</em>
+        </div>
+      </article>
+      <section class="bottom-widgets">
+        <article class="mini-card alerts">
+          <div class="mini-head">
+            <h3>Active Alerts</h3>
+            <a routerLink="/alerts">View All →</a>
+          </div>
+          @for (alert of recentAlerts(); track alert.id) {
+            <a [routerLink]="'/alerts/' + alert.id"
+              ><span class="alert-symbol" [class.critical]="alert.severity === 'Critical'"
+                ><mat-icon>{{
+                  alert.severity === 'Critical' ? 'error_outline' : 'warning_amber'
+                }}</mat-icon></span
+              >
+              <div>
+                <b>{{ alert.title }}</b
+                ><span>{{ spaceName(alert.location.zoneId || '') }}</span>
+              </div>
+              <time>{{ minutesAgo(alert) }} min ago</time></a
+            >
+          }
+        </article>
+        <article class="mini-card devices">
+          <div class="mini-head">
+            <h3>Device Status</h3>
+            <span>Total: {{ floorDevices().length }}</span>
+          </div>
+          <div class="device-wrap">
+            <resq-doughnut-chart
+              [values]="deviceStatusValues()"
+              [centerValue]="floorDevices().length"
+              centerLabel="Devices"
+            />
+            <ul>
+              @for (status of deviceStatuses; track status) {
+                <li>
+                  <i [class]="status.toLowerCase()"></i>{{ status }}
+                  <b>{{ deviceStatusValues()[$index] }}</b>
+                </li>
+              }
+            </ul>
+          </div>
+        </article>
+        <article class="mini-card chart">
+          <div class="mini-head">
+            <h3>Environmental Overview</h3>
+            <select>
+              <option>Last 24 Hours</option>
+            </select>
+          </div>
+          <div class="tabs">
+            @for (metric of environmentalMetrics; track metric) {
+              <button
+                type="button"
+                [class.active]="environmentalMetric() === metric"
+                (click)="environmentalMetric.set(metric)"
+              >
+                {{ metric }}
+              </button>
             }
-          </g></svg></div>
-      } @else {
-        <resq-three-floor-viewer [floors]="visibleFloors()" [selectedFloorId]="floorId()" [selectedSpaceId]="selected()?.id || ''" (spaceSelected)="selectSpace($event)" (deviceSelected)="selectDevice($event)"/>
-      }
-      <div class="legend"><span><i class="normal"></i>Normal</span><span><i class="warning"></i>Warning</span><span><i class="critical"></i>Critical</span><span><i class="offline"></i>Offline</span><em>Click any room to inspect details</em></div>
-    </article>
-    <section class="bottom-widgets">
-      <article class="mini-card alerts"><div class="mini-head"><h3>Active Alerts</h3><a routerLink="/alerts">View All →</a></div>@for(alert of recentAlerts();track alert.id){<a [routerLink]="'/alerts/'+alert.id"><span class="alert-symbol" [class.critical]="alert.severity==='Critical'"><mat-icon>{{alert.severity==='Critical'?'error_outline':'warning_amber'}}</mat-icon></span><div><b>{{alert.title}}</b><span>{{spaceName(alert.location.zoneId || '')}}</span></div><time>{{minutesAgo(alert)}} min ago</time></a>}</article>
-      <article class="mini-card devices"><div class="mini-head"><h3>Device Status</h3><span>Total: {{ floorDevices().length }}</span></div><div class="device-wrap"><resq-doughnut-chart [values]="deviceStatusValues()" [centerValue]="floorDevices().length" centerLabel="Devices"/><ul>@for(status of deviceStatuses;track status){<li><i [class]="status.toLowerCase()"></i>{{status}} <b>{{deviceStatusValues()[$index]}}</b></li>}</ul></div></article>
-      <article class="mini-card chart"><div class="mini-head"><h3>Environmental Overview</h3><select><option>Last 24 Hours</option></select></div><div class="tabs">@for(metric of environmentalMetrics;track metric){<button type="button" [class.active]="environmentalMetric()===metric" (click)="environmentalMetric.set(metric)">{{metric}}</button>}</div><resq-line-chart [labels]="environmentalLabels()" [values]="environmentalValues()" [datasetLabel]="environmentalMetric()" [unit]="environmentalUnit()"/></article>
-    </section>
-  </div><aside class="right-panel"><article class="building-card"><div class="mini-head"><div><h3>Building Floors</h3><p>{{ building()!.name }}</p></div></div><div class="floor-buttons dynamic">@for(item of sortedFloors();track item.id){<button [class.active]="item.id===floorId()" (click)="chooseFloor(item.id)"><mat-icon>layers</mat-icon><span>{{ item.name }}</span>@if(item.status==='Critical'||item.status==='Warning'){<i [class.warning]="item.status==='Warning'"></i>}</button>}</div></article>
-    <article class="details-card">
-      @if(selectedDevice();as device){
-        <div class="details-head"><span><mat-icon>sensors</mat-icon></span><div><h2>{{deviceLabel(device)}}</h2><p>{{device.name}} · {{device.code}}</p></div><resq-status-badge [status]="device.status"/></div>
-        <dl class="device-info"><dt>Type</dt><dd>{{device.type}}</dd><dt>Assigned Space</dt><dd>{{spaceName(device.spaceId)}}</dd><dt>Latest Reading</dt><dd>{{device.readings.at(-1)?.value??'—'}} {{device.readings.at(-1)?.unit??''}}</dd><dt>Battery</dt><dd>{{device.battery}}%</dd><dt>Signal</dt><dd>{{device.signal}} dBm</dd><dt>Last Seen</dt><dd>{{device.lastSeen.toLocaleString()}}</dd></dl>
-        <a class="space-detail-link" [routerLink]="['/spaces', device.spaceId]"><mat-icon>open_in_new</mat-icon>Open assigned space</a>
-      } @else if(selected();as space){
-        <div class="details-head"><span><mat-icon>meeting_room</mat-icon></span><div><h2>{{space.name}}</h2><p>Room {{space.roomNumber || '—'}} · {{space.type}} · {{space.sensitivity}} Sensitivity</p></div><resq-status-badge [status]="space.status"/></div>
-        <a class="space-detail-link" [routerLink]="['/spaces', space.id]"><mat-icon>open_in_new</mat-icon>Open full space details</a>
-        <nav>@for(tab of ['Overview','Devices','Alerts','History'];track tab){<button [class.active]="detailTab()===tab" (click)="detailTab.set(tab)">{{tab}}</button>}</nav>
-        @if(detailTab()==='Overview'){<div class="readings"><div><mat-icon>thermostat</mat-icon><span>Temperature</span><b>{{currentReading('Temperature')}} °C</b></div><div><mat-icon>cloud</mat-icon><span>Smoke Level</span><b>{{currentReading('Smoke')}} ppm</b></div><div><mat-icon>air</mat-icon><span>Gas Level</span><b>{{currentReading('Gas')}} ppm</b></div></div><div class="details-chart"><h4>Environmental Readings (Last 24 Hours)</h4><resq-line-chart [multi]="true"/></div>}
-        @if(detailTab()==='Devices'){<div class="panel-list">@for(device of space.devices;track device.id){<a [routerLink]="'/devices/'+device.id"><span><mat-icon>sensors</mat-icon></span><div><b>{{deviceLabel(device)}}</b><small>{{device.name}} · {{device.code}} · {{device.status}}</small></div><resq-status-badge [status]="device.status"/></a>}</div>}
-        @if(detailTab()==='Alerts'){<div class="panel-list">@for(alert of selectedAlerts();track alert.id){<a [routerLink]="'/alerts/'+alert.id"><span><mat-icon>warning_amber</mat-icon></span><div><b>{{alert.title}}</b><small>{{alert.description}}</small></div><resq-status-badge [status]="alert.severity"/></a>}</div>}
-        @if(detailTab()==='History'){<div class="timeline"><h4>Risk history</h4><p><i class="critical"></i><b>14:32</b> Critical <small>Threshold crossed</small></p><p><i class="normal"></i><b>13:48</b> Normal <small>All readings in range</small></p></div>}
-      } @else {<div class="empty-details"><mat-icon>touch_app</mat-icon><p>Select a configured space.</p></div>}
-    </article>
-  </aside></div>
-} @else { <div class="plan-empty"><mat-icon>domain_disabled</mat-icon><h2>Floor not found</h2><a routerLink="/buildings">Back to Buildings</a></div> }
+          </div>
+          <resq-line-chart
+            [labels]="environmentalLabels()"
+            [values]="environmentalValues()"
+            [datasetLabel]="environmentalMetric()"
+            [unit]="environmentalUnit()"
+          />
+        </article>
+      </section>
+    </div>
+    <aside class="right-panel">
+      <article class="building-card">
+        <div class="mini-head">
+          <div>
+            <h3>Building Floors</h3>
+            <p>{{ building()!.name }}</p>
+          </div>
+        </div>
+        <div class="floor-buttons dynamic">
+          @for (item of sortedFloors(); track item.id) {
+            <button [class.active]="item.id === floorId()" (click)="chooseFloor(item.id)">
+              <mat-icon>layers</mat-icon><span>{{ item.name }}</span>
+              @if (item.status === 'Critical' || item.status === 'Warning') {
+                <i [class.warning]="item.status === 'Warning'"></i>
+              }
+            </button>
+          }
+        </div>
+      </article>
+      <article class="details-card">
+        @if (selectedDevice(); as device) {
+          <div class="details-head">
+            <span><mat-icon>sensors</mat-icon></span>
+            <div>
+              <h2>{{ deviceLabel(device) }}</h2>
+              <p>{{ device.name }} · {{ device.code }}</p>
+            </div>
+            <resq-status-badge [status]="device.status" />
+          </div>
+          <dl class="device-info">
+            <dt>Type</dt>
+            <dd>{{ device.type }}</dd>
+            <dt>Assigned Space</dt>
+            <dd>{{ spaceName(device.spaceId) }}</dd>
+            <dt>Latest Reading</dt>
+            <dd>
+              {{ device.readings.at(-1)?.value ?? '—' }} {{ device.readings.at(-1)?.unit ?? '' }}
+            </dd>
+            <dt>Battery</dt>
+            <dd>{{ device.battery }}%</dd>
+            <dt>Signal</dt>
+            <dd>{{ device.signal }} dBm</dd>
+            <dt>Last Seen</dt>
+            <dd>{{ device.lastSeen.toLocaleString() }}</dd>
+          </dl>
+          <a class="space-detail-link" [routerLink]="['/spaces', device.spaceId]"
+            ><mat-icon>open_in_new</mat-icon>Open assigned space</a
+          >
+        } @else if (selected(); as space) {
+          <div class="details-head">
+            <span><mat-icon>meeting_room</mat-icon></span>
+            <div>
+              <h2>{{ space.name }}</h2>
+              <p>
+                Room {{ space.roomNumber || '—' }} · {{ space.type }} ·
+                {{ space.sensitivity }} Sensitivity
+              </p>
+            </div>
+            <resq-status-badge [status]="space.status" />
+          </div>
+          <a class="space-detail-link" [routerLink]="['/spaces', space.id]"
+            ><mat-icon>open_in_new</mat-icon>Open full space details</a
+          >
+          <nav>
+            @for (tab of ['Overview', 'Devices', 'Alerts', 'History']; track tab) {
+              <button [class.active]="detailTab() === tab" (click)="detailTab.set(tab)">
+                {{ tab }}
+              </button>
+            }
+          </nav>
+          @if (detailTab() === 'Overview') {
+            <div class="readings">
+              <div>
+                <mat-icon>thermostat</mat-icon><span>Temperature</span
+                ><b>{{ currentReading('Temperature') }}</b>
+              </div>
+              <div>
+                <mat-icon>cloud</mat-icon><span>Smoke Level</span
+                ><b>{{ currentReading('Smoke') }}</b>
+              </div>
+              <div>
+                <mat-icon>air</mat-icon><span>Gas Level</span><b>{{ currentReading('Gas') }}</b>
+              </div>
+            </div>
+            <section class="risk-demo">
+              <h4>Gas Threshold Demo</h4>
+              <p>
+                Configured limits: Warning {{ space.thresholds.Gas?.warning ?? '—' }} ppm · Critical
+                {{ space.thresholds.Gas?.critical ?? '—' }} ppm.
+              </p>
+              <div>
+                <button type="button" (click)="simulateGas(150)">150 · Normal</button
+                ><button type="button" (click)="simulateGas(240)">240 · Warning</button
+                ><button type="button" (click)="simulateGas(250)">250 · Same Alert</button
+                ><button type="button" (click)="simulateGas(340)">340 · Critical</button
+                ><button type="button" (click)="simulateGas(380)">380 · Same Incident</button
+                ><button type="button" (click)="simulateGas(180)">180 · Safe</button>
+              </div>
+              @if (lastSimulation()) {
+                <strong>{{ lastSimulation() }}</strong>
+              }
+            </section>
+            <div class="details-chart">
+              <h4>Environmental Readings (Last 24 Hours)</h4>
+              <resq-sensor-history [devices]="space.devices" />
+            </div>
+          }
+          @if (detailTab() === 'Devices') {
+            <div class="panel-list">
+              @for (device of space.devices; track device.id) {
+                <a [routerLink]="'/devices/' + device.id"
+                  ><span><mat-icon>sensors</mat-icon></span>
+                  <div>
+                    <b>{{ deviceLabel(device) }}</b
+                    ><small>{{ device.name }} · {{ device.code }} · {{ device.status }}</small>
+                  </div>
+                  <resq-status-badge [status]="device.status"
+                /></a>
+              }
+            </div>
+          }
+          @if (detailTab() === 'Alerts') {
+            <div class="panel-list">
+              @for (alert of selectedAlerts(); track alert.id) {
+                <a [routerLink]="'/alerts/' + alert.id"
+                  ><span><mat-icon>warning_amber</mat-icon></span>
+                  <div>
+                    <b>{{ alert.title }}</b
+                    ><small>{{ alert.description }}</small>
+                  </div>
+                  <resq-status-badge [status]="alert.severity"
+                /></a>
+              }
+            </div>
+          }
+          @if (detailTab() === 'History') {
+            <div class="timeline">
+              <h4>Risk history</h4>
+              <p><i class="critical"></i><b>14:32</b> Critical <small>Threshold crossed</small></p>
+              <p><i class="normal"></i><b>13:48</b> Normal <small>All readings in range</small></p>
+            </div>
+          }
+        } @else {
+          <div class="empty-details">
+            <mat-icon>touch_app</mat-icon>
+            <p>Select a configured space.</p>
+          </div>
+        }
+      </article>
+    </aside>
+  </div>
+} @else {
+  <div class="plan-empty">
+    <mat-icon>domain_disabled</mat-icon>
+    <h2>Floor not found</h2>
+    <a routerLink="/buildings">Back to Buildings</a>
+  </div>
+}

@@ -1,24 +1,13 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, delay, of } from 'rxjs';
 
-import {
-  ALERTS,
-  BUILDINGS,
-  DEMO_USER,
-  DEVICES,
-  FLOORS,
-  INCIDENTS,
-  RESPONSE_EXECUTIONS,
-  RISK_DETECTIONS,
-  SPACES,
-} from '../mock-data/resq.mock';
+import { DEMO_USER, INCIDENTS } from '../mock-data/resq.mock';
 
 import {
   Alert,
   AlertDetailViewModel,
   AlertListItem,
   AlertPeriod,
-  AlertSeverity,
   AlertSummary,
   Building,
   Device,
@@ -35,55 +24,127 @@ import {
 } from '../models/resq.models';
 
 import { BuildingStoreService } from './building-store.service';
+import { SensorResponseService } from './sensor-response.service';
+import { RiskEventStoreService } from './risk-event-store.service';
+import { invalidThresholdMetrics } from './risk-evaluation.service';
 
 @Injectable({ providedIn: 'root' })
 export class ResqStore {
   private readonly buildingStore = inject(BuildingStoreService);
+  private readonly eventStore = inject(RiskEventStoreService);
   readonly buildings = this.buildingStore.buildings;
   readonly devices = this.buildingStore.devices;
-  readonly incidents = signal<Incident[]>(INCIDENTS);
+  readonly incidents = this.eventStore.incidents;
 }
 
 @Injectable({ providedIn: 'root' })
 export class BuildingService {
   private readonly store = inject(BuildingStoreService);
   readonly buildings = this.store.buildings;
-  getBuildings(): Observable<Building[]> { return of(this.store.buildings()).pipe(delay(150)); }
-  getBuildingById(id: string): Observable<Building | undefined> { return of(this.store.getBuilding(id)).pipe(delay(100)); }
+  getBuildings(): Observable<Building[]> {
+    return of(this.store.buildings()).pipe(delay(150));
+  }
+  getBuildingById(id: string): Observable<Building | undefined> {
+    return of(this.store.getBuilding(id)).pipe(delay(100));
+  }
 }
 
 @Injectable({ providedIn: 'root' })
 export class FloorService {
   private readonly store = inject(BuildingStoreService);
-  getFloorsByBuilding(buildingId: string): Observable<Floor[]> { return of(this.store.getBuilding(buildingId)?.floors ?? []).pipe(delay(100)); }
-  getFloorById(id: string): Observable<Floor | undefined> { return of(this.store.floors().find(item => item.id === id)).pipe(delay(80)); }
+  getFloorsByBuilding(buildingId: string): Observable<Floor[]> {
+    return of(this.store.getBuilding(buildingId)?.floors ?? []).pipe(delay(100));
+  }
+  getFloorById(id: string): Observable<Floor | undefined> {
+    return of(this.store.floors().find((item) => item.id === id)).pipe(delay(80));
+  }
 }
 
 @Injectable({ providedIn: 'root' })
 export class SpaceService {
   private readonly store = inject(BuildingStoreService);
-  getSpaces(): Observable<Space[]> { return of(this.store.spaces()).pipe(delay(120)); }
-  getSpacesByFloor(floorId: string): Observable<Space[]> { return of(this.store.spaces().filter(item => item.floorId === floorId)).pipe(delay(100)); }
-  getSpaceById(id: string): Observable<Space | undefined> { return of(this.store.spaces().find(item => item.id === id)).pipe(delay(80)); }
+  private readonly response = inject(SensorResponseService);
+  getSpaces(): Observable<Space[]> {
+    return of(this.store.spaces()).pipe(delay(120));
+  }
+  getSpacesByFloor(floorId: string): Observable<Space[]> {
+    return of(this.store.spaces().filter((item) => item.floorId === floorId)).pipe(delay(100));
+  }
+  getSpaceById(id: string): Observable<Space | undefined> {
+    return of(this.store.spaces().find((item) => item.id === id)).pipe(delay(80));
+  }
   updateConfiguration(
     id: string,
     sensitivity: Space['sensitivity'],
     thresholds: SpaceThresholds,
     thresholdProfiles?: Space['thresholdProfiles'],
   ): void {
-    const space = this.store.spaces().find(item => item.id === id);
-    if (space) this.store.updateSpace(space.buildingId, space.floorId, {
-      ...space,
-      sensitivity,
-      thresholds,
-      thresholdProfiles: thresholdProfiles ?? space.thresholdProfiles,
-    });
+    const invalidMetrics = invalidThresholdMetrics(thresholds);
+    if (invalidMetrics.length) {
+      throw new Error(
+        `Warning threshold must be lower than the critical threshold for: ${invalidMetrics.join(', ')}.`,
+      );
+    }
+    const space = this.store.spaces().find((item) => item.id === id);
+    if (space)
+      this.store.updateSpace(space.buildingId, space.floorId, {
+        ...space,
+        sensitivity,
+        thresholds,
+        thresholdProfiles: thresholdProfiles ?? space.thresholdProfiles,
+      });
+    if (space) this.response.reconcile(space.id);
   }
 }
 
 @Injectable({ providedIn: 'root' })
 export class DeviceService {
   private readonly store = inject(BuildingStoreService);
+  private readonly response = inject(SensorResponseService);
+  saveDevice(device: Device): void {
+    if (!device.name.trim() || !device.deviceCode.trim())
+      throw new Error('Name and code are required.');
+    if (
+      this.store
+        .devices()
+        .some(
+          (item) =>
+            item.id !== device.id &&
+            item.deviceCode.toUpperCase() === device.deviceCode.toUpperCase(),
+        )
+    )
+      throw new Error('Device code is already in use.');
+    const space = this.store.spaces().find((item) => item.id === device.spaceId);
+    if (!space) throw new Error('Choose an existing area.');
+    if (
+      device.sensorThreshold &&
+      (!Number.isFinite(device.sensorThreshold.warning) ||
+        !Number.isFinite(device.sensorThreshold.critical) ||
+        device.sensorThreshold.warning > device.sensorThreshold.critical)
+    )
+      throw new Error('Warning threshold must not exceed critical threshold.');
+    const old = this.store.devices().find((item) => item.id === device.id);
+    const updated = {
+      ...device,
+      assignment: {
+        buildingId: space.buildingId,
+        floorId: space.floorId,
+        zoneId: space.id,
+        spaceId: space.id,
+      },
+      updatedAt: new Date(),
+      version: old ? old.version + 1 : device.version,
+    };
+    if (old) this.store.updateDevice(updated);
+    else this.store.createDevice(updated);
+    this.response.reconcile(space.id);
+    if (old && old.spaceId !== space.id) this.response.reconcile(old.spaceId);
+  }
+  deleteDevice(id: string): void {
+    const spaceId = this.store.devices().find((device) => device.id === id)?.spaceId;
+    this.store.deleteDevice(id);
+    if (spaceId) this.response.reconcile(spaceId);
+  }
   getDevices(): Observable<Device[]> {
     return of(this.store.devices()).pipe(delay(120));
   }
@@ -94,24 +155,33 @@ export class DeviceService {
     return of(this.store.devices().filter((item) => item.spaceId === spaceId)).pipe(delay(80));
   }
   getDevicesByBuilding(buildingId: string): Observable<Device[]> {
-    return of(this.store.devices().filter((item) => item.assignment.buildingId === buildingId)).pipe(delay(80));
+    return of(
+      this.store.devices().filter((item) => item.assignment.buildingId === buildingId),
+    ).pipe(delay(80));
   }
   getDevicesByFloor(floorId: string): Observable<Device[]> {
-    return of(this.store.devices().filter((item) => item.assignment.floorId === floorId)).pipe(delay(80));
+    return of(this.store.devices().filter((item) => item.assignment.floorId === floorId)).pipe(
+      delay(80),
+    );
   }
   getDeviceCapabilities(deviceId: string): Observable<DeviceCapability[]> {
-    return of(this.store.devices().find((item) => item.id === deviceId)?.capabilities ?? []).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === deviceId)?.capabilities ?? []).pipe(
+      delay(80),
+    );
   }
   getDeviceMeasurements(deviceId: string): Observable<SensorReading[]> {
-    return of(this.store.devices().find((item) => item.id === deviceId)?.readings ?? []).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === deviceId)?.readings ?? []).pipe(
+      delay(80),
+    );
   }
   getStatusSummary(): Observable<DeviceStatusSummary> {
     return of({
       total: this.store.devices().length,
       online: this.store.devices().filter((item) => item.connectivityStatus === 'ONLINE').length,
-      warningDegraded: this.store.devices().filter(
-        (item) => item.healthStatus === 'WARNING' || item.healthStatus === 'CRITICAL',
-      ).length,
+      warningDegraded: this.store
+        .devices()
+        .filter((item) => item.healthStatus === 'WARNING' || item.healthStatus === 'CRITICAL')
+        .length,
       offline: this.store.devices().filter((item) => item.connectivityStatus === 'OFFLINE').length,
     }).pipe(delay(80));
   }
@@ -120,21 +190,26 @@ export class DeviceService {
 @Injectable({ providedIn: 'root' })
 export class AlertService {
   private readonly store = inject(BuildingStoreService);
-  private readonly items = signal<Alert[]>(ALERTS);
+  private readonly events = inject(RiskEventStoreService);
   private readonly listItems = computed(() =>
-    this.items()
+    this.events
+      .alerts()
       .map((alert) => this.toListItem(alert))
       .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime()),
   );
-  readonly latestAlerts = computed(() => this.listItems().slice(0, 3));
+  readonly latestAlerts = computed(() =>
+    this.listItems().filter((item) => item.status === 'ACTIVE').slice(0, 3),
+  );
   readonly recentAlertCount = computed(
-    () => this.filterByPeriod(this.listItems(), '24h').length,
+    () =>
+      this.filterByPeriod(this.listItems(), '24h').filter((item) => item.status === 'ACTIVE')
+        .length,
   );
   getAlerts(): Observable<AlertListItem[]> {
     return of(this.listItems()).pipe(delay(120));
   }
   getAlertById(id: string): Observable<Alert | undefined> {
-    return of(this.items().find((item) => item.alertId === id)).pipe(delay(80));
+    return of(this.events.alerts().find((item) => item.alertId === id)).pipe(delay(80));
   }
   getAlertsByZone(zoneId: string): Observable<AlertListItem[]> {
     return of(this.listItems().filter((item) => item.location.zoneId === zoneId)).pipe(delay(80));
@@ -144,13 +219,16 @@ export class AlertService {
   }
   getAlertsByDevice(deviceId: string): Observable<AlertListItem[]> {
     const detectionIds = new Set(
-      RISK_DETECTIONS.filter((detection) =>
-        detection.evidence.some((evidence) => evidence.deviceId === deviceId),
-      ).map((detection) => detection.riskDetectionId),
+      this.events
+        .detections()
+        .filter((detection) =>
+          detection.evidence.some((evidence) => evidence.deviceId === deviceId),
+        )
+        .map((detection) => detection.riskDetectionId),
     );
-    return of(
-      this.listItems().filter((item) => detectionIds.has(item.riskDetectionId)),
-    ).pipe(delay(80));
+    return of(this.listItems().filter((item) => detectionIds.has(item.riskDetectionId))).pipe(
+      delay(80),
+    );
   }
   getRecentAlerts(period: AlertPeriod): Observable<AlertListItem[]> {
     return of(this.filterByPeriod(this.listItems(), period)).pipe(delay(80));
@@ -159,18 +237,18 @@ export class AlertService {
     const alerts = this.filterByPeriod(this.listItems(), period);
     return of({
       total: alerts.length,
-      critical: alerts.filter((item) => item.severity === 'Critical').length,
+      critical: 0,
       warning: alerts.filter((item) => item.severity === 'Warning').length,
       notificationFailures: alerts.reduce((total, item) => total + item.delivery.failed, 0),
     }).pipe(delay(80));
   }
   getAlertDetail(id: string): Observable<AlertDetailViewModel | undefined> {
-    const alert = this.items().find((item) => item.alertId === id);
+    const alert = this.events.alerts().find((item) => item.alertId === id);
     if (!alert) return of(undefined).pipe(delay(80));
     const listItem = this.toListItem(alert);
-    const detection = RISK_DETECTIONS.find(
-      (item) => item.riskDetectionId === alert.context.riskDetectionId,
-    );
+    const detection = this.events
+      .detections()
+      .find((item) => item.riskDetectionId === alert.context.riskDetectionId);
     const evidence =
       detection?.evidence.map((item) => {
         const device = this.store.devices().find((candidate) => candidate.id === item.deviceId);
@@ -184,48 +262,47 @@ export class AlertService {
           hardware: capability?.hardware ?? 'Hardware unavailable',
         };
       }) ?? [];
-    const responseExecutions = RESPONSE_EXECUTIONS.filter(
-      (execution) => execution.riskDetectionId === alert.context.riskDetectionId,
-    ).map((execution) => {
-      const device = this.store.devices().find((item) => item.id === execution.action.targetDeviceId);
-      return {
-        ...execution,
-        targetDeviceName: device?.name ?? 'Device unavailable',
-        targetDeviceCode: device?.deviceCode ?? execution.action.targetDeviceId,
-      };
-    });
+    const responseExecutions = this.events
+      .responseExecutions()
+      .filter((execution) => execution.riskDetectionId === alert.context.riskDetectionId)
+      .map((execution) => {
+        const device = this.store
+          .devices()
+          .find((item) => item.id === execution.action.targetDeviceId);
+        return {
+          ...execution,
+          targetDeviceName: device?.name ?? 'Device unavailable',
+          targetDeviceCode: device?.deviceCode ?? execution.action.targetDeviceId,
+        };
+      });
     return of({ ...listItem, alert, evidence, responseExecutions }).pipe(delay(100));
   }
   private toListItem(alert: Alert): AlertListItem {
-    const detection = RISK_DETECTIONS.find(
-      (item) => item.riskDetectionId === alert.context.riskDetectionId,
-    );
+    const detection = this.events
+      .detections()
+      .find((item) => item.riskDetectionId === alert.context.riskDetectionId);
     const space = this.store.spaces().find((item) => item.id === alert.context.zoneId);
     const floor = this.store.floors().find((item) => item.id === space?.floorId);
     const building = this.store.buildings().find((item) => item.id === alert.context.buildingId);
     const evidence = detection?.evidence[0];
     const device = this.store.devices().find((item) => item.id === evidence?.deviceId);
-    const capability = device?.capabilities.find(
-      (item) => item.code === evidence?.capabilityCode,
-    );
-    const incident = INCIDENTS.find((item) => item.alertIds.includes(alert.alertId));
+    const capability = device?.capabilities.find((item) => item.code === evidence?.capabilityCode);
     const delivered = alert.deliveries.filter((item) => item.status === 'DELIVERED').length;
     const pending = alert.deliveries.filter((item) => item.status === 'PENDING').length;
     const failed = alert.deliveries.filter((item) => item.status === 'FAILED').length;
     const deliveryStatus = failed ? 'FAILED' : pending ? 'PENDING' : 'DELIVERED';
-    const title =
-      alert.context.riskTypeCode === 'GAS_LEAK'
-        ? 'High gas level detected'
-        : 'Fire risk detected';
+    const title = alert.context.riskTypeCode === 'GAS_LEAK' ? 'Gas warning' : 'Fire risk warning';
     const riskTypeLabel = this.riskTypeLabel(alert.context.riskTypeCode);
     return {
       id: alert.alertId,
       title,
-      description: `${riskTypeLabel} was classified from recorded detection evidence.`,
+      description:
+        'Warning threshold exceeded. The measurement remains below the critical threshold.',
       riskDetectionId: alert.context.riskDetectionId,
       riskTypeCode: alert.context.riskTypeCode,
       riskTypeLabel,
       severity: alert.context.severityCode,
+      status: alert.status,
       detectedAt: alert.context.detectedAt,
       generatedAt: alert.generatedAt,
       location: {
@@ -254,14 +331,6 @@ export class AlertService {
         failed,
         label: this.deliveryLabel(delivered, pending, failed),
       },
-      relatedIncident: incident
-        ? {
-            id: incident.id,
-            title: incident.title,
-            severity: incident.severity,
-            status: incident.status,
-          }
-        : undefined,
     };
   }
   private filterByPeriod(items: AlertListItem[], period: AlertPeriod): AlertListItem[] {
@@ -310,14 +379,19 @@ export class SearchService {
     const q = query.trim().toLowerCase();
     if (q.length < 2) return of([]);
     const results: SearchResult[] = [
-      ...this.store.buildings().filter((item) => item.name.toLowerCase().includes(q)).map((item) => ({
-        id: item.id,
-        type: 'Building' as const,
-        title: item.name,
-        subtitle: item.address,
-        route: `/buildings/${item.id}`,
-      })),
-      ...this.store.spaces().filter((item) => `${item.name} ${item.roomNumber}`.toLowerCase().includes(q))
+      ...this.store
+        .buildings()
+        .filter((item) => item.name.toLowerCase().includes(q))
+        .map((item) => ({
+          id: item.id,
+          type: 'Building' as const,
+          title: item.name,
+          subtitle: item.address,
+          route: `/buildings/${item.id}`,
+        })),
+      ...this.store
+        .spaces()
+        .filter((item) => `${item.name} ${item.roomNumber}`.toLowerCase().includes(q))
         .slice(0, 6)
         .map((item) => ({
           id: item.id,
@@ -326,11 +400,13 @@ export class SearchService {
           subtitle: `Room ${item.roomNumber ?? '—'}`,
           route: `/spaces/${item.id}`,
         })),
-      ...this.store.devices().filter((item) =>
-        `${item.name} ${item.deviceCode} ${item.specifications.model} ${item.specifications.serialNumber}`
-          .toLowerCase()
-          .includes(q),
-      )
+      ...this.store
+        .devices()
+        .filter((item) =>
+          `${item.name} ${item.deviceCode} ${item.specifications.model} ${item.specifications.serialNumber}`
+            .toLowerCase()
+            .includes(q),
+        )
         .slice(0, 6)
         .map((item) => ({
           id: item.id,
