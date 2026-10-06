@@ -803,6 +803,13 @@ export const ALERTS: Alert[] = warningScenarios.map((scenario) => {
       detectedAt,
     },
     generatedAt,
+    status: scenario.alertId === 'alert-warning-gas-demo' ? 'CLEARED' : 'ACTIVE',
+    clearedAt:
+      scenario.alertId === 'alert-warning-gas-demo' ? after(detectedAt, 31 * 60) : undefined,
+    clearReason:
+      scenario.alertId === 'alert-warning-gas-demo'
+        ? 'CRITICAL_THRESHOLD_REACHED'
+        : undefined,
     deliveries: [
       {
         deliveryId: `delivery-${scenario.alertId}`,
@@ -845,6 +852,44 @@ export const RESPONSE_EXECUTIONS: ResponseExecution[] = [
       completedAt: after(RISK_DETECTIONS[0].detectedAt, 5),
     },
   },
+  ...[
+    {
+      actionCode: 'ACTIVATE_AUDIBLE_ALARM',
+      actionName: 'Activate Audible Alarm',
+      capability: 'audible_alarm',
+    },
+    {
+      actionCode: 'ACTIVATE_CRITICAL_INDICATOR',
+      actionName: 'Activate Critical Indicator',
+      capability: 'critical_status_indicator',
+    },
+    {
+      actionCode: 'SHOW_CRITICAL_STATUS',
+      actionName: 'Show Critical Status',
+      capability: 'local_status_display',
+    },
+  ].map((action, index): ResponseExecution => ({
+    responseExecutionId: `response-critical-gas-${index + 1}`,
+    organizationId: 'securitybear',
+    riskDetectionId: 'RISK-CRITICAL-GAS-DEMO',
+    policyId: 'policy-critical-gas-mvp',
+    action: {
+      actionId: `action-critical-gas-${index + 1}`,
+      actionCode: action.actionCode,
+      actionName: action.actionName,
+      targetDeviceId: 'resq-mvp-001',
+      targetCapabilityCode: action.capability,
+      authorizationMode: 'HUMAN_REQUIRED',
+      critical: true,
+    },
+    status: 'PENDING_AUTHORIZATION',
+    requestedAt: after(
+      RISK_DETECTIONS.find(
+        (item) => item.riskDetectionId === 'RISK-CRITICAL-GAS-DEMO',
+      )!.detectedAt,
+      9 + index,
+    ),
+  })),
 ];
 
 export const INCIDENTS: Incident[] = criticalScenarios.map((scenario) => {
@@ -862,6 +907,7 @@ export const INCIDENTS: Incident[] = criticalScenarios.map((scenario) => {
       riskDetectionId: scenario.riskDetectionId,
       riskTypeCode: scenario.riskTypeCode,
       evidence: structuredClone(detection.evidence[0]),
+      currentEvidence: structuredClone(detection.evidence[0]),
       buildingId: space.buildingId,
       floorId: space.floorId,
       spaceId: space.id,
@@ -873,12 +919,19 @@ export const INCIDENTS: Incident[] = criticalScenarios.map((scenario) => {
       severity: 'Critical',
       status: scenario.incidentStatus,
       assignedTo: scenario.incidentStatus === 'InProgress' ? 'user-1' : undefined,
+      assignedAt:
+        scenario.incidentStatus === 'InProgress' ? after(detectedAt, 10 * 60) : undefined,
       resolutionNotes:
         scenario.incidentStatus === 'Resolved'
           ? 'Area inspected, source isolated, and readings returned below the warning threshold.'
           : undefined,
       createdAt: after(detectedAt, 8),
       resolvedAt,
+      resolvedBy: scenario.incidentStatus === 'Resolved' ? 'user-1' : undefined,
+      safeAt:
+        scenario.incidentStatus === 'Resolved' && resolvedAt
+          ? new Date(resolvedAt.getTime() - 5 * 60_000)
+          : undefined,
     };
   });
 

@@ -58,6 +58,12 @@ export interface IncidentRecord {
 
   assignedTo?: string;
 
+  assignedAt?: Date;
+
+  safeAt?: Date;
+
+  resolvedBy?: string;
+
   createdAt:
     Date;
 

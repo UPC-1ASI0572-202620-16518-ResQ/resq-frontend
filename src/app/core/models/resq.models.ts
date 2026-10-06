@@ -23,6 +23,8 @@ export type DeviceConnectivityStatus = 'ONLINE' | 'OFFLINE';
 export type DeviceHealthStatus = 'NORMAL' | 'WARNING' | 'CRITICAL';
 export type CapabilityKind = 'MEASUREMENT' | 'ACTUATION';
 export type AlertSeverity = 'Info' | 'Warning' | 'Critical';
+export type AlertStatus = 'ACTIVE' | 'CLEARED';
+export type AlertClearReason = 'RETURNED_TO_NORMAL' | 'CRITICAL_THRESHOLD_REACHED';
 export type RiskTypeCode = 'GAS_LEAK' | 'FIRE';
 export type NotificationDeliveryStatus = 'PENDING' | 'DELIVERED' | 'FAILED';
 export type NotificationChannel = 'PUSH';
@@ -251,6 +253,9 @@ export interface Alert {
   organizationId: string;
   context: AlertContext;
   generatedAt: Date;
+  status: AlertStatus;
+  clearedAt?: Date;
+  clearReason?: AlertClearReason;
   deliveries: NotificationDelivery[];
 }
 export interface DetectionEvidence {
@@ -295,6 +300,13 @@ export interface ResponseExecution {
   action: ResponseActionSnapshot;
   status: ResponseExecutionStatus;
   requestedAt: Date;
+  executionRequestedAt?: Date;
+  authorization?: {
+    authorizationId: string;
+    decision: 'APPROVED' | 'REJECTED';
+    decidedByUserId: string;
+    decidedAt: Date;
+  };
   result?: ExecutionResult;
 }
 export interface AlertLocationViewModel {
@@ -362,6 +374,7 @@ export interface Incident {
   riskDetectionId: string;
   riskTypeCode: RiskTypeCode;
   evidence: DetectionEvidence;
+  currentEvidence: DetectionEvidence;
   /**
    * @deprecated Compatibility only. Incidents are not created from Alerts and
    * this field must never be used to derive Incident data.
@@ -375,7 +388,10 @@ export interface Incident {
   severity: AlertSeverity;
   status: IncidentStatus;
   assignedTo?: string;
+  assignedAt?: Date;
+  safeAt?: Date;
   resolutionNotes?: string;
+  resolvedBy?: string;
   createdAt: Date;
   resolvedAt?: Date;
 }

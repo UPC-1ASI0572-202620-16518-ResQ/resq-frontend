@@ -4,6 +4,7 @@ import {
   DetectionEvidence,
   Incident,
   MeasurementRiskLevel,
+  ResponseExecution,
   RiskDetectionSummary,
   RiskTypeCode,
 } from '../../core/models/resq.models';
@@ -16,6 +17,7 @@ export interface RiskSimulationResult {
   message: string;
   alertId?: string;
   incidentId?: string;
+  created: boolean;
 }
 
 /**
@@ -58,15 +60,45 @@ export class RiskDetectionSimulationService {
     };
     const metricLabel = capability?.name ?? updatedDevice.type;
 
+    const riskTypeCode = riskTypeFor(updatedDevice.type);
+    const correlation = {
+      deviceId: updatedDevice.id,
+      metric: updatedDevice.type,
+      zoneId: space.id,
+      riskTypeCode,
+    };
+
     if (classification === 'Normal') {
+      const cleared = this.events.clearActiveAlert(
+        correlation,
+        'RETURNED_TO_NORMAL',
+        measuredAt,
+      );
+      const safeIncident = this.events.markIncidentSafe(correlation, evidence, measuredAt);
+      if (cleared && updatedDevice.capabilities.some((item) => item.code === 'local_status_display')) {
+        this.events.addResponseExecutions([
+          automaticExecution(
+            cleared.context.riskDetectionId,
+            updatedDevice.id,
+            'SHOW_NORMAL_STATUS',
+            'Show Normal Status',
+            measuredAt,
+          ),
+        ]);
+      }
       return {
         classification,
-        message: `Normal: ${metricLabel} is below the warning threshold.`,
+        created: false,
+        incidentId: safeIncident?.id,
+        message: safeIncident
+          ? `Normal: ${metricLabel} returned below the warning threshold. The Incident is safe to resolve but remains open.`
+          : cleared
+            ? `Normal: ${metricLabel} returned below the warning threshold. The active Alert was cleared.`
+            : `Normal: ${metricLabel} is below the warning threshold. No Alert or Incident was created.`,
       };
     }
 
     const suffix = createLocalId();
-    const riskTypeCode = riskTypeFor(updatedDevice.type);
     const riskDetectionId = `RISK-${classification.toUpperCase()}-${suffix}`;
     const detection: RiskDetectionSummary = {
       riskDetectionId,
@@ -78,6 +110,16 @@ export class RiskDetectionSimulationService {
     };
 
     if (classification === 'Warning') {
+      const operationalIncident = this.events.updateCurrentIncidentEvidence(correlation, evidence);
+      if (operationalIncident) {
+        return {
+          classification,
+          created: false,
+          incidentId: operationalIncident.id,
+          message: `Warning: ${metricLabel} is below critical but the existing Incident remains open until a safe reading is verified.`,
+        };
+      }
+
       const alertId = `alert-warning-${suffix}`;
       const alert: Alert = {
         alertId,
@@ -91,6 +133,7 @@ export class RiskDetectionSimulationService {
           detectedAt: measuredAt,
         },
         generatedAt: measuredAt,
+        status: 'ACTIVE',
         deliveries: [
           {
             deliveryId: `delivery-${suffix}`,
@@ -103,20 +146,36 @@ export class RiskDetectionSimulationService {
           },
         ],
       };
-      this.events.recordWarning(detection, alert);
+      const result = this.events.upsertWarning(correlation, detection, alert);
+      if (result.created) {
+        this.events.addResponseExecutions([
+          automaticExecution(
+            riskDetectionId,
+            updatedDevice.id,
+            'SHOW_WARNING_STATUS',
+            'Show Warning Status',
+            measuredAt,
+          ),
+        ]);
+      }
       return {
         classification,
-        alertId,
-        message: `Warning: ${metricLabel} exceeded the warning threshold.`,
+        created: result.created,
+        alertId: result.item.alertId,
+        message: result.created
+          ? `Warning: ${metricLabel} exceeded the warning threshold. A warning Alert was created and the local warning status was shown automatically.`
+          : `Warning: ${metricLabel} remains above the warning threshold. The existing active Alert was updated.`,
       };
     }
 
+    this.events.clearActiveAlert(correlation, 'CRITICAL_THRESHOLD_REACHED', measuredAt);
     const incidentId = `INC-CRITICAL-${suffix}`;
     const incident: Incident = {
       id: incidentId,
       riskDetectionId,
       riskTypeCode,
       evidence,
+      currentEvidence: evidence,
       buildingId: space.buildingId,
       floorId: space.floorId,
       spaceId: space.id,
@@ -126,13 +185,90 @@ export class RiskDetectionSimulationService {
       status: 'Open',
       createdAt: measuredAt,
     };
-    this.events.recordCritical(detection, incident);
+    const result = this.events.upsertCritical(correlation, detection, incident);
+    if (result.created) {
+      this.events.addResponseExecutions(
+        criticalExecutions(updatedDevice, riskDetectionId, measuredAt),
+      );
+    }
     return {
       classification,
-      incidentId,
-      message: `Critical incident: ${metricLabel} exceeded the critical threshold.`,
+      created: result.created,
+      incidentId: result.item.id,
+      message: result.created
+        ? `Critical incident: ${metricLabel} exceeded the critical threshold. An ACTIVE Incident was created with administrator authorization pending.`
+        : `Critical incident update: ${metricLabel} remains above the critical threshold. The existing Incident evidence was updated.`,
     };
   }
+}
+
+function automaticExecution(
+  riskDetectionId: string,
+  deviceId: string,
+  actionCode: string,
+  actionName: string,
+  now: Date,
+): ResponseExecution {
+  const suffix = createLocalId();
+  return {
+    responseExecutionId: `response-${suffix}`,
+    organizationId: 'securitybear',
+    riskDetectionId,
+    policyId: 'policy-warning-local-status',
+    action: {
+      actionId: `action-${suffix}`,
+      actionCode,
+      actionName,
+      targetDeviceId: deviceId,
+      targetCapabilityCode: 'local_status_display',
+      authorizationMode: 'AUTOMATIC',
+      critical: false,
+    },
+    status: 'SUCCEEDED',
+    requestedAt: now,
+    executionRequestedAt: now,
+    result: {
+      successful: true,
+      resultCode: 'ACTUATOR_CONFIRMED',
+      message: `${actionName} completed automatically by SYSTEM.`,
+      completedAt: now,
+    },
+  };
+}
+
+function criticalExecutions(
+  device: { id: string; capabilities: Array<{ code: string }> },
+  riskDetectionId: string,
+  now: Date,
+): ResponseExecution[] {
+  const actions = [
+    ['ACTIVATE_AUDIBLE_ALARM', 'Activate Audible Alarm', 'audible_alarm'],
+    ['ACTIVATE_CRITICAL_INDICATOR', 'Activate Critical Indicator', 'critical_status_indicator'],
+    ['SHOW_CRITICAL_STATUS', 'Show Critical Status', 'local_status_display'],
+  ] as const;
+  const capabilities = new Set(device.capabilities.map((item) => item.code));
+  return actions
+    .filter(([, , capability]) => capabilities.has(capability))
+    .map(([actionCode, actionName, capability]) => {
+      const suffix = createLocalId();
+      return {
+        responseExecutionId: `response-${suffix}`,
+        organizationId: 'securitybear',
+        riskDetectionId,
+        policyId: 'policy-critical-device-actions',
+        action: {
+          actionId: `action-${suffix}`,
+          actionCode,
+          actionName,
+          targetDeviceId: device.id,
+          targetCapabilityCode: capability,
+          authorizationMode: 'HUMAN_REQUIRED',
+          critical: true,
+        },
+        status: 'PENDING_AUTHORIZATION',
+        requestedAt: now,
+      } satisfies ResponseExecution;
+    });
 }
 
 function riskTypeFor(metric: string): RiskTypeCode {

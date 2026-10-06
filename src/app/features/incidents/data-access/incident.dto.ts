@@ -34,6 +34,11 @@ export interface IncidentResourceDto {
     string
     | null;
 
+  /** TODO(OpenAPI): compatibility fields pending final Incident schema. */
+  assignedAt?: string | null;
+  safeAt?: string | null;
+  resolvedBy?: string | null;
+
   createdAt:
     string;
 

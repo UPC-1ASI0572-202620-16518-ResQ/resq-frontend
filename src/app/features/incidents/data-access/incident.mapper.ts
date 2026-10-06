@@ -42,6 +42,10 @@ export function mapIncidentResourceDto(
       dto.assignedTo ??
       undefined,
 
+    assignedAt: dto.assignedAt ? new Date(dto.assignedAt) : undefined,
+    safeAt: dto.safeAt ? new Date(dto.safeAt) : undefined,
+    resolvedBy: dto.resolvedBy ?? undefined,
+
     createdAt:
       new Date(
         dto.createdAt,
@@ -139,6 +143,10 @@ export function mapLegacyIncidentToRecord(
     assignedTo:
       incident.assignedTo,
 
+    assignedAt: incident.assignedAt ? new Date(incident.assignedAt) : undefined,
+    safeAt: incident.safeAt ? new Date(incident.safeAt) : undefined,
+    resolvedBy: incident.resolvedBy,
+
     createdAt:
       new Date(
         incident.createdAt,
@@ -176,6 +184,9 @@ export function cloneIncident(
             incident.resolvedAt,
           )
         : undefined,
+
+    assignedAt: incident.assignedAt ? new Date(incident.assignedAt) : undefined,
+    safeAt: incident.safeAt ? new Date(incident.safeAt) : undefined,
   };
 }
 

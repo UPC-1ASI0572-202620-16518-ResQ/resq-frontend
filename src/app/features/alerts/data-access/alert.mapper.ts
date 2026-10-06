@@ -70,6 +70,10 @@ export function mapAlertResourceDto(
         dto.generatedAt,
       ),
 
+    status: dto.status ?? 'ACTIVE',
+    clearedAt: dto.clearedAt ? new Date(dto.clearedAt) : undefined,
+    clearReason: dto.clearReason ?? undefined,
+
     deliveries:
       dto.deliveries.map(
         delivery => ({
@@ -159,6 +163,10 @@ export function mapResponseExecutionResourceDto(
       new Date(
         dto.requestedAt,
       ),
+
+    executionRequestedAt: dto.executionRequestedAt
+      ? new Date(dto.executionRequestedAt)
+      : undefined,
 
     authorization:
       dto.authorization
@@ -304,6 +312,10 @@ export function mapLegacyAlertToRecord(
         alert.generatedAt,
       ),
 
+    status: alert.status,
+    clearedAt: alert.clearedAt ? new Date(alert.clearedAt) : undefined,
+    clearReason: alert.clearReason,
+
     deliveries:
       alert.deliveries.map(
         delivery => ({
@@ -393,6 +405,17 @@ export function mapLegacyResponseExecutionToRecord(
       new Date(
         execution.requestedAt,
       ),
+
+    executionRequestedAt: execution.executionRequestedAt
+      ? new Date(execution.executionRequestedAt)
+      : undefined,
+
+    authorization: execution.authorization
+      ? {
+          ...execution.authorization,
+          decidedAt: new Date(execution.authorization.decidedAt),
+        }
+      : undefined,
 
     result:
       execution.result

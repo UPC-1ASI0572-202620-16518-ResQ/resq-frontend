@@ -20,6 +20,9 @@ import {
 } from '../../../core/api/pagination';
 
 import { RiskEventStoreService } from '../../../core/services/risk-event-store.service';
+import { BuildingStoreService } from '../../../core/services/building-store.service';
+import { evaluateMeasurement } from '../../../core/services/risk-evaluation.service';
+import { AuthorizationService } from '../../auth/authorization.service';
 
 import {
   IncidentGateway,
@@ -36,7 +39,11 @@ import {
 export class MockIncidentGateway
   implements IncidentGateway {
 
-  constructor(private readonly events: RiskEventStoreService) {}
+  constructor(
+    private readonly events: RiskEventStoreService,
+    private readonly buildings: BuildingStoreService,
+    private readonly authorization: AuthorizationService,
+  ) {}
 
   getIncidents(
     filters:
@@ -148,6 +155,13 @@ export class MockIncidentGateway
       IncidentRecord
     > {
 
+    let administratorId: string;
+    try {
+      administratorId = this.authorization.requireIncidentManager().userId!;
+    } catch (error) {
+      return throwError(() => error);
+    }
+
     const current =
       this.incidentRecords().find(
         item =>
@@ -197,6 +211,17 @@ export class MockIncidentGateway
       );
     }
 
+    if (normalizedAttendantId !== administratorId) {
+      return throwError(
+        () =>
+          apiError(
+            403,
+            'INCIDENT_ASSIGNMENT_FORBIDDEN',
+            'An administrator may only use Assign to me for the current session user.',
+          ),
+      );
+    }
+
     const next:
       IncidentRecord = {
 
@@ -206,6 +231,8 @@ export class MockIncidentGateway
 
       assignedTo:
         normalizedAttendantId,
+
+      assignedAt: new Date(),
 
       status:
         'IN_PROGRESS',
@@ -233,6 +260,13 @@ export class MockIncidentGateway
       IncidentRecord
     > {
 
+    let administratorId: string;
+    try {
+      administratorId = this.authorization.requireIncidentManager().userId!;
+    } catch (error) {
+      return throwError(() => error);
+    }
+
     const current =
       this.incidentRecords().find(
         item =>
@@ -248,10 +282,7 @@ export class MockIncidentGateway
       );
     }
 
-    if (
-      current.status ===
-      'CLOSED'
-    ) {
+    if (current.status === 'CLOSED') {
 
       return throwError(
         () =>
@@ -274,6 +305,44 @@ export class MockIncidentGateway
             'INCIDENT_ALREADY_RESOLVED',
 
             'The incident has already been resolved.',
+          ),
+      );
+    }
+
+    if (current.status !== 'IN_PROGRESS') {
+      return throwError(
+        () =>
+          conflict(
+            'INCIDENT_NOT_IN_PROGRESS',
+            'Assign the Incident and move it to IN_PROGRESS before resolving it.',
+          ),
+      );
+    }
+
+    if (current.assignedTo !== administratorId) {
+      return throwError(
+        () =>
+          apiError(
+            403,
+            'INCIDENT_ASSIGNEE_REQUIRED',
+            'Only the administrator assigned to this Incident may resolve it.',
+          ),
+      );
+    }
+
+    const source = this.events.incidents().find((item) => item.id === incidentId);
+    const device = this.buildings.devices().find(
+      (item) => item.id === source?.currentEvidence.deviceId,
+    );
+    const space = this.buildings.spaces().find((item) => item.id === source?.spaceId);
+    const reading = device?.readings.at(-1);
+    const thresholds = reading && space ? space.thresholds[reading.metric] : undefined;
+    if (!reading || evaluateMeasurement(reading.value, thresholds) !== 'Normal') {
+      return throwError(
+        () =>
+          conflict(
+            'INCIDENT_CONDITION_NOT_SAFE',
+            'The current measurement must be below the warning threshold before the Incident can be resolved.',
           ),
       );
     }
@@ -308,6 +377,10 @@ export class MockIncidentGateway
 
       resolvedAt:
         new Date(),
+
+      safeAt: current.safeAt ?? new Date(),
+
+      resolvedBy: administratorId,
     };
 
     this.replace(
@@ -339,7 +412,10 @@ export class MockIncidentGateway
             ? 'InProgress'
             : 'Resolved',
       assignedTo: incident.assignedTo,
+      assignedAt: incident.assignedAt,
+      safeAt: incident.safeAt,
       resolvedAt: incident.resolvedAt,
+      resolvedBy: incident.resolvedBy,
       resolutionNotes: incident.resolutionNotes,
     });
   }
