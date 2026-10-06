@@ -7,6 +7,7 @@ import { SearchResult } from '../../core/models/resq.models';
 import { SearchService } from '../../core/services/data.services';
 import { LanguageService } from '../../core/services/language.service';
 import { RiskEventStoreService } from '../../core/services/risk-event-store.service';
+import { BuildingStoreService } from '../../core/services/building-store.service';
 import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
 import { AuthorizationService } from '../../features/auth/authorization.service';
 
@@ -45,7 +46,7 @@ import { AuthorizationService } from '../../features/auth/authorization.service'
           <div class="notifications">
             <h3>{{language.t('notifications','Notifications')}} <span>{{ notificationItems().length }}</span></h3>
             @for (item of notificationItems().slice(0, 6); track item.id) {
-              <a [routerLink]="item.route" (click)="notificationsOpen.set(false)"><i [class.critical]="item.kind === 'Incident'">!</i><div><b>{{ item.title }}</b><small>{{ item.kind }} · {{ item.status }}</small></div></a>
+              <a [routerLink]="item.route" (click)="notificationsOpen.set(false)"><i [class.critical]="item.kind === 'Incident'">!</i><div><b>{{ item.eventLabel }}</b><span>{{ item.title }}</span><small>{{ item.location }}</small></div></a>
             }
             <a class="view-all" routerLink="/alerts" (click)="notificationsOpen.set(false)">View Alerts</a>
             <a class="view-all" routerLink="/incidents" (click)="notificationsOpen.set(false)">View Incidents →</a>
@@ -73,6 +74,7 @@ import { AuthorizationService } from '../../features/auth/authorization.service'
 export class TopbarComponent {
   private readonly searchService = inject(SearchService);
   private readonly events = inject(RiskEventStoreService);
+  private readonly buildings = inject(BuildingStoreService);
   private readonly session = inject(AuthSessionFacade);
   private readonly authorization = inject(AuthorizationService);
   readonly language = inject(LanguageService);
@@ -88,7 +90,9 @@ export class TopbarComponent {
       .map((alert) => ({
         id: alert.alertId,
         kind: 'Alert' as const,
-        title: `${alert.context.riskTypeCode === 'GAS_LEAK' ? 'Gas' : 'Fire'} warning threshold exceeded`,
+        eventLabel: 'WARNING ALERT',
+        title: `${alert.context.riskTypeCode === 'GAS_LEAK' ? 'Gas' : 'Fire'} warning`,
+        location: this.buildings.spaces().find((space) => space.id === alert.context.zoneId)?.name ?? 'Location unavailable',
         status: 'Active',
         route: `/alerts/${alert.alertId}`,
         at: alert.generatedAt,
@@ -98,7 +102,9 @@ export class TopbarComponent {
       .map((incident) => ({
         id: incident.id,
         kind: 'Incident' as const,
-        title: `Critical incident: ${incident.currentEvidence.measurementName}`,
+        eventLabel: 'CRITICAL INCIDENT',
+        title: incident.title,
+        location: this.buildings.spaces().find((space) => space.id === incident.spaceId)?.name ?? 'Location unavailable',
         status: incident.status === 'Open' ? 'Active' : 'In Progress',
         route: `/incidents/${incident.id}`,
         at: incident.createdAt,

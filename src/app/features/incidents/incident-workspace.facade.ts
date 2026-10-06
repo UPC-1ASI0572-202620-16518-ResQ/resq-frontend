@@ -220,6 +220,14 @@ export class IncidentWorkspaceFacade {
     );
   }
 
+  actorLabel(userId?: string): string {
+    if (!userId) return 'Pending';
+    const profile = this.user.profile();
+    return profile?.userId === userId && this.user.fullName()
+      ? this.user.fullName()
+      : userId;
+  }
+
   decideAuthorization(
     executionId: string,
     decision: AuthorizationDecision,
@@ -247,7 +255,7 @@ export class IncidentWorkspaceFacade {
         ...existing,
         incident,
         statusLabel: statusLabel(incident.status),
-        assigneeLabel: incident.assignedTo ?? 'Unassigned',
+        assigneeLabel: this.actorLabel(incident.assignedTo),
       });
     }
 
@@ -278,7 +286,7 @@ export class IncidentWorkspaceFacade {
       typeLabel: type,
       levelLabel: incident.level ?? 'Not classified',
       statusLabel: statusLabel(incident.status),
-      assigneeLabel: incident.assignedTo ?? 'Unassigned',
+      assigneeLabel: incident.assignedTo ? this.actorLabel(incident.assignedTo) : 'Unassigned',
       location,
     };
   }

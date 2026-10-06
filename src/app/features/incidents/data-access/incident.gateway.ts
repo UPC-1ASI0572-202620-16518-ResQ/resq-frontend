@@ -45,7 +45,7 @@ export interface IncidentRecord {
   /** Originating CRITICAL Risk Detection. Optional only for HTTP compatibility. */
   riskDetectionId?: string;
 
-  /** Mock-compatible evidence until the final backend/OpenAPI contract is published. */
+  /** TODO(OpenAPI): optional compatibility evidence until the backend schema is published. */
   detectedEvidence?: IncidentEvidenceRecord;
   currentEvidence?: IncidentEvidenceRecord;
 

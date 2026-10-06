@@ -77,7 +77,7 @@ const UI_ES: Record<string, string> = {
   'Monitoring Measurements': 'Mediciones de monitoreo', 'Incidents Over Time': 'Incidentes en el tiempo',
   'Resolution Performance': 'Rendimiento de resolución', 'Analysis period': 'Período de análisis',
   'Last 24 Hours': 'Últimas 24 horas', 'Last 7 Days': 'Últimos 7 días', 'Last 30 Days': 'Últimos 30 días',
-  'All variables': 'Todas las variables', 'Critical Alerts': 'Alertas críticas', 'Alert Context': 'Contexto de alerta',
+  'All variables': 'Todas las variables', 'Alert Context': 'Contexto de alerta',
   'Detection Evidence': 'Evidencia de detección', 'Delivery': 'Entrega', 'Authorization': 'Autorización',
   'Approve': 'Aprobar', 'Reject': 'Rechazar', 'Alert Not Found': 'Alerta no encontrada',
   'Incident context': 'Contexto del incidente', 'Incident lifecycle': 'Ciclo de vida del incidente',

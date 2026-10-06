@@ -29,8 +29,11 @@ export class AuthorizationService {
     return {
       identityId,
       userId,
-      role:
-        identityId === 'identity-user-1' || userId === 'user-1'
+      role: identityId
+        ? identityId === 'identity-user-1'
+          ? 'ADMINISTRATOR'
+          : 'VIEWER'
+        : userId === 'user-1'
           ? 'ADMINISTRATOR'
           : 'VIEWER',
     };

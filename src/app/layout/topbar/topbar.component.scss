@@ -244,6 +244,7 @@
 }
 
 .notifications a b,
+.notifications a div > span,
 .notifications a small {
   display: block;
 }
@@ -251,6 +252,12 @@
 .notifications a b {
   color: #344054;
   font-size: 13px;
+}
+
+.notifications a div > span {
+  color: #101828;
+  font-size: 12px;
+  margin-top: 2px;
 }
 
 .notifications a small {

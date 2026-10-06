@@ -68,6 +68,28 @@ export class MockIamGateway
       status:
         'ACTIVE',
     },
+
+    {
+      identityId:
+        'identity-viewer-1',
+
+      /*
+       * The current User mock exposes one profile. Authorization is derived
+       * from this identity first so Viewer behavior remains independently
+       * testable until IAM/User backend contracts provide role claims.
+       */
+      userId:
+        'user-1',
+
+      loginIdentifier:
+        'viewer@resq.io',
+
+      credentialSecret:
+        'password123',
+
+      status:
+        'ACTIVE',
+    },
   ];
 
   private readonly assignments =
