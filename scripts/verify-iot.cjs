@@ -20,6 +20,10 @@ const { BuildingStoreService } = require('../src/app/core/services/building-stor
 const { SensorResponseService } = require('../src/app/core/services/sensor-response.service.ts');
 const { RiskEvaluationService } = require('../src/app/core/services/risk-evaluation.service.ts');
 const { DeviceService } = require('../src/app/core/services/data.services.ts');
+const { RiskEventStoreService } = require('../src/app/core/services/risk-event-store.service.ts');
+const {
+  RiskDetectionSimulationService,
+} = require('../src/app/features/risk-detection/risk-detection-simulation.service.ts');
 const { DEVICE_CATALOG } = require('../src/app/core/models/resq.models.ts');
 const {
   makeDevice,
@@ -46,6 +50,9 @@ function check(label, callback) {
   checks++;
   console.log(`PASS ${label}`);
 }
+check('Initial risk projection classifies the raw MQ-2 reading with its ADC threshold', () => {
+  assert.equal(store.devices().find((item) => item.id === 'resq-mvp-001').status, 'Online');
+});
 const area = {
   id: 'qa-area',
   buildingId: 'science',
@@ -231,6 +238,81 @@ response.simulateMeasurement(mvp.id, 1830);
 check('MQ-2 ADC uses device ADC thresholds instead of ppm', () =>
   assert.equal(store.devices().find((item) => item.id === mvp.id).status, 'Online'),
 );
+// Regression checks for the merged risk lifecycle and the existing IoT pipeline.
+const lifecycle = new RiskEventStoreService();
+const riskSimulation = new RiskDetectionSimulationService(store, lifecycle, response);
+const initialEventCount = store.events().length;
+const warning = riskSimulation.simulateMeasurement(gas.id, 250);
+check('Risk demo ingests once through the sensor pipeline and creates a warning Alert', () => {
+  assert.equal(store.events().length, initialEventCount + 1);
+  assert.equal(warning.classification, 'Warning');
+  assert.equal(
+    lifecycle.alerts().find((item) => item.alertId === warning.alertId).status,
+    'ACTIVE',
+  );
+});
+riskSimulation.simulateMeasurement(gas.id, 100);
+check('Normal demo reading clears its Alert', () => {
+  assert.equal(
+    lifecycle.alerts().find((item) => item.alertId === warning.alertId).status,
+    'CLEARED',
+  );
+});
+const secondWarning = riskSimulation.simulateMeasurement(gas.id, 250);
+const critical = riskSimulation.simulateMeasurement(gas.id, 350);
+check('Critical demo creates an Incident, clears the warning and drives real rule targets', () => {
+  assert.equal(critical.classification, 'Critical');
+  assert.equal(
+    lifecycle.incidents().find((item) => item.id === critical.incidentId).status,
+    'Open',
+  );
+  assert.equal(
+    lifecycle.alerts().find((item) => item.alertId === secondWarning.alertId).clearReason,
+    'CRITICAL_THRESHOLD_REACHED',
+  );
+  for (const type of ['HVAC', 'AudibleAlarm', 'VisualSignal']) {
+    const target = store.devices().find((item) => item.id === created.get(type).id);
+    assert.equal(target.capabilities[0].state, 'ACTIVE');
+  }
+  assert.equal(store.devices().find((item) => item.id === servo.id).capabilities[0].state, 'OPEN');
+  assert.equal(
+    store.devices().find((item) => item.id === created.get('OLED').id).capabilities[0].state,
+    'ALERT',
+  );
+});
+const repeated = riskSimulation.simulateMeasurement(gas.id, 360);
+check('Repeated critical measurement reuses its Incident and updates evidence', () => {
+  assert.equal(repeated.created, false);
+  assert.equal(repeated.incidentId, critical.incidentId);
+  assert.equal(
+    lifecycle.incidents().find((item) => item.id === critical.incidentId).currentEvidence.value,
+    360,
+  );
+});
+riskSimulation.simulateMeasurement(gas.id, 100);
+check('Risk demo recovery resets outputs but leaves its safe Incident open for follow-up', () => {
+  const incident = lifecycle.incidents().find((item) => item.id === critical.incidentId);
+  assert.ok(incident.safeAt);
+  assert.equal(incident.status, 'Open');
+  assert.equal(
+    store.devices().find((item) => item.id === created.get('HVAC').id).capabilities[0].state,
+    'INACTIVE',
+  );
+  assert.equal(
+    store.devices().find((item) => item.id === created.get('OLED').id).capabilities[0].state,
+    'NORMAL',
+  );
+});
+const adcWarning = riskSimulation.simulateMeasurement(mvp.id, 2400);
+check('Risk demo evidence preserves actual MQ-2 ADC units and thresholds', () => {
+  assert.equal(adcWarning.classification, 'Warning');
+  const evidence = lifecycle.detections().find((item) => item.evidence[0].deviceId === mvp.id)
+    .evidence[0];
+  assert.equal(evidence.unit, 'ADC');
+  assert.equal(evidence.warningThreshold, 2000);
+  assert.equal(evidence.criticalThreshold, 3000);
+});
+riskSimulation.simulateMeasurement(mvp.id, 1830);
 async function finish() {
   const record = await firstValueFrom(gateway.getDeviceById(gas.id));
   const updated = await firstValueFrom(

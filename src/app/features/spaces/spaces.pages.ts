@@ -412,7 +412,11 @@ export class SpacesPage {
                 ><label
                   >Critical<input type="number" [formControlName]="metric + 'Critical'"
                 /></label>
-                @if (thresholdError(metric)) {<small class="threshold-error">Warning threshold must be lower than the critical threshold.</small>}
+                @if (thresholdError(metric)) {
+                  <small class="threshold-error"
+                    >Warning threshold must be lower than the critical threshold.</small
+                  >
+                }
               </div>
             }
           </div>
@@ -486,19 +490,22 @@ export class SpaceDetailPage implements OnInit {
     );
   }
   readonly sensitivityLevels: SensitivityLevel[] = ['Low', 'Normal', 'High', 'Custom'];
-  readonly form = this.fb.nonNullable.group({
-    sensitivity: ['Normal' as SensitivityLevel, Validators.required],
-    TemperatureWarning: [0, Validators.required],
-    TemperatureCritical: [0, Validators.required],
-    SmokeWarning: [0, Validators.required],
-    SmokeCritical: [0, Validators.required],
-    GasWarning: [0, Validators.required],
-    GasCritical: [0, Validators.required],
-    HumidityWarning: [0, Validators.required],
-    HumidityCritical: [0, Validators.required],
-    MotionWarning: [0, Validators.required],
-    MotionCritical: [0, Validators.required],
-  }, { validators: thresholdOrderValidator(['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion']) });
+  readonly form = this.fb.nonNullable.group(
+    {
+      sensitivity: ['Normal' as SensitivityLevel, Validators.required],
+      TemperatureWarning: [0, Validators.required],
+      TemperatureCritical: [0, Validators.required],
+      SmokeWarning: [0, Validators.required],
+      SmokeCritical: [0, Validators.required],
+      GasWarning: [0, Validators.required],
+      GasCritical: [0, Validators.required],
+      HumidityWarning: [0, Validators.required],
+      HumidityCritical: [0, Validators.required],
+      MotionWarning: [0, Validators.required],
+      MotionCritical: [0, Validators.required],
+    },
+    { validators: thresholdOrderValidator(['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion']) },
+  );
 
   ngOnInit(): void {
     const found = this.store
@@ -543,7 +550,7 @@ export class SpaceDetailPage implements OnInit {
   unit(metric: string) {
     return sensorDefinitions.find((item) => item.type === metric)?.unit ?? '';
   }
-  thresholdError(metric: typeof this.metrics[number]): boolean {
+  thresholdError(metric: (typeof this.metrics)[number]): boolean {
     return Boolean(this.form.errors?.['thresholdOrder']?.[metric]);
   }
 
@@ -551,7 +558,11 @@ export class SpaceDetailPage implements OnInit {
     const space = this.space();
     if (!space || this.form.invalid) {
       this.form.markAllAsTouched();
-      this.snack.open('Warning threshold must be lower than the critical threshold for every metric.', 'Close', { duration: 3500 });
+      this.snack.open(
+        'Warning threshold must be lower than the critical threshold for every metric.',
+        'Close',
+        { duration: 3500 },
+      );
       return;
     }
     const sensitivity = this.activeSensitivity();
@@ -586,14 +597,22 @@ export class SpaceDetailPage implements OnInit {
   }
 
   private patchConfiguration(sensitivity: SensitivityLevel, thresholds: SpaceThresholds): void {
-    this.form.patchValue({
-      sensitivity,
-      TemperatureWarning: thresholds.Temperature?.warning, TemperatureCritical: thresholds.Temperature?.critical,
-      SmokeWarning: thresholds.Smoke?.warning, SmokeCritical: thresholds.Smoke?.critical,
-      GasWarning: thresholds.Gas?.warning, GasCritical: thresholds.Gas?.critical,
-      HumidityWarning: thresholds.Humidity?.warning, HumidityCritical: thresholds.Humidity?.critical,
-      MotionWarning: thresholds.Motion?.warning, MotionCritical: thresholds.Motion?.critical,
-    }, { emitEvent: false });
+    this.form.patchValue(
+      {
+        sensitivity,
+        TemperatureWarning: thresholds.Temperature?.warning,
+        TemperatureCritical: thresholds.Temperature?.critical,
+        SmokeWarning: thresholds.Smoke?.warning,
+        SmokeCritical: thresholds.Smoke?.critical,
+        GasWarning: thresholds.Gas?.warning,
+        GasCritical: thresholds.Gas?.critical,
+        HumidityWarning: thresholds.Humidity?.warning,
+        HumidityCritical: thresholds.Humidity?.critical,
+        MotionWarning: thresholds.Motion?.warning,
+        MotionCritical: thresholds.Motion?.critical,
+      },
+      { emitEvent: false },
+    );
   }
 
   private cloneThresholds(thresholds: SpaceThresholds): SpaceThresholds {

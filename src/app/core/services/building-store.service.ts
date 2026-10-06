@@ -14,6 +14,8 @@ import {
   RiskStatus,
 } from '../models/resq.models';
 import { capabilityCategory } from '../models/device-domain';
+import { evaluateZone } from '../models/response-evaluation';
+import { evaluateMeasurement } from './risk-evaluation.service';
 
 export interface FloorPlanUpdate {
   planImageUrl?: string;
@@ -40,6 +42,15 @@ export class BuildingStoreService {
   readonly devices = this.devicesState.asReadonly();
   readonly floors = computed(() => this.buildings().flatMap((building) => building.floors));
   readonly spaces = computed(() => this.floors().flatMap((floor) => floor.spaces));
+
+  constructor() {
+    // Initial risk/output projections use exactly the same evaluator as telemetry.
+    this.updateDevices(
+      this.spaces().flatMap(
+        (space) => evaluateZone(space, space.devices, this.rules(), evaluateMeasurement).devices,
+      ),
+    );
+  }
 
   private attachDevicesToSpaces(buildings: Building[], devices: Device[]): Building[] {
     const highest = (statuses: RiskStatus[]) =>

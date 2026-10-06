@@ -23,9 +23,9 @@ export function evaluateMeasurement(
 export function isValidMetricThreshold(threshold?: MetricThreshold): boolean {
   return Boolean(
     threshold &&
-      Number.isFinite(threshold.warning) &&
-      Number.isFinite(threshold.critical) &&
-      threshold.warning < threshold.critical,
+    Number.isFinite(threshold.warning) &&
+    Number.isFinite(threshold.critical) &&
+    threshold.warning < threshold.critical,
   );
 }
 

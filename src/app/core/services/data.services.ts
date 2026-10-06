@@ -1,10 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, delay, of } from 'rxjs';
 
-import {
-  DEMO_USER,
-  INCIDENTS,
-} from '../mock-data/resq.mock';
+import { DEMO_USER, INCIDENTS } from '../mock-data/resq.mock';
 
 import {
   Alert,
@@ -88,13 +85,14 @@ export class SpaceService {
         `Warning threshold must be lower than the critical threshold for: ${invalidMetrics.join(', ')}.`,
       );
     }
-    const space = this.store.spaces().find(item => item.id === id);
-    if (space) this.store.updateSpace(space.buildingId, space.floorId, {
-      ...space,
-      sensitivity,
-      thresholds,
-      thresholdProfiles: thresholdProfiles ?? space.thresholdProfiles,
-    });
+    const space = this.store.spaces().find((item) => item.id === id);
+    if (space)
+      this.store.updateSpace(space.buildingId, space.floorId, {
+        ...space,
+        sensitivity,
+        thresholds,
+        thresholdProfiles: thresholdProfiles ?? space.thresholdProfiles,
+      });
     if (space) this.response.reconcile(space.id);
   }
 }
@@ -194,7 +192,8 @@ export class AlertService {
   private readonly store = inject(BuildingStoreService);
   private readonly events = inject(RiskEventStoreService);
   private readonly listItems = computed(() =>
-    this.events.alerts()
+    this.events
+      .alerts()
       .map((alert) => this.toListItem(alert))
       .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime()),
   );
@@ -214,9 +213,12 @@ export class AlertService {
   }
   getAlertsByDevice(deviceId: string): Observable<AlertListItem[]> {
     const detectionIds = new Set(
-      this.events.detections().filter((detection) =>
-        detection.evidence.some((evidence) => evidence.deviceId === deviceId),
-      ).map((detection) => detection.riskDetectionId),
+      this.events
+        .detections()
+        .filter((detection) =>
+          detection.evidence.some((evidence) => evidence.deviceId === deviceId),
+        )
+        .map((detection) => detection.riskDetectionId),
     );
     return of(this.listItems().filter((item) => detectionIds.has(item.riskDetectionId))).pipe(
       delay(80),
@@ -238,9 +240,9 @@ export class AlertService {
     const alert = this.events.alerts().find((item) => item.alertId === id);
     if (!alert) return of(undefined).pipe(delay(80));
     const listItem = this.toListItem(alert);
-    const detection = this.events.detections().find(
-      (item) => item.riskDetectionId === alert.context.riskDetectionId,
-    );
+    const detection = this.events
+      .detections()
+      .find((item) => item.riskDetectionId === alert.context.riskDetectionId);
     const evidence =
       detection?.evidence.map((item) => {
         const device = this.store.devices().find((candidate) => candidate.id === item.deviceId);
@@ -254,45 +256,42 @@ export class AlertService {
           hardware: capability?.hardware ?? 'Hardware unavailable',
         };
       }) ?? [];
-    const responseExecutions = this.events.responseExecutions().filter(
-      (execution) => execution.riskDetectionId === alert.context.riskDetectionId,
-    ).map((execution) => {
-      const device = this.store
-        .devices()
-        .find((item) => item.id === execution.action.targetDeviceId);
-      return {
-        ...execution,
-        targetDeviceName: device?.name ?? 'Device unavailable',
-        targetDeviceCode: device?.deviceCode ?? execution.action.targetDeviceId,
-      };
-    });
+    const responseExecutions = this.events
+      .responseExecutions()
+      .filter((execution) => execution.riskDetectionId === alert.context.riskDetectionId)
+      .map((execution) => {
+        const device = this.store
+          .devices()
+          .find((item) => item.id === execution.action.targetDeviceId);
+        return {
+          ...execution,
+          targetDeviceName: device?.name ?? 'Device unavailable',
+          targetDeviceCode: device?.deviceCode ?? execution.action.targetDeviceId,
+        };
+      });
     return of({ ...listItem, alert, evidence, responseExecutions }).pipe(delay(100));
   }
   private toListItem(alert: Alert): AlertListItem {
-    const detection = this.events.detections().find(
-      (item) => item.riskDetectionId === alert.context.riskDetectionId,
-    );
+    const detection = this.events
+      .detections()
+      .find((item) => item.riskDetectionId === alert.context.riskDetectionId);
     const space = this.store.spaces().find((item) => item.id === alert.context.zoneId);
     const floor = this.store.floors().find((item) => item.id === space?.floorId);
     const building = this.store.buildings().find((item) => item.id === alert.context.buildingId);
     const evidence = detection?.evidence[0];
     const device = this.store.devices().find((item) => item.id === evidence?.deviceId);
-    const capability = device?.capabilities.find(
-      (item) => item.code === evidence?.capabilityCode,
-    );
+    const capability = device?.capabilities.find((item) => item.code === evidence?.capabilityCode);
     const delivered = alert.deliveries.filter((item) => item.status === 'DELIVERED').length;
     const pending = alert.deliveries.filter((item) => item.status === 'PENDING').length;
     const failed = alert.deliveries.filter((item) => item.status === 'FAILED').length;
     const deliveryStatus = failed ? 'FAILED' : pending ? 'PENDING' : 'DELIVERED';
-    const title =
-      alert.context.riskTypeCode === 'GAS_LEAK'
-        ? 'Gas warning'
-        : 'Fire risk warning';
+    const title = alert.context.riskTypeCode === 'GAS_LEAK' ? 'Gas warning' : 'Fire risk warning';
     const riskTypeLabel = this.riskTypeLabel(alert.context.riskTypeCode);
     return {
       id: alert.alertId,
       title,
-      description: 'Warning threshold exceeded. The measurement remains below the critical threshold.',
+      description:
+        'Warning threshold exceeded. The measurement remains below the critical threshold.',
       riskDetectionId: alert.context.riskDetectionId,
       riskTypeCode: alert.context.riskTypeCode,
       riskTypeLabel,
