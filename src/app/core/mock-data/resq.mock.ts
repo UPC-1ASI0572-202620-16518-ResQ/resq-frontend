@@ -14,44 +14,15 @@ import {
   MeasurementRiskLevel,
   RiskTypeCode,
   SensorReading,
+  SensorType,
   Space,
-  SpaceThresholds,
 } from '../models/resq.models';
+import { defaultThresholds, deviceDefinition, sensorThreshold } from '../models/device-domain';
 
 const now = Date.now();
 const ago = (minutes: number): Date => new Date(now - minutes * 60_000);
-const threshold = (type: string): SpaceThresholds =>
-  type === 'Laboratory'
-    ? {
-        Temperature: { warning: 28, critical: 35 },
-        Smoke: { warning: 80, critical: 120 },
-        Gas: { warning: 200, critical: 300 },
-        Humidity: { warning: 70, critical: 85 },
-        Motion: { warning: 5, critical: 10 },
-      }
-    : type === 'ServerRoom'
-      ? {
-          Temperature: { warning: 27, critical: 32 },
-          Smoke: { warning: 60, critical: 100 },
-          Gas: { warning: 250, critical: 400 },
-          Humidity: { warning: 65, critical: 80 },
-          Motion: { warning: 5, critical: 10 },
-        }
-      : {
-          Temperature: { warning: 32, critical: 40 },
-          Smoke: { warning: 100, critical: 150 },
-          Gas: { warning: 250, critical: 400 },
-          Humidity: { warning: 70, critical: 85 },
-          Motion: { warning: 5, critical: 10 },
-        };
+const threshold = defaultThresholds;
 
-const units: Record<Device['type'], string> = {
-  Temperature: '°C',
-  Smoke: 'ppm',
-  Gas: 'ppm',
-  Humidity: '%',
-  Motion: 'events',
-};
 const currentValues: Record<string, number> = {
   Temperature: 24.2,
   Smoke: 34,
@@ -61,9 +32,9 @@ const currentValues: Record<string, number> = {
 };
 const readings = (
   deviceId: string,
-  metric: Device['type'],
+  metric: SensorType,
   base: number,
-  unit = units[metric],
+  unit = deviceDefinition(metric).unit!,
 ): SensorReading[] => {
   const phase = [...deviceId].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 9;
   return Array.from({ length: 24 }, (_, index) => ({
@@ -81,13 +52,14 @@ const readings = (
   }));
 };
 
-const capabilityFor = (id: string, type: Device['type']): DeviceCapability => ({
+const capabilityFor = (id: string, type: SensorType): DeviceCapability => ({
   id: `${id}-${type.toLowerCase()}`,
   code: `${type.toLowerCase()}_measurement`,
   name: `${type} Measurement`,
   kind: 'MEASUREMENT',
+  category: 'SENSOR',
   hardware: `${type} sensing module`,
-  unit: units[type],
+  unit: deviceDefinition(type).unit,
 });
 
 const makeDevice = (
@@ -95,7 +67,7 @@ const makeDevice = (
   spaceId: string,
   buildingId: string,
   floorId: string,
-  type: Device['type'],
+  type: SensorType,
   status: Device['status'] = 'Online',
   value?: number,
 ): Device => {
@@ -180,46 +152,79 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
     capabilities: [
       {
         id: 'mvp-cap-gas-smoke',
-        code: 'gas_measurement',
-        name: 'Gas Concentration',
+        code: 'gas_smoke_level',
+        name: 'Gas / Smoke Level',
         kind: 'MEASUREMENT',
+        category: 'SENSOR',
         hardware: 'MQ-2',
-        unit: 'ppm',
-        description: 'Calibrated gas concentration used by the threshold demo.',
+        unit: 'ADC',
+        description: 'Raw/relative gas and smoke level for the MVP.',
       },
       {
         id: 'mvp-cap-display',
         code: 'local_status_display',
         name: 'Local Status Display',
         kind: 'ACTUATION',
+        category: 'DISPLAY',
         hardware: 'SSD1306 OLED',
+        state: 'NORMAL',
       },
       {
         id: 'mvp-cap-alarm',
         code: 'audible_alarm',
         name: 'Audible Alarm',
         kind: 'ACTUATION',
+        category: 'ACTUATOR',
         hardware: 'Active Buzzer 5 V',
+        state: 'INACTIVE',
       },
       {
         id: 'mvp-cap-red-led',
         code: 'critical_status_indicator',
         name: 'Critical Status Indicator',
         kind: 'ACTUATION',
+        category: 'ACTUATOR',
         hardware: 'Red LED',
+        state: 'INACTIVE',
       },
       {
         id: 'mvp-cap-green-led',
         code: 'normal_status_indicator',
         name: 'Normal Status Indicator',
         kind: 'ACTUATION',
+        category: 'ACTUATOR',
         hardware: 'Green LED',
+        state: 'NORMAL',
+      },
+      {
+        id: 'mvp-cap-hvac',
+        code: 'environmental_ventilation',
+        name: 'Ventilation / HVAC',
+        kind: 'ACTUATION',
+        category: 'ACTUATOR',
+        hardware: 'Planned capability · not installed in MVP',
+        state: 'PLANNED',
+        description:
+          'Regulates temperature and environmental conditions when a response rule is triggered.',
+      },
+      {
+        id: 'mvp-cap-servo',
+        code: 'mechanical_servo',
+        name: 'Servomotor',
+        kind: 'ACTUATION',
+        category: 'ACTUATOR',
+        hardware: 'Planned capability · not installed in MVP',
+        state: 'PLANNED',
+        description:
+          'Opens or closes doors, windows, valves or ventilation dampers according to a configured rule.',
       },
     ],
     power: { source: 'USB 5 V', status: 'POWERED' },
     signalStrength: -58,
     lastSeen: ago(2),
-    readings: readings(id, 'Gas', 340, 'ppm'),
+    readings: readings(id, 'Gas', 1830, 'ADC'),
+    sensorThreshold: { warning: 2000, critical: 3000 },
+    availability: 'MVP',
     hardwareImageUrl: '/assets/devices/resq-mvp-node.webp',
     hardwareComponents: [
       {
@@ -251,7 +256,7 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
     maintenance: {
       calibrationStatus: 'PENDING_CALIBRATION',
       calibrationNote:
-        'The mock uses a calibrated ppm value. Physical MQ-2 calibration remains pending for production.',
+        'Raw/relative readings are used in the MVP until the MQ-2 calibration procedure is completed.',
       lastInspection: ago(60 * 24 * 2),
     },
     createdAt: ago(60 * 24 * 30),
@@ -419,7 +424,7 @@ function makeSpace(
       devices: [makeMvpDevice(id, buildingId, floorId)],
     };
   }
-  const types: Device['type'][] = ['Temperature', 'Smoke', 'Humidity'];
+  const types: SensorType[] = ['Temperature', 'Smoke', 'Humidity'];
   const devices = types.map((deviceType) => {
     const deviceId = `dev-${String(deviceCounter++).padStart(3, '0')}`;
     const deviceStatus: Device['status'] =
@@ -447,8 +452,16 @@ function makeSpace(
   };
 }
 
-const rectanglePolygon = (x: number, y: number, width: number, height: number): FloorPlanPoint[] => [
-  { x, y }, { x: x + width, y }, { x: x + width, y: y + height }, { x, y: y + height },
+const rectanglePolygon = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): FloorPlanPoint[] => [
+  { x, y },
+  { x: x + width, y },
+  { x: x + width, y: y + height },
+  { x, y: y + height },
 ];
 
 function makeSpatialSpace(
@@ -460,28 +473,44 @@ function makeSpatialSpace(
   polygon: FloorPlanPoint[],
 ): Space {
   return {
-    id, buildingId, floorId, name, type,
+    id,
+    buildingId,
+    floorId,
+    name,
+    type,
     sensitivity: type === 'Hallway' || type === 'Stairs' ? 'Low' : 'Normal',
-    status: 'Normal', thresholds: threshold(type), polygon, devices: [],
+    status: 'Normal',
+    thresholds: threshold(type),
+    polygon,
+    devices: [],
   };
 }
 
 function positionDevices(space: Space): Space {
   if (space.polygon.length < 3) return space;
-  const xs = space.polygon.map(point => point.x);
-  const ys = space.polygon.map(point => point.y);
-  const x = Math.min(...xs); const y = Math.min(...ys);
-  const width = Math.max(...xs) - x; const height = Math.max(...ys) - y;
-  const positions: Record<Device['type'], [number, number]> = {
-    Temperature: [.24, .28], Smoke: [.74, .28], Gas: [.5, .5], Humidity: [.25, .72], Motion: [.74, .72],
+  const xs = space.polygon.map((point) => point.x);
+  const ys = space.polygon.map((point) => point.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  const width = Math.max(...xs) - x;
+  const height = Math.max(...ys) - y;
+  const positions: Record<SensorType, [number, number]> = {
+    Temperature: [0.24, 0.28],
+    Smoke: [0.74, 0.28],
+    Gas: [0.5, 0.5],
+    Humidity: [0.25, 0.72],
+    Motion: [0.74, 0.72],
   };
   return {
     ...space,
     devices: space.devices.map((device, index) => {
-      const [px, py] = positions[device.type];
+      const [px, py] = device.type in positions ? positions[device.type as SensorType] : [0.5, 0.5];
       const offsetX = ((index % 3) - 1) * 10;
       const offsetY = Math.floor(index / 3) * 10;
-      return { ...device, floorPlanPosition: { x: x + width * px + offsetX, y: y + height * py + offsetY } };
+      return {
+        ...device,
+        floorPlanPosition: { x: x + width * px + offsetX, y: y + height * py + offsetY },
+      };
     }),
   };
 }
@@ -494,10 +523,12 @@ function configureDemoFloor(floor: Floor, variant = 0): Floor {
   const usableWidth = 1000 - padding * 2;
   const row = (items: Space[], y: number, height: number): Space[] => {
     const width = (usableWidth - gap * Math.max(0, items.length - 1)) / Math.max(1, items.length);
-    return items.map((space, index) => positionDevices({
-      ...space,
-      polygon: rectanglePolygon(padding + index * (width + gap), y, width, height),
-    }));
+    return items.map((space, index) =>
+      positionDevices({
+        ...space,
+        polygon: rectanglePolygon(padding + index * (width + gap), y, width, height),
+      }),
+    );
   };
   const configuredRooms = [
     ...row(spaces.slice(0, topCount), 45 + variant * 3, 155),
@@ -508,55 +539,171 @@ function configureDemoFloor(floor: Floor, variant = 0): Floor {
   const rightEdge = padding + usableWidth;
   const configuredSpaces = [
     ...configuredRooms,
-    makeSpatialSpace(`${floor.id}-hall-west`, floor.buildingId, floor.id, 'West Hallway', 'Hallway', rectanglePolygon(padding, 220, stairsX - padding - 10, 65)),
-    makeSpatialSpace(`${floor.id}-stairs`, floor.buildingId, floor.id, 'Stairs', 'Stairs', rectanglePolygon(stairsX, 220, 70, 65)),
-    makeSpatialSpace(`${floor.id}-wc`, floor.buildingId, floor.id, 'Restroom', 'Restroom', rectanglePolygon(restroomX, 220, 65, 65)),
-    makeSpatialSpace(`${floor.id}-hall-east`, floor.buildingId, floor.id, 'East Hallway', 'Hallway', rectanglePolygon(restroomX + 75, 220, rightEdge - restroomX - 75, 65)),
+    makeSpatialSpace(
+      `${floor.id}-hall-west`,
+      floor.buildingId,
+      floor.id,
+      'West Hallway',
+      'Hallway',
+      rectanglePolygon(padding, 220, stairsX - padding - 10, 65),
+    ),
+    makeSpatialSpace(
+      `${floor.id}-stairs`,
+      floor.buildingId,
+      floor.id,
+      'Stairs',
+      'Stairs',
+      rectanglePolygon(stairsX, 220, 70, 65),
+    ),
+    makeSpatialSpace(
+      `${floor.id}-wc`,
+      floor.buildingId,
+      floor.id,
+      'Restroom',
+      'Restroom',
+      rectanglePolygon(restroomX, 220, 65, 65),
+    ),
+    makeSpatialSpace(
+      `${floor.id}-hall-east`,
+      floor.buildingId,
+      floor.id,
+      'East Hallway',
+      'Hallway',
+      rectanglePolygon(restroomX + 75, 220, rightEdge - restroomX - 75, 65),
+    ),
   ];
-  const areaElements: FloorPlanElement[] = configuredSpaces.map(space => {
-    const xs = space.polygon.map(point => point.x); const ys = space.polygon.map(point => point.y);
+  const areaElements: FloorPlanElement[] = configuredSpaces.map((space) => {
+    const xs = space.polygon.map((point) => point.x);
+    const ys = space.polygon.map((point) => point.y);
     return {
       id: `plan-area-${space.id}`,
       type: 'Space',
       spaceId: space.id,
-      x: Math.min(...xs), y: Math.min(...ys),
-      width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys),
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      width: Math.max(...xs) - Math.min(...xs),
+      height: Math.max(...ys) - Math.min(...ys),
       label: space.name,
     };
   });
-  return { ...floor, spaces: configuredSpaces, planElements: areaElements, planConfigured: configuredSpaces.length > 0 };
+  return {
+    ...floor,
+    spaces: configuredSpaces,
+    planElements: areaElements,
+    planConfigured: configuredSpaces.length > 0,
+  };
 }
 
-const genericNames = ['Reception','Open Office','Meeting Room','Control Room','Training Room','Kitchen','Archive','Operations'];
+const genericNames = [
+  'Reception',
+  'Open Office',
+  'Meeting Room',
+  'Control Room',
+  'Training Room',
+  'Kitchen',
+  'Archive',
+  'Operations',
+];
 function makeGenericFloor(buildingId: string, level: number, index: number): Floor {
   const floorId = `${buildingId}-f${level}`;
-  const spaces = genericNames.slice(0, level % 3 + 5).map((name, room) => makeSpace([
-    `${floorId}-s${room+1}`, name, `${level}0${room+1}`, room === 0 ? 'Reception' : room === 2 ? 'MeetingRoom' : 'Office',
-    (index + room) % 11 === 0 ? 'Warning' : 'Normal', 'Normal', [[0,0],[1,0],[1,1],[0,1]]
-  ], buildingId, floorId));
-  return configureDemoFloor({ id: floorId, buildingId, name: `Floor ${level}`, level, spaces, status: spaces.some(space => space.status === 'Warning') ? 'Warning' : 'Normal' }, index % 3);
+  const spaces = genericNames.slice(0, (level % 3) + 5).map((name, room) =>
+    makeSpace(
+      [
+        `${floorId}-s${room + 1}`,
+        name,
+        `${level}0${room + 1}`,
+        room === 0 ? 'Reception' : room === 2 ? 'MeetingRoom' : 'Office',
+        (index + room) % 11 === 0 ? 'Warning' : 'Normal',
+        'Normal',
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1],
+        ],
+      ],
+      buildingId,
+      floorId,
+    ),
+  );
+  return configureDemoFloor(
+    {
+      id: floorId,
+      buildingId,
+      name: `Floor ${level}`,
+      level,
+      spaces,
+      status: spaces.some((space) => space.status === 'Warning') ? 'Warning' : 'Normal',
+    },
+    index % 3,
+  );
 }
 
 const scienceF2Spaces = [
-  ...scienceF2Specs.map(spec => positionDevices(makeSpace(spec, 'science', 'science-f2'))),
-  makeSpatialSpace('science-f2-stairs-a', 'science', 'science-f2', 'Stairs A', 'Stairs', rectanglePolygon(445, 310, 45, 145)),
-  makeSpatialSpace('science-f2-stairs-b', 'science', 'science-f2', 'Stairs B', 'Stairs', rectanglePolygon(70, 232, 55, 56)),
-  makeSpatialSpace('science-f2-wc-a', 'science', 'science-f2', 'Restroom A', 'Restroom', rectanglePolygon(505, 310, 45, 145)),
-  makeSpatialSpace('science-f2-wc-b', 'science', 'science-f2', 'Restroom B', 'Restroom', rectanglePolygon(845, 232, 55, 56)),
+  ...scienceF2Specs.map((spec) => positionDevices(makeSpace(spec, 'science', 'science-f2'))),
+  makeSpatialSpace(
+    'science-f2-stairs-a',
+    'science',
+    'science-f2',
+    'Stairs A',
+    'Stairs',
+    rectanglePolygon(445, 310, 45, 145),
+  ),
+  makeSpatialSpace(
+    'science-f2-stairs-b',
+    'science',
+    'science-f2',
+    'Stairs B',
+    'Stairs',
+    rectanglePolygon(70, 232, 55, 56),
+  ),
+  makeSpatialSpace(
+    'science-f2-wc-a',
+    'science',
+    'science-f2',
+    'Restroom A',
+    'Restroom',
+    rectanglePolygon(505, 310, 45, 145),
+  ),
+  makeSpatialSpace(
+    'science-f2-wc-b',
+    'science',
+    'science-f2',
+    'Restroom B',
+    'Restroom',
+    rectanglePolygon(845, 232, 55, 56),
+  ),
 ];
-const scienceFloors: Floor[] = [1,2,3,4].map((level, index) => level === 2
-  ? {
-      id: 'science-f2', buildingId: 'science', name: 'Floor 2', level: 2,
-      spaces: scienceF2Spaces, status: 'Critical', planConfigured: true,
-      planElements: [
-        ...scienceF2Spaces.map(space => {
-          const xs = space.polygon.map(point => point.x); const ys = space.polygon.map(point => point.y);
-          return { id: `plan-area-${space.id}`, type: 'Space' as const, spaceId: space.id, label: space.name, x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
-        }),
-      ],
-    }
-  : makeGenericFloor('science', level, index));
-const mainFloors = [1,2,3].map((level, index) => makeGenericFloor('main', level, index + 4));
+const scienceFloors: Floor[] = [1, 2, 3, 4].map((level, index) =>
+  level === 2
+    ? {
+        id: 'science-f2',
+        buildingId: 'science',
+        name: 'Floor 2',
+        level: 2,
+        spaces: scienceF2Spaces,
+        status: 'Critical',
+        planConfigured: true,
+        planElements: [
+          ...scienceF2Spaces.map((space) => {
+            const xs = space.polygon.map((point) => point.x);
+            const ys = space.polygon.map((point) => point.y);
+            return {
+              id: `plan-area-${space.id}`,
+              type: 'Space' as const,
+              spaceId: space.id,
+              label: space.name,
+              x: Math.min(...xs),
+              y: Math.min(...ys),
+              width: Math.max(...xs) - Math.min(...xs),
+              height: Math.max(...ys) - Math.min(...ys),
+            };
+          }),
+        ],
+      }
+    : makeGenericFloor('science', level, index),
+);
+const mainFloors = [1, 2, 3].map((level, index) => makeGenericFloor('main', level, index + 4));
 const researchFloors: Floor[] = [1, 2].map((level, index) => {
   const floor = makeGenericFloor('research', level, index + 7);
 
@@ -611,9 +758,7 @@ export const DEVICES: Device[] = [
   ...baseDevices,
   ...Array.from({ length: Math.max(0, 142 - baseDevices.length) }, (_, index) => {
     const space = SPACES[index % SPACES.length];
-    const type = (['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion'] as Device['type'][])[
-      index % 5
-    ];
+    const type = (['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion'] as SensorType[])[index % 5];
     const status: Device['status'] =
       index < 6 ? 'Critical' : index < 18 ? 'Warning' : index < 24 ? 'Offline' : 'Online';
     return makeDevice(
@@ -633,7 +778,7 @@ interface MeasurementScenario {
   riskTypeCode: RiskTypeCode;
   minutesAgo: number;
   spaceId: string;
-  deviceType: Device['type'];
+  deviceType: SensorType;
   value: number;
 }
 
@@ -658,7 +803,7 @@ export const DEMO_MEASUREMENT_SCENARIOS: MeasurementScenario[] = [
     minutesAgo: 60,
     spaceId: 'chem-lab-201',
     deviceType: 'Gas',
-    value: 150,
+    value: 1500,
   },
   {
     outcome: 'Warning',
@@ -667,7 +812,7 @@ export const DEMO_MEASUREMENT_SCENARIOS: MeasurementScenario[] = [
     minutesAgo: 30,
     spaceId: 'chem-lab-201',
     deviceType: 'Gas',
-    value: 240,
+    value: 2400,
   },
   {
     outcome: 'Critical',
@@ -676,7 +821,7 @@ export const DEMO_MEASUREMENT_SCENARIOS: MeasurementScenario[] = [
     minutesAgo: 2,
     spaceId: 'chem-lab-201',
     deviceType: 'Gas',
-    value: 340,
+    value: 3400,
   },
 ];
 
@@ -760,7 +905,7 @@ const after = (date: Date, seconds: number): Date => new Date(date.getTime() + s
 export const RISK_DETECTIONS: RiskDetectionSummary[] = riskScenarios.map((scenario) => {
   const device = scenarioDevice(scenario);
   const space = SPACES.find((item) => item.id === scenario.spaceId)!;
-  const configuredThreshold = space.thresholds[scenario.deviceType]!;
+  const configuredThreshold = sensorThreshold(device, space)!;
   const capability = device.capabilities.find((item) => item.kind === 'MEASUREMENT')!;
   const detectedAt = detectedAtFor(scenario);
   const evidence: DetectionEvidence = {
@@ -769,7 +914,7 @@ export const RISK_DETECTIONS: RiskDetectionSummary[] = riskScenarios.map((scenar
     metric: scenario.deviceType,
     measurementName: capability.name,
     value: scenario.value,
-    unit: capability.unit ?? units[scenario.deviceType],
+    unit: capability.unit ?? deviceDefinition(scenario.deviceType).unit ?? '',
     warningThreshold: configuredThreshold.warning,
     criticalThreshold: configuredThreshold.critical,
     capturedAt: detectedAt,
@@ -789,8 +934,7 @@ export const ALERTS: Alert[] = warningScenarios.map((scenario) => {
   const detectedAt = detectedAtFor(scenario);
   const generatedAt = after(detectedAt, 1);
   const requestedAt = after(detectedAt, 2);
-  const completedAt =
-    scenario.deliveryStatus === 'PENDING' ? undefined : after(detectedAt, 3);
+  const completedAt = scenario.deliveryStatus === 'PENDING' ? undefined : after(detectedAt, 3);
   return {
     alertId: scenario.alertId,
     organizationId: 'securitybear',
@@ -805,11 +949,9 @@ export const ALERTS: Alert[] = warningScenarios.map((scenario) => {
     generatedAt,
     status: scenario.alertId === 'alert-warning-gas-demo' ? 'CLEARED' : 'ACTIVE',
     clearedAt:
-      scenario.alertId === 'alert-warning-gas-demo' ? after(detectedAt, 28 * 60) : undefined,
+      scenario.alertId === 'alert-warning-gas-demo' ? after(detectedAt, 31 * 60) : undefined,
     clearReason:
-      scenario.alertId === 'alert-warning-gas-demo'
-        ? 'CRITICAL_THRESHOLD_REACHED'
-        : undefined,
+      scenario.alertId === 'alert-warning-gas-demo' ? 'CRITICAL_THRESHOLD_REACHED' : undefined,
     deliveries: [
       {
         deliveryId: `delivery-${scenario.alertId}`,
@@ -884,59 +1026,57 @@ export const RESPONSE_EXECUTIONS: ResponseExecution[] = [
     },
     status: 'PENDING_AUTHORIZATION',
     requestedAt: after(
-      RISK_DETECTIONS.find(
-        (item) => item.riskDetectionId === 'RISK-CRITICAL-GAS-DEMO',
-      )!.detectedAt,
+      RISK_DETECTIONS.find((item) => item.riskDetectionId === 'RISK-CRITICAL-GAS-DEMO')!.detectedAt,
       9 + index,
     ),
   })),
 ];
 
 export const INCIDENTS: Incident[] = criticalScenarios.map((scenario) => {
-    const space = SPACES.find((item) => item.id === scenario.spaceId)!;
-    const detectedAt = detectedAtFor(scenario);
-    const detection = RISK_DETECTIONS.find(
-      (item) => item.riskDetectionId === scenario.riskDetectionId,
-    )!;
-    const resolvedAt =
+  const space = SPACES.find((item) => item.id === scenario.spaceId)!;
+  const detectedAt = detectedAtFor(scenario);
+  const detection = RISK_DETECTIONS.find(
+    (item) => item.riskDetectionId === scenario.riskDetectionId,
+  )!;
+  const resolvedAt =
+    scenario.incidentStatus === 'Resolved'
+      ? new Date(Math.min(detectedAt.getTime() + 45 * 60_000, now - 60_000))
+      : undefined;
+  const safeAt = resolvedAt ? new Date(resolvedAt.getTime() - 5 * 60_000) : undefined;
+  const currentEvidence = structuredClone(detection.evidence[0]);
+  if (safeAt) {
+    currentEvidence.value = Math.max(0, currentEvidence.warningThreshold - 10);
+    currentEvidence.capturedAt = safeAt;
+  }
+  return {
+    id: scenario.incidentId,
+    riskDetectionId: scenario.riskDetectionId,
+    riskTypeCode: scenario.riskTypeCode,
+    evidence: structuredClone(detection.evidence[0]),
+    currentEvidence,
+    buildingId: space.buildingId,
+    floorId: space.floorId,
+    spaceId: space.id,
+    title: scenario.riskTypeCode === 'GAS_LEAK' ? 'Gas leak response' : 'Fire risk investigation',
+    description: 'Facilities response and investigation record for the classified risk.',
+    severity: 'Critical',
+    status: scenario.incidentStatus,
+    assignedTo: scenario.incidentStatus === 'InProgress' ? 'user-1' : undefined,
+    assignedAt: scenario.incidentStatus === 'InProgress' ? after(detectedAt, 10 * 60) : undefined,
+    resolutionNotes:
       scenario.incidentStatus === 'Resolved'
-        ? new Date(Math.min(detectedAt.getTime() + 45 * 60_000, now - 60_000))
-        : undefined;
-    const safeAt =
-      resolvedAt ? new Date(resolvedAt.getTime() - 5 * 60_000) : undefined;
-    const currentEvidence = structuredClone(detection.evidence[0]);
-    if (safeAt) {
-      currentEvidence.value = Math.max(0, currentEvidence.warningThreshold - 10);
-      currentEvidence.capturedAt = safeAt;
-    }
-    return {
-      id: scenario.incidentId,
-      riskDetectionId: scenario.riskDetectionId,
-      riskTypeCode: scenario.riskTypeCode,
-      evidence: structuredClone(detection.evidence[0]),
-      currentEvidence,
-      buildingId: space.buildingId,
-      floorId: space.floorId,
-      spaceId: space.id,
-      title:
-        scenario.riskTypeCode === 'GAS_LEAK'
-          ? 'Gas leak response'
-          : 'Fire risk investigation',
-      description: 'Facilities response and investigation record for the classified risk.',
-      severity: 'Critical',
-      status: scenario.incidentStatus,
-      assignedTo: scenario.incidentStatus === 'InProgress' ? 'user-1' : undefined,
-      assignedAt:
-        scenario.incidentStatus === 'InProgress' ? after(detectedAt, 10 * 60) : undefined,
-      resolutionNotes:
-        scenario.incidentStatus === 'Resolved'
-          ? 'Area inspected, source isolated, and readings returned below the warning threshold.'
-          : undefined,
-      createdAt: after(detectedAt, 8),
-      resolvedAt,
-      resolvedBy: scenario.incidentStatus === 'Resolved' ? 'user-1' : undefined,
-      safeAt,
-    };
-  });
+        ? 'Area inspected, source isolated, and readings returned below the warning threshold.'
+        : undefined,
+    createdAt: after(detectedAt, 8),
+    resolvedAt,
+    resolvedBy: scenario.incidentStatus === 'Resolved' ? 'user-1' : undefined,
+    safeAt,
+  };
+});
 
-export const DEMO_USER = { id: 'user-1', name: 'Sofia Ramirez', email: 'sofia.ramirez@resq.io', initials: 'SR' };
+export const DEMO_USER = {
+  id: 'user-1',
+  name: 'Sofia Ramirez',
+  email: 'sofia.ramirez@resq.io',
+  initials: 'SR',
+};

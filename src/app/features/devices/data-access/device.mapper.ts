@@ -149,6 +149,7 @@ export function mapMockDeviceToCatalog(
 ): DeviceCatalogRecord {
 
   return {
+    externalReference: device.externalReferenceDetails,
     id:
       device.id,
 
@@ -291,6 +292,8 @@ function mapMockCapability(
   DeviceCatalogCapability {
 
   return {
+    category: capability.category,
+    state: capability.state,
     id:
       capability.id,
 

@@ -9,6 +9,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent, KpiCardComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { AlertWorkspaceFacade, AlertWorkspaceRow } from './alert-workspace.facade';
 import { ResponseExecutionRecord } from './data-access/alert.gateway';
+import { ResponseActivityComponent } from '../../shared/ui/response-activity.component';
 
 @Component({
   selector: 'resq-alerts-page',
@@ -24,9 +25,11 @@ import { ResponseExecutionRecord } from './data-access/alert.gateway';
     StatusBadgeComponent,
     LoadingStateComponent,
     EmptyStateComponent,
+    ResponseActivityComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <resq-response-activity/>
     <section class="kpis" aria-label="Alert summary">
       <resq-kpi-card icon="warning_amber" [value]="workspace.summary().total" label="Total Alerts" tone="amber" />
       <resq-kpi-card icon="notifications_active" [value]="workspace.summary().active" label="Active" tone="amber" />

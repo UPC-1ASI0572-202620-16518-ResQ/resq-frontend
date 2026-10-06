@@ -1,3 +1,5 @@
+import { capabilityDefinition } from '../../core/models/device-domain';
+
 export function capabilityLabel(code: string): string {
   const known: Record<string, string> = {
     gas_smoke_level: 'Gas / Smoke Level',
@@ -6,7 +8,7 @@ export function capabilityLabel(code: string): string {
     critical_status_indicator: 'Critical Status Indicator',
     normal_status_indicator: 'Normal Status Indicator',
   };
-  return known[code] ?? code.replace(/[_-]+/g, ' ').replace(/\b\w/g, (value) => value.toUpperCase());
+  return known[code] ?? capabilityDefinition(code)?.label ?? code.replace(/[_-]+/g, ' ').replace(/\b\w/g, (value) => value.toUpperCase());
 }
 
 export function capabilityHardware(code: string): string {
@@ -17,7 +19,7 @@ export function capabilityHardware(code: string): string {
     critical_status_indicator: 'Red status LED',
     normal_status_indicator: 'Green status LED',
   };
-  return known[code] ?? 'Registered device capability';
+  return known[code] ?? capabilityDefinition(code)?.hardware ?? 'Registered device capability';
 }
 
 export function riskTypeLabel(code: string): string {

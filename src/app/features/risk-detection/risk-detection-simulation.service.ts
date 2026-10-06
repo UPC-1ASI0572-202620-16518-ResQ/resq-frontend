@@ -10,7 +10,8 @@ import {
 } from '../../core/models/resq.models';
 import { BuildingStoreService } from '../../core/services/building-store.service';
 import { RiskEventStoreService } from '../../core/services/risk-event-store.service';
-import { RiskDetectionFacade } from './data-access/risk-detection.facade';
+import { sensorThreshold } from '../../core/models/device-domain';
+import { SensorResponseService } from '../../core/services/sensor-response.service';
 
 export interface RiskSimulationResult {
   classification: MeasurementRiskLevel;
@@ -29,7 +30,7 @@ export class RiskDetectionSimulationService {
   constructor(
     private readonly buildings: BuildingStoreService,
     private readonly events: RiskEventStoreService,
-    private readonly riskDetection: RiskDetectionFacade,
+    private readonly response: SensorResponseService,
   ) {}
 
   simulateMeasurement(deviceId: string, value: number): RiskSimulationResult | undefined {
@@ -37,12 +38,15 @@ export class RiskDetectionSimulationService {
     const space = this.buildings.spaces().find((item) => item.id === device?.spaceId);
     if (!device || !space) return undefined;
 
-    const thresholds = space.thresholds[device.type];
+    const thresholds = sensorThreshold(device, space);
     if (!thresholds) return undefined;
 
-    const classification = this.riskDetection.classifyMeasurement(value, thresholds);
-    const measuredAt = new Date();
-    const updatedDevice = this.buildings.updateLatestReading(device.id, value, measuredAt);
+    // Reuse the same measurement/rule/actuator pipeline as the editor.
+    const responseEvent = this.response.simulateMeasurement(device.id, value);
+    if (!responseEvent || responseEvent.risk === 'Offline') return undefined;
+    const classification = responseEvent.risk;
+    const measuredAt = responseEvent.createdAt;
+    const updatedDevice = this.buildings.devices().find((item) => item.id === device.id);
     if (!updatedDevice) return undefined;
 
     const capability = updatedDevice.capabilities.find((item) => item.kind === 'MEASUREMENT');
@@ -50,7 +54,7 @@ export class RiskDetectionSimulationService {
     const evidence: DetectionEvidence = {
       deviceId: updatedDevice.id,
       capabilityCode: capability?.code ?? `${updatedDevice.type.toLowerCase()}_measurement`,
-      metric: updatedDevice.type,
+      metric: responseEvent.sensor,
       measurementName: capability?.name ?? `${updatedDevice.type} measurement`,
       value,
       unit,
@@ -69,13 +73,12 @@ export class RiskDetectionSimulationService {
     };
 
     if (classification === 'Normal') {
-      const cleared = this.events.clearActiveAlert(
-        correlation,
-        'RETURNED_TO_NORMAL',
-        measuredAt,
-      );
+      const cleared = this.events.clearActiveAlert(correlation, 'RETURNED_TO_NORMAL', measuredAt);
       const safeIncident = this.events.markIncidentSafe(correlation, evidence, measuredAt);
-      if (cleared && updatedDevice.capabilities.some((item) => item.code === 'local_status_display')) {
+      if (
+        cleared &&
+        updatedDevice.capabilities.some((item) => item.code === 'local_status_display')
+      ) {
         this.events.addResponseExecutions([
           automaticExecution(
             cleared.context.riskDetectionId,

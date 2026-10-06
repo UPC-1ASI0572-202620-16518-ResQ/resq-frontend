@@ -15,13 +15,126 @@ export type SpaceType =
   | 'ControlRoom'
   | 'Reception'
   | 'Other';
-export type DeviceType = 'Temperature' | 'Smoke' | 'Gas' | 'Humidity' | 'Motion';
+export type SensorType = 'Temperature' | 'Smoke' | 'Gas' | 'Humidity' | 'Motion';
+export type ActuatorType = 'HVAC' | 'AudibleAlarm' | 'VisualSignal' | 'Servomotor';
+export type DisplayType = 'OLED';
+export type DeviceType = SensorType | ActuatorType | DisplayType;
 export type DeviceStatus = 'Online' | 'Warning' | 'Critical' | 'Offline';
-export type SensorMetric = DeviceType;
+export type SensorMetric = SensorType;
 export type DeviceAdministrativeStatus = 'INACTIVE' | 'ACTIVE' | 'RETIRED';
 export type DeviceConnectivityStatus = 'ONLINE' | 'OFFLINE';
 export type DeviceHealthStatus = 'NORMAL' | 'WARNING' | 'CRITICAL';
 export type CapabilityKind = 'MEASUREMENT' | 'ACTUATION';
+/** Semantic category used to keep sensing, response and local display separate. */
+export type DeviceCapabilityCategory = 'SENSOR' | 'ACTUATOR' | 'DISPLAY';
+export type ActuatorState =
+  | 'ACTIVE'
+  | 'INACTIVE'
+  | 'OPEN'
+  | 'CLOSED'
+  | 'MOVING'
+  | 'ERROR'
+  | 'NORMAL'
+  | 'WARNING'
+  | 'ALERT'
+  | 'PLANNED';
+export type HardwareAvailability = 'MVP' | 'PLANNED' | 'SIMULATED';
+export interface DeviceCatalogEntry {
+  type: DeviceType;
+  category: DeviceCapabilityCategory;
+  label: string;
+  icon: string;
+  unit?: string;
+  capabilityCode: string;
+  hardware: string;
+}
+export const DEVICE_CATALOG: DeviceCatalogEntry[] = [
+  {
+    type: 'Temperature',
+    category: 'SENSOR',
+    label: 'Temperature',
+    icon: 'thermostat',
+    unit: '°C',
+    capabilityCode: 'temperature_measurement',
+    hardware: 'Temperature sensing module',
+  },
+  {
+    type: 'Smoke',
+    category: 'SENSOR',
+    label: 'Smoke',
+    icon: 'cloud',
+    unit: 'ppm',
+    capabilityCode: 'smoke_measurement',
+    hardware: 'MQ-2',
+  },
+  {
+    type: 'Gas',
+    category: 'SENSOR',
+    label: 'Gas',
+    icon: 'air',
+    unit: 'ppm',
+    capabilityCode: 'gas_measurement',
+    hardware: 'MQ-2',
+  },
+  {
+    type: 'Humidity',
+    category: 'SENSOR',
+    label: 'Humidity',
+    icon: 'water_drop',
+    unit: '%',
+    capabilityCode: 'humidity_measurement',
+    hardware: 'Humidity sensing module',
+  },
+  {
+    type: 'Motion',
+    category: 'SENSOR',
+    label: 'Human motion',
+    icon: 'directions_run',
+    unit: 'events',
+    capabilityCode: 'motion_measurement',
+    hardware: 'Motion sensing module',
+  },
+  {
+    type: 'HVAC',
+    category: 'ACTUATOR',
+    label: 'Ventilation / HVAC',
+    icon: 'air',
+    capabilityCode: 'environmental_ventilation',
+    hardware: 'Planned capability · not installed in MVP',
+  },
+  {
+    type: 'AudibleAlarm',
+    category: 'ACTUATOR',
+    label: 'Audible alarm',
+    icon: 'notifications_active',
+    capabilityCode: 'audible_alarm',
+    hardware: 'Active buzzer 5 V',
+  },
+  {
+    type: 'VisualSignal',
+    category: 'ACTUATOR',
+    label: 'Visual signaling',
+    icon: 'lightbulb',
+    capabilityCode: 'visual_status_signaling',
+    hardware: 'Red LED + Green LED',
+  },
+  {
+    type: 'Servomotor',
+    category: 'ACTUATOR',
+    label: 'Servomotor',
+    icon: 'settings',
+    capabilityCode: 'mechanical_servo',
+    hardware: 'Planned capability · not installed in MVP',
+  },
+  {
+    type: 'OLED',
+    category: 'DISPLAY',
+    label: 'OLED display',
+    icon: 'display_settings',
+    capabilityCode: 'local_status_display',
+    hardware: 'SSD1306 OLED',
+  },
+];
 export type AlertSeverity = 'Info' | 'Warning' | 'Critical';
 export type AlertStatus = 'ACTIVE' | 'CLEARED';
 export type AlertClearReason = 'RETURNED_TO_NORMAL' | 'CRITICAL_THRESHOLD_REACHED';
@@ -39,8 +152,14 @@ export type ResponseExecutionStatus =
   | 'REJECTED';
 export type IncidentStatus = 'Open' | 'InProgress' | 'Resolved';
 
-export interface FloorPlanPoint { x: number; y: number; }
-export interface FloorPlanPosition { x: number; y: number; }
+export interface FloorPlanPoint {
+  x: number;
+  y: number;
+}
+export interface FloorPlanPosition {
+  x: number;
+  y: number;
+}
 export type FloorPlanElementType = 'Space' | 'Hallway' | 'Stairs' | 'Restroom' | 'Wall' | 'Door';
 export interface FloorPlanElement {
   id: string;
@@ -53,7 +172,10 @@ export interface FloorPlanElement {
   label?: string;
   spaceId?: string;
 }
-export interface MetricThreshold { warning: number; critical: number; }
+export interface MetricThreshold {
+  warning: number;
+  critical: number;
+}
 export interface SpaceThresholds {
   Temperature?: MetricThreshold;
   Smoke?: MetricThreshold;
@@ -74,9 +196,44 @@ export interface DeviceCapability {
   code: string;
   name: string;
   kind: CapabilityKind;
+  category?: DeviceCapabilityCategory;
   hardware: string;
   unit?: string;
   description?: string;
+  state?: ActuatorState;
+}
+
+export interface ResponseRule {
+  id: string;
+  sensor: SensorType;
+  operator?: '>' | '<' | '>=' | '<=' | '=';
+  threshold?: number;
+  actuatorCapabilities: string[];
+  condition: string;
+  enabled: boolean;
+  /** A configured sensor rule overrides the default template for that sensor. */
+  sourceDeviceId?: string;
+  targets?: ResponseTarget[];
+}
+export type ResponseAction = 'ACTIVATE' | 'OPEN' | 'CLOSE';
+export interface ResponseTarget {
+  deviceId: string;
+  capabilityCode: string;
+  action: ResponseAction;
+}
+export interface ResponseEvent {
+  id: string;
+  sensor: SensorType;
+  value: number;
+  unit: string;
+  risk: RiskStatus;
+  message: string;
+  createdAt: Date;
+  deviceId: string;
+  spaceId: string;
+  ruleIds: string[];
+  targets: ResponseTarget[];
+  simulated: boolean;
 }
 export interface DeviceSpecifications {
   manufacturer: string;
@@ -141,6 +298,7 @@ export interface Device {
   assignment: DeviceAssignment;
 
   externalReference?: string;
+  externalReferenceDetails?: { sourceSystem: string; externalDeviceId: string };
 
   administrativeStatus: DeviceAdministrativeStatus;
 
@@ -157,6 +315,9 @@ export interface Device {
   lastSeen: Date;
 
   readings: SensorReading[];
+  /** Optional override, in the measurement unit (e.g. raw MQ-2 ADC). */
+  sensorThreshold?: MetricThreshold;
+  availability?: HardwareAvailability;
 
   hardwareImageUrl?: string;
 
