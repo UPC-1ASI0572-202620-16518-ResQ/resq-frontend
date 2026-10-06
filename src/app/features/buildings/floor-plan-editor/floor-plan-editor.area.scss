@@ -11,8 +11,7 @@
   border-top: 1px solid #dbe3ee;
 }
 
-.unassigned h4,
-.properties-panel h4 {
+.unassigned h4 {
   margin: 0 0 10px;
   color: #213047;
   font-size: 15px;
@@ -43,35 +42,93 @@
   border-top: 1px solid #dbe3ee;
 }
 
-.device-list h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 9px; color: #213047; font-size: 14px; }
-.device-list h3 mat-icon { width: 17px; height: 17px; font-size: 17px; }
-.device-list > button { width: 100%; display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 7px; background: #fff; color: #334155; text-align: left; cursor: pointer; }
-.device-list > button.active { border-color: #1570ef; background: #f5f9ff; }
-.device-list > button > mat-icon { color: #1570ef; }
-.device-list b,.device-list small,.device-list em { display: block; }
-.device-list b { font-size: 11px; }
-.device-list small { margin-top: 2px; color: #64748b; font-size: 9px; }
-.device-list em { margin-top: 3px; color: #f79009; font-size: 9px; font-style: normal; }
-.device-list > p { color: #98a2b3; font-size: 10px; }
-
-.device-marker { cursor: grab; }
-.device-marker:active { cursor: grabbing; }
-.device-marker.selected circle { stroke: #1570ef; stroke-width: 5; filter: drop-shadow(0 0 4px rgb(21 112 239 / 45%)); }
-.space-shape.stairs-space polygon { fill: #d8e1ea; }
-.space-shape .stair-step { pointer-events: none; fill: #f8fafc; stroke: #8293a5; stroke-width: 1.5; }
-.space-shape .stair-step.alternate { fill: #e5ebf1; }
-.space-shape .stair-direction { pointer-events: none; fill: none; stroke: #344e68; stroke-width: 2.5; }
-
-.properties-panel .apply-area {
+.device-list h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 9px;
+  color: #213047;
+  font-size: 14px;
+}
+.device-list h3 mat-icon {
+  width: 17px;
+  height: 17px;
+  font-size: 17px;
+}
+.device-list > button {
   width: 100%;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: #f05a28;
-  color: #fff;
-  font-weight: 700;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #fff;
+  color: #334155;
+  text-align: left;
   cursor: pointer;
+}
+.device-list > button.active {
+  border-color: #1570ef;
+  background: #f5f9ff;
+}
+.device-list > button > mat-icon {
+  color: #1570ef;
+}
+.device-list b,
+.device-list small,
+.device-list em {
+  display: block;
+}
+.device-list b {
+  font-size: 11px;
+}
+.device-list small {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 9px;
+}
+.device-list em {
+  margin-top: 3px;
+  color: #f79009;
+  font-size: 9px;
+  font-style: normal;
+}
+.device-list > p {
+  color: #98a2b3;
+  font-size: 10px;
+}
+
+.device-marker {
+  cursor: grab;
+}
+.device-marker:active {
+  cursor: grabbing;
+}
+.device-marker.selected circle {
+  stroke: #1570ef;
+  stroke-width: 5;
+  filter: drop-shadow(0 0 4px rgb(21 112 239 / 45%));
+}
+.space-shape.stairs-space polygon {
+  fill: #d8e1ea;
+}
+.space-shape .stair-step {
+  pointer-events: none;
+  fill: #f8fafc;
+  stroke: #8293a5;
+  stroke-width: 1.5;
+}
+.space-shape .stair-step.alternate {
+  fill: #e5ebf1;
+}
+.space-shape .stair-direction {
+  pointer-events: none;
+  fill: none;
+  stroke: #344e68;
+  stroke-width: 2.5;
 }
 
 .floor-selector {
@@ -86,8 +143,19 @@
   color: #344054;
 }
 
-.floor-selector mat-icon { width: 18px; height: 18px; font-size: 18px; color: #1570ef; }
-.floor-selector select { border: 0; outline: 0; background: transparent; color: #344054; font-weight: 700; }
+.floor-selector mat-icon {
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
+  color: #1570ef;
+}
+.floor-selector select {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #344054;
+  font-weight: 700;
+}
 
 .editor-dialog-backdrop {
   position: fixed;

@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Device, MetricThreshold, RiskStatus, Space, riskRank } from '../models/resq.models';
+import { sensorThreshold, capabilityCategory } from '../models/device-domain';
 
 @Injectable({ providedIn: 'root' })
 export class RiskEvaluationService {
@@ -10,13 +11,25 @@ export class RiskEvaluationService {
     return 'Normal';
   }
   evaluateDevice(device: Device, space: Space): RiskStatus {
-    if (device.status === 'Offline') return 'Offline';
+    if (device.connectivityStatus === 'OFFLINE') return 'Offline';
+    if (!device.capabilities.some((cap) => capabilityCategory(cap) === 'SENSOR')) return 'Normal';
     const last = device.readings.at(-1);
-    return last ? this.evaluateMetric(last.value, space.thresholds[last.metric]) : 'Offline';
+    return last ? this.evaluateMetric(last.value, sensorThreshold(device, space)) : 'Normal';
   }
   evaluateSpace(space: Space): RiskStatus {
-    if (space.devices.length > 0 && space.devices.every(device => device.status === 'Offline')) return 'Offline';
-    return space.devices.map(device => this.evaluateDevice(device, space)).reduce((highest, current) => riskRank[current] > riskRank[highest] ? current : highest, 'Normal' as RiskStatus);
+    const sensors = space.devices.filter((device) =>
+      device.capabilities.some((cap) => capabilityCategory(cap) === 'SENSOR'),
+    );
+    if (sensors.length > 0 && sensors.every((device) => device.connectivityStatus === 'OFFLINE'))
+      return 'Offline';
+    return sensors
+      .map((device) => this.evaluateDevice(device, space))
+      .reduce(
+        (highest, current) => (riskRank[current] > riskRank[highest] ? current : highest),
+        'Normal' as RiskStatus,
+      );
   }
-  getRiskStatus(space: Space): RiskStatus { return this.evaluateSpace(space); }
+  getRiskStatus(space: Space): RiskStatus {
+    return this.evaluateSpace(space);
+  }
 }

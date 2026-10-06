@@ -682,6 +682,7 @@ import {
               ================================================== -->
 
               <footer class="building-actions">
+                @if(building.floors[0];as firstFloor){<a class="secondary-action" [routerLink]="['/buildings',building.id,'floors',firstFloor.id,'editor']"><mat-icon>edit</mat-icon>Edit Plan</a>}
 
                 <a
                   class="primary-action"
@@ -1874,6 +1875,7 @@ import {
       gap: 9px;
       padding: 0 14px 14px;
     }
+    .building-actions > a:first-child { grid-column: 1 / -1; }
 
 
     .building-actions a,

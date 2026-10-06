@@ -35,6 +35,8 @@ import {
 } from '../models/resq.models';
 
 import { BuildingStoreService } from './building-store.service';
+import { SensorResponseService } from './sensor-response.service';
+import { capabilityCategory } from '../models/device-domain';
 
 @Injectable({ providedIn: 'root' })
 export class ResqStore {
@@ -48,42 +50,114 @@ export class ResqStore {
 export class BuildingService {
   private readonly store = inject(BuildingStoreService);
   readonly buildings = this.store.buildings;
-  getBuildings(): Observable<Building[]> { return of(this.store.buildings()).pipe(delay(150)); }
-  getBuildingById(id: string): Observable<Building | undefined> { return of(this.store.getBuilding(id)).pipe(delay(100)); }
+  getBuildings(): Observable<Building[]> {
+    return of(this.store.buildings()).pipe(delay(150));
+  }
+  getBuildingById(id: string): Observable<Building | undefined> {
+    return of(this.store.getBuilding(id)).pipe(delay(100));
+  }
 }
 
 @Injectable({ providedIn: 'root' })
 export class FloorService {
   private readonly store = inject(BuildingStoreService);
-  getFloorsByBuilding(buildingId: string): Observable<Floor[]> { return of(this.store.getBuilding(buildingId)?.floors ?? []).pipe(delay(100)); }
-  getFloorById(id: string): Observable<Floor | undefined> { return of(this.store.floors().find(item => item.id === id)).pipe(delay(80)); }
+  getFloorsByBuilding(buildingId: string): Observable<Floor[]> {
+    return of(this.store.getBuilding(buildingId)?.floors ?? []).pipe(delay(100));
+  }
+  getFloorById(id: string): Observable<Floor | undefined> {
+    return of(this.store.floors().find((item) => item.id === id)).pipe(delay(80));
+  }
 }
 
 @Injectable({ providedIn: 'root' })
 export class SpaceService {
   private readonly store = inject(BuildingStoreService);
-  getSpaces(): Observable<Space[]> { return of(this.store.spaces()).pipe(delay(120)); }
-  getSpacesByFloor(floorId: string): Observable<Space[]> { return of(this.store.spaces().filter(item => item.floorId === floorId)).pipe(delay(100)); }
-  getSpaceById(id: string): Observable<Space | undefined> { return of(this.store.spaces().find(item => item.id === id)).pipe(delay(80)); }
+  private readonly response = inject(SensorResponseService);
+  getSpaces(): Observable<Space[]> {
+    return of(this.store.spaces()).pipe(delay(120));
+  }
+  getSpacesByFloor(floorId: string): Observable<Space[]> {
+    return of(this.store.spaces().filter((item) => item.floorId === floorId)).pipe(delay(100));
+  }
+  getSpaceById(id: string): Observable<Space | undefined> {
+    return of(this.store.spaces().find((item) => item.id === id)).pipe(delay(80));
+  }
   updateConfiguration(
     id: string,
     sensitivity: Space['sensitivity'],
     thresholds: SpaceThresholds,
     thresholdProfiles?: Space['thresholdProfiles'],
   ): void {
-    const space = this.store.spaces().find(item => item.id === id);
-    if (space) this.store.updateSpace(space.buildingId, space.floorId, {
-      ...space,
-      sensitivity,
-      thresholds,
-      thresholdProfiles: thresholdProfiles ?? space.thresholdProfiles,
-    });
+    const space = this.store.spaces().find((item) => item.id === id);
+    if (
+      Object.values(thresholds).some(
+        (value) =>
+          value &&
+          (!Number.isFinite(value.warning) ||
+            !Number.isFinite(value.critical) ||
+            value.warning > value.critical),
+      )
+    )
+      throw new Error('Warning thresholds must not exceed critical thresholds.');
+    if (space)
+      this.store.updateSpace(space.buildingId, space.floorId, {
+        ...space,
+        sensitivity,
+        thresholds,
+        thresholdProfiles: thresholdProfiles ?? space.thresholdProfiles,
+      });
+    if (space) this.response.reconcile(space.id);
   }
 }
 
 @Injectable({ providedIn: 'root' })
 export class DeviceService {
   private readonly store = inject(BuildingStoreService);
+  private readonly response = inject(SensorResponseService);
+  saveDevice(device: Device): void {
+    if (!device.name.trim() || !device.deviceCode.trim())
+      throw new Error('Name and code are required.');
+    if (
+      this.store
+        .devices()
+        .some(
+          (item) =>
+            item.id !== device.id &&
+            item.deviceCode.toUpperCase() === device.deviceCode.toUpperCase(),
+        )
+    )
+      throw new Error('Device code is already in use.');
+    const space = this.store.spaces().find((item) => item.id === device.spaceId);
+    if (!space) throw new Error('Choose an existing area.');
+    if (
+      device.sensorThreshold &&
+      (!Number.isFinite(device.sensorThreshold.warning) ||
+        !Number.isFinite(device.sensorThreshold.critical) ||
+        device.sensorThreshold.warning > device.sensorThreshold.critical)
+    )
+      throw new Error('Warning threshold must not exceed critical threshold.');
+    const old = this.store.devices().find((item) => item.id === device.id);
+    const updated = {
+      ...device,
+      assignment: {
+        buildingId: space.buildingId,
+        floorId: space.floorId,
+        zoneId: space.id,
+        spaceId: space.id,
+      },
+      updatedAt: new Date(),
+      version: old ? old.version + 1 : device.version,
+    };
+    if (old) this.store.updateDevice(updated);
+    else this.store.createDevice(updated);
+    this.response.reconcile(space.id);
+    if (old && old.spaceId !== space.id) this.response.reconcile(old.spaceId);
+  }
+  deleteDevice(id: string): void {
+    const spaceId = this.store.devices().find((device) => device.id === id)?.spaceId;
+    this.store.deleteDevice(id);
+    if (spaceId) this.response.reconcile(spaceId);
+  }
   getDevices(): Observable<Device[]> {
     return of(this.store.devices()).pipe(delay(120));
   }
@@ -94,24 +168,33 @@ export class DeviceService {
     return of(this.store.devices().filter((item) => item.spaceId === spaceId)).pipe(delay(80));
   }
   getDevicesByBuilding(buildingId: string): Observable<Device[]> {
-    return of(this.store.devices().filter((item) => item.assignment.buildingId === buildingId)).pipe(delay(80));
+    return of(
+      this.store.devices().filter((item) => item.assignment.buildingId === buildingId),
+    ).pipe(delay(80));
   }
   getDevicesByFloor(floorId: string): Observable<Device[]> {
-    return of(this.store.devices().filter((item) => item.assignment.floorId === floorId)).pipe(delay(80));
+    return of(this.store.devices().filter((item) => item.assignment.floorId === floorId)).pipe(
+      delay(80),
+    );
   }
   getDeviceCapabilities(deviceId: string): Observable<DeviceCapability[]> {
-    return of(this.store.devices().find((item) => item.id === deviceId)?.capabilities ?? []).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === deviceId)?.capabilities ?? []).pipe(
+      delay(80),
+    );
   }
   getDeviceMeasurements(deviceId: string): Observable<SensorReading[]> {
-    return of(this.store.devices().find((item) => item.id === deviceId)?.readings ?? []).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === deviceId)?.readings ?? []).pipe(
+      delay(80),
+    );
   }
   getStatusSummary(): Observable<DeviceStatusSummary> {
     return of({
       total: this.store.devices().length,
       online: this.store.devices().filter((item) => item.connectivityStatus === 'ONLINE').length,
-      warningDegraded: this.store.devices().filter(
-        (item) => item.healthStatus === 'WARNING' || item.healthStatus === 'CRITICAL',
-      ).length,
+      warningDegraded: this.store
+        .devices()
+        .filter((item) => item.healthStatus === 'WARNING' || item.healthStatus === 'CRITICAL')
+        .length,
       offline: this.store.devices().filter((item) => item.connectivityStatus === 'OFFLINE').length,
     }).pipe(delay(80));
   }
@@ -127,9 +210,7 @@ export class AlertService {
       .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime()),
   );
   readonly latestAlerts = computed(() => this.listItems().slice(0, 3));
-  readonly recentAlertCount = computed(
-    () => this.filterByPeriod(this.listItems(), '24h').length,
-  );
+  readonly recentAlertCount = computed(() => this.filterByPeriod(this.listItems(), '24h').length);
   getAlerts(): Observable<AlertListItem[]> {
     return of(this.listItems()).pipe(delay(120));
   }
@@ -148,9 +229,9 @@ export class AlertService {
         detection.evidence.some((evidence) => evidence.deviceId === deviceId),
       ).map((detection) => detection.riskDetectionId),
     );
-    return of(
-      this.listItems().filter((item) => detectionIds.has(item.riskDetectionId)),
-    ).pipe(delay(80));
+    return of(this.listItems().filter((item) => detectionIds.has(item.riskDetectionId))).pipe(
+      delay(80),
+    );
   }
   getRecentAlerts(period: AlertPeriod): Observable<AlertListItem[]> {
     return of(this.filterByPeriod(this.listItems(), period)).pipe(delay(80));
@@ -187,7 +268,9 @@ export class AlertService {
     const responseExecutions = RESPONSE_EXECUTIONS.filter(
       (execution) => execution.riskDetectionId === alert.context.riskDetectionId,
     ).map((execution) => {
-      const device = this.store.devices().find((item) => item.id === execution.action.targetDeviceId);
+      const device = this.store
+        .devices()
+        .find((item) => item.id === execution.action.targetDeviceId);
       return {
         ...execution,
         targetDeviceName: device?.name ?? 'Device unavailable',
@@ -205,18 +288,14 @@ export class AlertService {
     const building = this.store.buildings().find((item) => item.id === alert.context.buildingId);
     const evidence = detection?.evidence[0];
     const device = this.store.devices().find((item) => item.id === evidence?.deviceId);
-    const capability = device?.capabilities.find(
-      (item) => item.code === evidence?.capabilityCode,
-    );
+    const capability = device?.capabilities.find((item) => item.code === evidence?.capabilityCode);
     const incident = INCIDENTS.find((item) => item.alertIds.includes(alert.alertId));
     const delivered = alert.deliveries.filter((item) => item.status === 'DELIVERED').length;
     const pending = alert.deliveries.filter((item) => item.status === 'PENDING').length;
     const failed = alert.deliveries.filter((item) => item.status === 'FAILED').length;
     const deliveryStatus = failed ? 'FAILED' : pending ? 'PENDING' : 'DELIVERED';
     const title =
-      alert.context.riskTypeCode === 'GAS_LEAK'
-        ? 'High gas level detected'
-        : 'Fire risk detected';
+      alert.context.riskTypeCode === 'GAS_LEAK' ? 'High gas level detected' : 'Fire risk detected';
     const riskTypeLabel = this.riskTypeLabel(alert.context.riskTypeCode);
     return {
       id: alert.alertId,
@@ -310,14 +389,19 @@ export class SearchService {
     const q = query.trim().toLowerCase();
     if (q.length < 2) return of([]);
     const results: SearchResult[] = [
-      ...this.store.buildings().filter((item) => item.name.toLowerCase().includes(q)).map((item) => ({
-        id: item.id,
-        type: 'Building' as const,
-        title: item.name,
-        subtitle: item.address,
-        route: `/buildings/${item.id}`,
-      })),
-      ...this.store.spaces().filter((item) => `${item.name} ${item.roomNumber}`.toLowerCase().includes(q))
+      ...this.store
+        .buildings()
+        .filter((item) => item.name.toLowerCase().includes(q))
+        .map((item) => ({
+          id: item.id,
+          type: 'Building' as const,
+          title: item.name,
+          subtitle: item.address,
+          route: `/buildings/${item.id}`,
+        })),
+      ...this.store
+        .spaces()
+        .filter((item) => `${item.name} ${item.roomNumber}`.toLowerCase().includes(q))
         .slice(0, 6)
         .map((item) => ({
           id: item.id,
@@ -326,11 +410,13 @@ export class SearchService {
           subtitle: `Room ${item.roomNumber ?? '—'}`,
           route: `/spaces/${item.id}`,
         })),
-      ...this.store.devices().filter((item) =>
-        `${item.name} ${item.deviceCode} ${item.specifications.model} ${item.specifications.serialNumber}`
-          .toLowerCase()
-          .includes(q),
-      )
+      ...this.store
+        .devices()
+        .filter((item) =>
+          `${item.name} ${item.deviceCode} ${item.specifications.model} ${item.specifications.serialNumber}`
+            .toLowerCase()
+            .includes(q),
+        )
         .slice(0, 6)
         .map((item) => ({
           id: item.id,

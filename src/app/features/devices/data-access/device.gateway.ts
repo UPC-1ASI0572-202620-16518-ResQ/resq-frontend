@@ -14,6 +14,8 @@ import {
 import {
   CapabilityKind,
   DeviceAdministrativeStatus,
+  DeviceCapabilityCategory,
+  ActuatorState,
 } from '../../../core/models/resq.models';
 
 import {
@@ -52,6 +54,8 @@ export interface DeviceCatalogCapability {
   kind: CapabilityKind;
 
   unit?: string;
+  category?: DeviceCapabilityCategory;
+  state?: ActuatorState;
 }
 
 export interface DeviceCatalogRecord {

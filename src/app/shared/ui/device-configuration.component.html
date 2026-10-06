@@ -1,0 +1,300 @@
+<div class="config-body">
+  @if (!current()) {
+    <section class="config-section">
+      <h3>Device category</h3>
+      <div class="category-options">
+        <button
+          type="button"
+          [class.selected]="category === 'SENSOR'"
+          (click)="changeCategory('SENSOR')"
+        >
+          <mat-icon>sensors</mat-icon><b>Sensor</b><small>Measurements</small>
+        </button>
+        <button
+          type="button"
+          [class.selected]="category === 'ACTUATOR'"
+          (click)="changeCategory('ACTUATOR')"
+        >
+          <mat-icon>bolt</mat-icon><b>Actuator</b><small>Response actions</small>
+        </button>
+        <button
+          type="button"
+          [class.selected]="category === 'DISPLAY'"
+          (click)="changeCategory('DISPLAY')"
+        >
+          <mat-icon>display_settings</mat-icon><b>Display</b><small>Local information</small>
+        </button>
+      </div>
+      <div class="type-options">
+        @for (item of options(); track item.type) {
+          <button
+            type="button"
+            [class.selected]="type === item.type"
+            (click)="changeType(item.type)"
+          >
+            <mat-icon>{{ item.icon }}</mat-icon
+            >{{ item.label }}
+          </button>
+        }
+      </div>
+    </section>
+  }
+  <section class="device-summary">
+    <span class="summary-icon"
+      ><mat-icon>{{ definition().icon }}</mat-icon></span
+    >
+    <div>
+      <h3>{{ current()?.displayName || current()?.name || definition().label }}</h3>
+      <small>{{ definition().category }} · {{ current()?.availability || 'SIMULATED' }}</small>
+    </div>
+    <resq-status-badge [status]="current()?.status || 'Online'" />
+  </section>
+  @if (type === 'HVAC' || type === 'Servomotor') {
+    <p class="notice">
+      Future capability. State changes shown here are simulation; this hardware is not installed in
+      the physical MVP.
+    </p>
+  }
+  <section class="config-section">
+    <h3>Information & location</h3>
+    <div class="field-grid">
+      <label>Name<input [(ngModel)]="name" [placeholder]="definition().label" /></label>
+      <label>Code<input [(ngModel)]="code" placeholder="Generated automatically" /></label>
+      <label class="wide"
+        >Display Name<input [(ngModel)]="displayName" placeholder="Optional friendly name"
+      /></label>
+      <label class="wide"
+        >Description<input [(ngModel)]="description" placeholder="Purpose or installation details"
+      /></label>
+      <label class="wide"
+        >Assigned area<select [(ngModel)]="spaceId" (ngModelChange)="loadThreshold()">
+          @for (space of spaces(); track space.id) {
+            <option [value]="space.id">{{ space.name }} · {{ space.roomNumber }}</option>
+          }
+        </select></label
+      >
+    </div>
+  </section>
+  @if (isSensor()) {
+    <section class="config-section">
+      <h3>Measurement configuration</h3>
+      <div class="field-grid">
+        <label>Unit<input [(ngModel)]="unit" /></label
+        ><label class="check"
+          ><input
+            type="checkbox"
+            [(ngModel)]="useAreaThreshold"
+            (ngModelChange)="loadThreshold()"
+          />Use area thresholds</label
+        >
+        <label
+          >Warning threshold<input
+            type="number"
+            [(ngModel)]="warning"
+            [disabled]="useAreaThreshold"
+        /></label>
+        <label
+          >Critical threshold<input
+            type="number"
+            [(ngModel)]="critical"
+            [disabled]="useAreaThreshold"
+        /></label>
+      </div>
+      <p class="help">
+        Thresholds use {{ unit }}. Disable area thresholds to configure this sensor individually.
+      </p>
+    </section>
+  }
+  @if (current(); as device) {
+    <section class="config-section">
+      <h3>Capabilities & current state</h3>
+      <div class="capability-cards">
+        @for (cap of device.capabilities; track cap.id) {
+          <article>
+            <div>
+              <b>{{ cap.name }}</b
+              ><small
+                >{{ cap.category || (cap.kind === 'MEASUREMENT' ? 'SENSOR' : 'ACTUATOR') }} ·
+                {{ cap.hardware }}</small
+              >
+            </div>
+            <resq-status-badge [status]="cap.state || device.status" />
+          </article>
+        }
+      </div>
+      @if (category === 'DISPLAY') {
+        <p class="help">
+          The OLED reflects the aggregate risk of its area: NORMAL, WARNING or ALERT.
+        </p>
+      }
+      @if (type === 'Servomotor') {
+        <p class="help">
+          Mechanical actions OPEN/CLOSE are configured in sensor rules. The normal return state is
+          CLOSED.
+        </p>
+      }
+    </section>
+    <section class="config-section">
+      <h3>Response rules</h3>
+      <div class="rule-list">
+        @for (rule of rules(); track rule.id) {
+          <article>
+            <div>
+              <b>{{ rule.condition }}</b
+              ><small
+                >{{ rule.sensor }} {{ rule.operator }}
+                {{ rule.threshold ?? 'area warning threshold' }} ·
+                {{ rule.enabled ? 'Enabled' : 'Disabled' }}</small
+              >
+            </div>
+            @if (isSensor()) {
+              <button type="button" (click)="editRule(rule)">Edit</button
+              ><button type="button" (click)="toggleRule(rule)">
+                {{ rule.enabled ? 'Disable' : 'Enable' }}
+              </button>
+              @if (rule.sourceDeviceId) {
+                <button type="button" class="danger-text" (click)="response.deleteRule(rule.id)">
+                  Delete
+                </button>
+              }
+            }
+          </article>
+        } @empty {
+          <p class="help">No response rules associated with this device.</p>
+        }
+      </div>
+      @if (isSensor()) {
+        <details
+          class="advanced"
+          [open]="ruleEditorOpen()"
+          (toggle)="ruleEditorOpen.set($any($event.target).open)"
+        >
+          <summary>{{ ruleId ? 'Edit response rule' : 'Configure response rule' }}</summary>
+          <div class="field-grid">
+            <label class="wide"
+              >Rule name<input [(ngModel)]="ruleName" placeholder="Area response"
+            /></label>
+            <label
+              >Operator<select [(ngModel)]="operator">
+                @for (op of operators; track op) {
+                  <option [value]="op">{{ op }}</option>
+                }
+              </select></label
+            >
+            <label
+              >Threshold ({{ unit }})<input
+                type="number"
+                [(ngModel)]="ruleThreshold"
+                placeholder="Area warning threshold"
+            /></label>
+            <label class="check wide"
+              ><input type="checkbox" [(ngModel)]="ruleEnabled" />Enabled</label
+            >
+          </div>
+          <div class="target-list">
+            @for (option of targetOptions(); track option.key) {
+              <div>
+                <label class="check"
+                  ><input
+                    type="checkbox"
+                    [checked]="hasTarget(option.key)"
+                    (change)="toggleTarget(option)"
+                  />{{ option.label }}</label
+                >
+                @if (option.servo && hasTarget(option.key)) {
+                  <select
+                    [ngModel]="action(option.key)"
+                    (ngModelChange)="setAction(option.key, $event)"
+                  >
+                    <option value="OPEN">Open</option>
+                    <option value="CLOSE">Close</option>
+                  </select>
+                }
+              </div>
+            } @empty {
+              <p class="help">Create an actuator in this area to select a response target.</p>
+            }
+          </div>
+          <div class="inline-actions">
+            <button type="button" class="primary" (click)="saveRule()">Save rule</button
+            ><button type="button" (click)="newRule()">New rule</button>
+          </div>
+        </details>
+      }
+    </section>
+    @if (isSensor()) {
+      <section class="config-section">
+        <h3>Simulate a measurement</h3>
+        <div class="simulation-row">
+          <label>Value ({{ unit }})<input type="number" [(ngModel)]="measurement" /></label
+          ><button type="button" class="primary" (click)="simulate()">
+            <mat-icon>play_arrow</mat-icon>Evaluate
+          </button>
+          <div>
+            <small>Latest measurement</small
+            ><b>{{ device.readings.at(-1)?.value ?? '—' }} {{ device.readings.at(-1)?.unit }}</b>
+          </div>
+        </div>
+      </section>
+    }
+    @if (events().length) {
+      <section class="config-section">
+        <h3>Response events</h3>
+        <div class="rule-list">
+          @for (event of events(); track event.id) {
+            <article>
+              <div>
+                <b>{{ event.sensor }} · {{ event.value }} {{ event.unit }}</b
+                ><small
+                  >{{ event.message }} · {{ event.createdAt | date: 'shortTime' }} ·
+                  {{ event.simulated ? 'Simulation' : 'Measurement' }}</small
+                >
+              </div>
+              <resq-status-badge [status]="event.risk" />
+            </article>
+          }
+        </div>
+      </section>
+    }
+  }
+  <details class="advanced">
+    <summary>Hardware reference & position</summary>
+    <div class="field-grid">
+      <label>Manufacturer<input [(ngModel)]="manufacturer" /></label
+      ><label>Model<input [(ngModel)]="model" /></label
+      ><label class="wide">Serial number<input [(ngModel)]="serialNumber" /></label>
+      <label class="check wide"
+        ><input type="checkbox" [(ngModel)]="positioned" />Position on floor plan</label
+      >
+      @if (current()) {
+        <label>X<input type="number" [(ngModel)]="x" /></label
+        ><label>Y<input type="number" [(ngModel)]="y" /></label>
+      }
+    </div>
+  </details>
+  @if (error()) {
+    <p class="form-error" role="alert">{{ error() }}</p>
+  }
+  @if (confirmDelete()) {
+    <div class="delete-confirm">
+      <b>Delete this device and remove its rule references?</b
+      ><button type="button" class="danger" (click)="deleteDevice()">Confirm deletion</button
+      ><button type="button" (click)="confirmDelete.set(false)">Cancel</button>
+    </div>
+  }
+</div>
+<footer class="config-footer">
+  <div>
+    @if (current()) {
+      <button type="button" class="danger-text" (click)="confirmDelete.set(true)">
+        <mat-icon>delete_outline</mat-icon>Delete</button
+      ><button type="button" (click)="removePosition()">Remove from plan</button>
+    }
+  </div>
+  <div>
+    <button type="button" (click)="closed.emit()">Close</button
+    ><button type="button" class="primary" (click)="save()">
+      <mat-icon>check</mat-icon>{{ current() ? 'Apply changes' : 'Create device' }}
+    </button>
+  </div>
+</footer>

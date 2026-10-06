@@ -1,33 +1,14 @@
-import {
-  Injectable,
-  inject,
-  signal,
-} from '@angular/core';
+import { Injectable, inject, computed } from '@angular/core';
 
-import {
-  Observable,
-  delay,
-  of,
-  throwError,
-} from 'rxjs';
+import { Observable, delay, of, throwError } from 'rxjs';
 
-import {
-  ApiError,
-} from '../../../core/api/api-error';
+import { ApiError } from '../../../core/api/api-error';
 
-import {
-  paginateInMemory,
-  PagedResult,
-  PageRequest,
-} from '../../../core/api/pagination';
+import { paginateInMemory, PagedResult, PageRequest } from '../../../core/api/pagination';
 
-import {
-  DEVICES,
-} from '../../../core/mock-data/resq.mock';
+import { DEVICES } from '../../../core/mock-data/resq.mock';
 
-import {
-  DeviceAdministrativeStatus,
-} from '../../../core/models/resq.models';
+import { DeviceAdministrativeStatus } from '../../../core/models/resq.models';
 
 import {
   AssignDeviceToLocationResourceDto,
@@ -46,428 +27,255 @@ import {
   VersionedDeviceCatalogRecord,
 } from './device.gateway';
 
+import { etagForVersion, mapMockDeviceToCatalog, versionFromEtag, withEtag } from './device.mapper';
 import {
-  etagForVersion,
-  mapMockDeviceToCatalog,
-  versionFromEtag,
-  withEtag,
-} from './device.mapper';
+  capabilityDefinition,
+  capabilityCategory,
+  makeDevice,
+} from '../../../core/models/device-domain';
+import { SensorResponseService } from '../../../core/services/sensor-response.service';
+import { Device } from '../../../core/models/resq.models';
 import { BuildingStoreService } from '../../../core/services/building-store.service';
 
 @Injectable()
-export class MockDeviceGateway
-  implements DeviceGateway {
-
+export class MockDeviceGateway implements DeviceGateway {
   private readonly buildingStore = inject(BuildingStoreService);
+  private readonly response = inject(SensorResponseService);
 
-  private readonly items =
-    signal<DeviceCatalogRecord[]>(
-      DEVICES.map(
-        mapMockDeviceToCatalog,
-      ),
-    );
+  private readonly items = computed(() => this.buildingStore.devices().map(mapMockDeviceToCatalog));
 
   getDevices(
-    filters:
-      DeviceQueryFilters,
+    filters: DeviceQueryFilters,
 
-    page:
-      PageRequest,
-  ):
-    Observable<
-      PagedResult<DeviceCatalogRecord>
-    > {
+    page: PageRequest,
+  ): Observable<PagedResult<DeviceCatalogRecord>> {
+    const normalizedPage = normalizePage(page);
 
-    const normalizedPage =
-      normalizePage(
-        page,
+    const filtered = this.catalogItems()
+      .filter(
+        (device) => !filters.buildingId || device.assignment.buildingId === filters.buildingId,
+      )
+      .filter((device) => !filters.zoneId || device.assignment.zoneId === filters.zoneId)
+      .filter(
+        (device) =>
+          !filters.administrativeStatus ||
+          device.administrativeStatus === filters.administrativeStatus,
+      )
+      .sort(
+        (left, right) =>
+          left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id),
       );
 
-    const filtered =
-      this.catalogItems()
-        .filter(
-          device =>
-            !filters.buildingId ||
-            device.assignment
-              .buildingId ===
-              filters.buildingId,
-        )
-        .filter(
-          device =>
-            !filters.zoneId ||
-            device.assignment
-              .zoneId ===
-              filters.zoneId,
-        )
-        .filter(
-          device =>
-            !filters
-              .administrativeStatus ||
-            device
-              .administrativeStatus ===
-              filters
-                .administrativeStatus,
-        )
-        .sort(
-          (
-            left,
-            right,
-          ) =>
-            left.createdAt
-              .getTime() -
-              right.createdAt
-                .getTime() ||
-            left.id.localeCompare(
-              right.id,
-            ),
-        );
-
-    return of(
-      paginateInMemory(
-        filtered,
-        normalizedPage,
-      ),
-    ).pipe(
-      delay(80),
-    );
+    return of(paginateInMemory(filtered, normalizedPage)).pipe(delay(80));
   }
 
-  getDeviceById(
-    deviceId: string,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-      | undefined
-    > {
+  getDeviceById(deviceId: string): Observable<VersionedDeviceCatalogRecord | undefined> {
+    const device = this.catalogItems().find((item) => item.id === deviceId);
 
-    const device =
-      this.catalogItems().find(
-        item =>
-          item.id ===
-          deviceId,
-      );
-
-    return of(
-      device
-        ? withEtag(
-            cloneDevice(
-              device,
-            ),
-          )
-        : undefined,
-    ).pipe(
-      delay(60),
-    );
+    return of(device ? withEtag(cloneDevice(device)) : undefined).pipe(delay(60));
   }
 
   getDeviceByExternalReference(
-    reference:
-      ExternalDeviceReferenceQuery,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-      | undefined
-    > {
+    reference: ExternalDeviceReferenceQuery,
+  ): Observable<VersionedDeviceCatalogRecord | undefined> {
+    const sourceSystem = reference.sourceSystem.trim().toLowerCase();
 
-    const sourceSystem =
-      reference.sourceSystem
-        .trim()
-        .toLowerCase();
+    const externalDeviceId = reference.externalDeviceId.trim();
 
-    const externalDeviceId =
-      reference.externalDeviceId
-        .trim();
-
-    const device =
-      this.items().find(
-        item =>
-          item.externalReference
-            ?.sourceSystem
-            .toLowerCase() ===
-            sourceSystem &&
-          item.externalReference
-            .externalDeviceId ===
-            externalDeviceId,
-      );
-
-    return of(
-      device
-        ? withEtag(
-            cloneDevice(
-              device,
-            ),
-          )
-        : undefined,
-    ).pipe(
-      delay(60),
+    const device = this.items().find(
+      (item) =>
+        item.externalReference?.sourceSystem.toLowerCase() === sourceSystem &&
+        item.externalReference.externalDeviceId === externalDeviceId,
     );
+
+    return of(device ? withEtag(cloneDevice(device)) : undefined).pipe(delay(60));
   }
 
-  registerDevice(
-    resource:
-      RegisterDeviceResourceDto,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-    > {
+  registerDevice(resource: RegisterDeviceResourceDto): Observable<VersionedDeviceCatalogRecord> {
+    const validationError = validateRegistration(resource);
 
-    const validationError =
-      validateRegistration(
-        resource,
-      );
-
-    if (
-      validationError
-    ) {
-      return throwError(
-        () =>
-          validationError,
-      );
+    if (validationError) {
+      return throwError(() => validationError);
     }
 
-    const deviceCode =
-      normalizeDeviceCode(
-        resource.deviceCode,
-      );
+    const deviceCode = normalizeDeviceCode(resource.deviceCode);
 
-    if (
-      this.items().some(
-        item =>
-          item.deviceCode ===
-          deviceCode,
-      )
-    ) {
-      return throwError(
-        () =>
-          conflict(
-            'DEVICE_CODE_ALREADY_EXISTS',
-            'Device code is already registered.',
-          ),
+    if (this.items().some((item) => item.deviceCode === deviceCode)) {
+      return throwError(() =>
+        conflict('DEVICE_CODE_ALREADY_EXISTS', 'Device code is already registered.'),
       );
     }
 
     if (
       resource.externalReference &&
       this.items().some(
-        item =>
-          item.externalReference
-            ?.sourceSystem
-            .toLowerCase() ===
-            resource
-              .externalReference!
-              .sourceSystem
-              .trim()
-              .toLowerCase() &&
-          item.externalReference
-            .externalDeviceId ===
-            resource
-              .externalReference!
-              .externalDeviceId
-              .trim(),
+        (item) =>
+          item.externalReference?.sourceSystem.toLowerCase() ===
+            resource.externalReference!.sourceSystem.trim().toLowerCase() &&
+          item.externalReference.externalDeviceId ===
+            resource.externalReference!.externalDeviceId.trim(),
       )
     ) {
-
-      return throwError(
-        () =>
-          conflict(
-            'EXTERNAL_REFERENCE_ALREADY_EXISTS',
-            'The external device reference is already registered.',
-          ),
+      return throwError(() =>
+        conflict(
+          'EXTERNAL_REFERENCE_ALREADY_EXISTS',
+          'The external device reference is already registered.',
+        ),
       );
     }
 
-    const now =
-      new Date();
+    const now = new Date();
 
-    const id =
-      createLocalId();
+    const id = createLocalId();
 
-    const device:
-      DeviceCatalogRecord = {
-
+    const device: DeviceCatalogRecord = {
       id,
 
-      organizationId:
-        'securitybear',
+      organizationId: 'securitybear',
 
       deviceCode,
 
-      name:
-        resource.name.trim(),
+      name: resource.name.trim(),
 
-      description:
-        optionalText(
-          resource.description,
-        ),
+      description: optionalText(resource.description),
 
       specifications: {
+        manufacturer: optionalText(resource.specifications.manufacturer ?? undefined),
 
-        manufacturer:
-          optionalText(
-            resource
-              .specifications
-              .manufacturer ??
-            undefined,
-          ),
+        model: optionalText(resource.specifications.model ?? undefined),
 
-        model:
-          optionalText(
-            resource
-              .specifications
-              .model ??
-            undefined,
-          ),
-
-        serialNumber:
-          optionalText(
-            resource
-              .specifications
-              .serialNumber ??
-            undefined,
-          ),
+        serialNumber: optionalText(resource.specifications.serialNumber ?? undefined),
       },
 
       assignment: {
+        buildingId: resource.assignment.buildingId,
 
-        buildingId:
-          resource.assignment
-            .buildingId,
-
-        zoneId:
-          optionalText(
-            resource.assignment
-              .zoneId ??
-            undefined,
-          ),
+        zoneId: optionalText(resource.assignment.zoneId ?? undefined),
       },
 
-      externalReference:
-        resource.externalReference
-          ? {
-              sourceSystem:
-                resource
-                  .externalReference
-                  .sourceSystem
-                  .trim()
-                  .toLowerCase(),
+      externalReference: resource.externalReference
+        ? {
+            sourceSystem: resource.externalReference.sourceSystem.trim().toLowerCase(),
 
-              externalDeviceId:
-                resource
-                  .externalReference
-                  .externalDeviceId
-                  .trim(),
-            }
-          : undefined,
+            externalDeviceId: resource.externalReference.externalDeviceId.trim(),
+          }
+        : undefined,
 
-      administrativeStatus:
-        'INACTIVE',
+      administrativeStatus: 'INACTIVE',
 
-      capabilities:
-        resource.capabilities.map(
-          (
-            capability,
-            index,
-          ) => ({
+      capabilities: resource.capabilities.map((capability, index) => ({
+        id: `${id}-cap-${index + 1}`,
 
-            id:
-              `${id}-cap-${index + 1}`,
+        code: capability.code.trim(),
 
-            code:
-              capability.code.trim(),
+        kind: capability.kind,
 
-            kind:
-              capability.kind,
+        unit:
+          capability.kind === 'MEASUREMENT'
+            ? optionalText(capability.unit ?? undefined)
+            : undefined,
+      })),
 
-            unit:
-              capability.kind ===
-              'MEASUREMENT'
-                ? optionalText(
-                    capability.unit ??
-                    undefined,
-                  )
-                : undefined,
-          }),
-        ),
+      createdAt: now,
 
-      createdAt:
-        now,
+      updatedAt: now,
 
-      updatedAt:
-        now,
-
-      version:
-        1,
+      version: 1,
     };
 
-    this.items.update(
-      items => [
-        ...items,
-        device,
-      ],
-    );
+    this.writeCatalog(device);
 
-    return of(
-      withEtag(
-        cloneDevice(
-          device,
-        ),
-      ),
-    ).pipe(
-      delay(100),
-    );
+    return of(withEtag(cloneDevice(device))).pipe(delay(100));
   }
 
   private catalogItems(): DeviceCatalogRecord[] {
-    const current = new Map(this.items().map(item => [item.id, item]));
-    for (const device of this.buildingStore.devices()) {
-      if (!current.has(device.id)) current.set(device.id, mapMockDeviceToCatalog(device));
-    }
-    return [...current.values()];
+    return this.items();
+  }
+  private writeCatalog(record: DeviceCatalogRecord): void {
+    const current = this.buildingStore.devices().find((device) => device.id === record.id);
+    const space =
+      this.buildingStore.spaces().find((space) => space.id === record.assignment.zoneId) ??
+      this.buildingStore
+        .spaces()
+        .find((space) => space.buildingId === record.assignment.buildingId);
+    if (!space) throw badRequest('AREA_REQUIRED', 'Choose a building with an existing area.');
+    const definition = record.capabilities
+      .map((cap) => capabilityDefinition(cap.code))
+      .find(Boolean);
+    if (!current && !definition)
+      throw badRequest('UNSUPPORTED_CAPABILITY', 'Choose a supported ResQ device capability.');
+    const base = current ?? makeDevice(definition!.type, space, this.buildingStore.devices());
+    const next: Device = {
+      ...base,
+      id: record.id,
+      organizationId: record.organizationId,
+      name: record.name,
+      description: record.description ?? '',
+      deviceCode: record.deviceCode,
+      code: record.deviceCode,
+      specifications: {
+        ...base.specifications,
+        ...Object.fromEntries(
+          Object.entries(record.specifications).filter(([, value]) => value !== undefined),
+        ),
+      },
+      spaceId: space.id,
+      assignment: {
+        buildingId: space.buildingId,
+        floorId: space.floorId,
+        zoneId: space.id,
+        spaceId: space.id,
+      },
+      administrativeStatus: record.administrativeStatus,
+      version: record.version,
+      updatedAt: record.updatedAt,
+      createdAt: record.createdAt,
+      externalReferenceDetails: record.externalReference,
+      floorPlanPosition: current?.spaceId === space.id ? current.floorPlanPosition : undefined,
+      capabilities: record.capabilities.map((cap) => {
+        const existing = base.capabilities.find(
+          (item) => item.id === cap.id || item.code === cap.code,
+        );
+        const entry = capabilityDefinition(cap.code);
+        return {
+          ...existing,
+          ...cap,
+          category: capabilityCategory({ ...cap, category: existing?.category }),
+          name: existing?.name ?? entry?.label ?? cap.code,
+          hardware: existing?.hardware ?? entry?.hardware ?? 'Registered capability',
+        };
+      }),
+    };
+    if (current) this.buildingStore.updateDevice(next);
+    else this.buildingStore.createDevice(next);
+    this.response.reconcile(space.id);
+    if (current && current.spaceId !== space.id) this.response.reconcile(current.spaceId);
   }
 
   updateDeviceDetails(
     deviceId: string,
 
-    resource:
-      UpdateDeviceDetailsResourceDto,
+    resource: UpdateDeviceDetailsResourceDto,
 
     etag: string,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-    > {
-
+  ): Observable<VersionedDeviceCatalogRecord> {
     return this.update(
       deviceId,
       etag,
 
-      device => {
+      (device) => {
+        ensureEditable(device);
 
-        ensureEditable(
-          device,
-        );
+        const name = resource.name.trim();
 
-        const name =
-          resource.name.trim();
-
-        if (
-          !name ||
-          name.length > 120
-        ) {
+        if (!name || name.length > 120) {
           throw badRequest(
             'INVALID_DEVICE_NAME',
             'Device name must contain between 1 and 120 characters.',
           );
         }
 
-        if (
-          (
-            resource.description
-              ?.trim()
-              .length ??
-            0
-          ) > 500
-        ) {
+        if ((resource.description?.trim().length ?? 0) > 500) {
           throw badRequest(
             'INVALID_DEVICE_DESCRIPTION',
             'Device description cannot exceed 500 characters.',
@@ -479,36 +287,14 @@ export class MockDeviceGateway
 
           name,
 
-          description:
-            optionalText(
-              resource.description,
-            ),
+          description: optionalText(resource.description),
 
           specifications: {
+            manufacturer: optionalText(resource.specifications.manufacturer ?? undefined),
 
-            manufacturer:
-              optionalText(
-                resource
-                  .specifications
-                  .manufacturer ??
-                undefined,
-              ),
+            model: optionalText(resource.specifications.model ?? undefined),
 
-            model:
-              optionalText(
-                resource
-                  .specifications
-                  .model ??
-                undefined,
-              ),
-
-            serialNumber:
-              optionalText(
-                resource
-                  .specifications
-                  .serialNumber ??
-                undefined,
-              ),
+            serialNumber: optionalText(resource.specifications.serialNumber ?? undefined),
           },
         };
       },
@@ -518,24 +304,16 @@ export class MockDeviceGateway
   replaceDeviceCapabilities(
     deviceId: string,
 
-    resource:
-      ReplaceDeviceCapabilitiesResourceDto,
+    resource: ReplaceDeviceCapabilitiesResourceDto,
 
     etag: string,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-    > {
-
+  ): Observable<VersionedDeviceCatalogRecord> {
     return this.update(
       deviceId,
       etag,
 
-      device => {
-
-        ensureEditable(
-          device,
-        );
+      (device) => {
+        ensureEditable(device);
 
         ensureInactive(
           device,
@@ -543,55 +321,32 @@ export class MockDeviceGateway
           'Capabilities can only be changed while the device is INACTIVE.',
         );
 
-        const error =
-          validateCapabilities(
-            resource.capabilities,
-          );
+        const error = validateCapabilities(resource.capabilities);
 
         if (error) {
           throw error;
         }
 
-        const existingByCode =
-          new Map(
-            device.capabilities.map(
-              capability => [
-                capability.code,
-                capability,
-              ],
-            ),
-          );
+        const existingByCode = new Map(
+          device.capabilities.map((capability) => [capability.code, capability]),
+        );
 
-        const capabilities =
-          resource.capabilities.map(
-            (
-              capability,
-              index,
-            ):
-              DeviceCatalogCapability => ({
+        const capabilities = resource.capabilities.map(
+          (capability, index): DeviceCatalogCapability => ({
+            id:
+              existingByCode.get(capability.code.trim())?.id ??
+              `${device.id}-cap-${device.version + 1}-${index + 1}`,
 
-              id:
-                existingByCode.get(
-                  capability.code.trim(),
-                )?.id ??
-                `${device.id}-cap-${device.version + 1}-${index + 1}`,
+            code: capability.code.trim(),
 
-              code:
-                capability.code.trim(),
+            kind: capability.kind,
 
-              kind:
-                capability.kind,
-
-              unit:
-                capability.kind ===
-                'MEASUREMENT'
-                  ? optionalText(
-                      capability.unit ??
-                      undefined,
-                    )
-                  : undefined,
-            }),
-          );
+            unit:
+              capability.kind === 'MEASUREMENT'
+                ? optionalText(capability.unit ?? undefined)
+                : undefined,
+          }),
+        );
 
         return {
           ...device,
@@ -604,24 +359,16 @@ export class MockDeviceGateway
   assignDeviceToLocation(
     deviceId: string,
 
-    resource:
-      AssignDeviceToLocationResourceDto,
+    resource: AssignDeviceToLocationResourceDto,
 
     etag: string,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-    > {
-
+  ): Observable<VersionedDeviceCatalogRecord> {
     return this.update(
       deviceId,
       etag,
 
-      device => {
-
-        ensureEditable(
-          device,
-        );
+      (device) => {
+        ensureEditable(device);
 
         ensureInactive(
           device,
@@ -629,31 +376,17 @@ export class MockDeviceGateway
           'Device assignment can only be changed while the device is INACTIVE.',
         );
 
-        if (
-          !resource
-            .buildingId
-            .trim()
-        ) {
-
-          throw badRequest(
-            'BUILDING_REQUIRED',
-            'A building is required.',
-          );
+        if (!resource.buildingId.trim()) {
+          throw badRequest('BUILDING_REQUIRED', 'A building is required.');
         }
 
         return {
           ...device,
 
           assignment: {
+            buildingId: resource.buildingId,
 
-            buildingId:
-              resource
-                .buildingId,
-
-            zoneId:
-              optionalText(
-                resource.zoneId,
-              ),
+            zoneId: optionalText(resource.zoneId),
           },
         };
       },
@@ -663,33 +396,21 @@ export class MockDeviceGateway
   changeDeviceAdministrativeStatus(
     deviceId: string,
 
-    resource:
-      ChangeDeviceAdministrativeStatusResourceDto,
+    resource: ChangeDeviceAdministrativeStatusResourceDto,
 
     etag: string,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-    > {
-
+  ): Observable<VersionedDeviceCatalogRecord> {
     return this.update(
       deviceId,
       etag,
 
-      device => {
-
-        ensureTransition(
-          device.administrativeStatus,
-          resource
-            .administrativeStatus,
-        );
+      (device) => {
+        ensureTransition(device.administrativeStatus, resource.administrativeStatus);
 
         return {
           ...device,
 
-          administrativeStatus:
-            resource
-              .administrativeStatus,
+          administrativeStatus: resource.administrativeStatus,
         };
       },
     );
@@ -700,153 +421,59 @@ export class MockDeviceGateway
 
     etag: string,
 
-    transform:
-      (
-        device:
-          DeviceCatalogRecord,
-      ) =>
-        DeviceCatalogRecord,
-  ):
-    Observable<
-      VersionedDeviceCatalogRecord
-    > {
+    transform: (device: DeviceCatalogRecord) => DeviceCatalogRecord,
+  ): Observable<VersionedDeviceCatalogRecord> {
+    const current = this.items().find((item) => item.id === deviceId);
 
-    const current =
-      this.items().find(
-        item =>
-          item.id ===
-          deviceId,
-      );
-
-    if (
-      !current
-    ) {
-      return throwError(
-        () =>
-          notFound(),
-      );
+    if (!current) {
+      return throwError(() => notFound());
     }
 
-    const expectedVersion =
-      versionFromEtag(
-        etag,
-      );
+    const expectedVersion = versionFromEtag(etag);
 
-    if (
-      !expectedVersion
-    ) {
-      return throwError(
-        () =>
-          preconditionRequired(),
-      );
+    if (!expectedVersion) {
+      return throwError(() => preconditionRequired());
     }
 
-    if (
-      expectedVersion !==
-      current.version
-    ) {
-      return throwError(
-        () =>
-          preconditionFailed(),
-      );
+    if (expectedVersion !== current.version) {
+      return throwError(() => preconditionFailed());
     }
 
     try {
-
-      const transformed =
-        transform(
-          cloneDevice(
-            current,
-          ),
-        );
+      const transformed = transform(cloneDevice(current));
 
       const changed =
-        JSON.stringify(
-          toComparable(
-            current,
-          ),
-        ) !==
-        JSON.stringify(
-          toComparable(
-            transformed,
-          ),
-        );
+        JSON.stringify(toComparable(current)) !== JSON.stringify(toComparable(transformed));
 
-      const next =
-        changed
-          ? {
-              ...transformed,
+      const next = changed
+        ? {
+            ...transformed,
 
-              updatedAt:
-                new Date(),
+            updatedAt: new Date(),
 
-              version:
-                current.version +
-                1,
-            }
-          : current;
+            version: current.version + 1,
+          }
+        : current;
 
-      if (
-        changed
-      ) {
-
-        this.items.update(
-          items =>
-            items.map(
-              item =>
-                item.id ===
-                deviceId
-                  ? next
-                  : item,
-            ),
-        );
+      if (changed) {
+        this.writeCatalog(next);
       }
 
       return of({
-        device:
-          cloneDevice(
-            next,
-          ),
+        device: cloneDevice(next),
 
-        etag:
-          etagForVersion(
-            next.version,
-          ),
-      }).pipe(
-        delay(90),
-      );
-
-    } catch (
-      error
-    ) {
-
-      return throwError(
-        () =>
-          error,
-      );
+        etag: etagForVersion(next.version),
+      }).pipe(delay(90));
+    } catch (error) {
+      return throwError(() => error);
     }
   }
 }
 
-function validateRegistration(
-  resource:
-    RegisterDeviceResourceDto,
-):
-  ApiError
-  | undefined {
+function validateRegistration(resource: RegisterDeviceResourceDto): ApiError | undefined {
+  const deviceCode = normalizeDeviceCode(resource.deviceCode);
 
-  const deviceCode =
-    normalizeDeviceCode(
-      resource.deviceCode,
-    );
-
-  if (
-    !/^[A-Z0-9_-]{1,64}$/
-      .test(
-        deviceCode,
-      )
-  ) {
-
+  if (!/^[A-Z0-9_-]{1,64}$/.test(deviceCode)) {
     return badRequest(
       'INVALID_DEVICE_CODE',
 
@@ -854,12 +481,7 @@ function validateRegistration(
     );
   }
 
-  if (
-    !resource.name.trim() ||
-    resource.name.trim().length >
-    120
-  ) {
-
+  if (!resource.name.trim() || resource.name.trim().length > 120) {
     return badRequest(
       'INVALID_DEVICE_NAME',
 
@@ -867,15 +489,7 @@ function validateRegistration(
     );
   }
 
-  if (
-    (
-      resource.description
-        ?.trim()
-        .length ??
-      0
-    ) > 500
-  ) {
-
+  if ((resource.description?.trim().length ?? 0) > 500) {
     return badRequest(
       'INVALID_DEVICE_DESCRIPTION',
 
@@ -883,12 +497,7 @@ function validateRegistration(
     );
   }
 
-  if (
-    !resource.assignment
-      .buildingId
-      .trim()
-  ) {
-
+  if (!resource.assignment.buildingId.trim()) {
     return badRequest(
       'BUILDING_REQUIRED',
 
@@ -896,24 +505,13 @@ function validateRegistration(
     );
   }
 
-  return validateCapabilities(
-    resource.capabilities,
-  );
+  return validateCapabilities(resource.capabilities);
 }
 
 function validateCapabilities(
-  capabilities:
-    RegisterDeviceResourceDto[
-      'capabilities'
-    ],
-):
-  ApiError
-  | undefined {
-
-  if (
-    !capabilities.length
-  ) {
-
+  capabilities: RegisterDeviceResourceDto['capabilities'],
+): ApiError | undefined {
+  if (!capabilities.length) {
     return badRequest(
       'CAPABILITY_REQUIRED',
 
@@ -921,22 +519,12 @@ function validateCapabilities(
     );
   }
 
-  const codes =
-    new Set<string>();
+  const codes = new Set<string>();
 
-  for (
-    const capability
-    of capabilities
-  ) {
+  for (const capability of capabilities) {
+    const code = capability.code.trim();
 
-    const code =
-      capability.code.trim();
-
-    if (
-      !code ||
-      code.length > 80
-    ) {
-
+    if (!code || code.length > 80) {
       return badRequest(
         'INVALID_CAPABILITY_CODE',
 
@@ -944,12 +532,7 @@ function validateCapabilities(
       );
     }
 
-    if (
-      codes.has(
-        code,
-      )
-    ) {
-
+    if (codes.has(code)) {
       return badRequest(
         'DUPLICATE_CAPABILITY_CODE',
 
@@ -957,15 +540,7 @@ function validateCapabilities(
       );
     }
 
-    if (
-      (
-        capability.unit
-          ?.trim()
-          .length ??
-        0
-      ) > 30
-    ) {
-
+    if ((capability.unit?.trim().length ?? 0) > 30) {
       return badRequest(
         'INVALID_CAPABILITY_UNIT',
 
@@ -973,25 +548,14 @@ function validateCapabilities(
       );
     }
 
-    codes.add(
-      code,
-    );
+    codes.add(code);
   }
 
   return undefined;
 }
 
-function ensureEditable(
-  device:
-    DeviceCatalogRecord,
-): void {
-
-  if (
-    device
-      .administrativeStatus ===
-    'RETIRED'
-  ) {
-
+function ensureEditable(device: DeviceCatalogRecord): void {
+  if (device.administrativeStatus === 'RETIRED') {
     throw conflict(
       'DEVICE_RETIRED',
 
@@ -1001,64 +565,30 @@ function ensureEditable(
 }
 
 function ensureInactive(
-  device:
-    DeviceCatalogRecord,
+  device: DeviceCatalogRecord,
 
-  message:
-    string,
+  message: string,
 ): void {
-
-  if (
-    device
-      .administrativeStatus !==
-    'INACTIVE'
-  ) {
-
-    throw conflict(
-      'DEVICE_MUST_BE_INACTIVE',
-      message,
-    );
+  if (device.administrativeStatus !== 'INACTIVE') {
+    throw conflict('DEVICE_MUST_BE_INACTIVE', message);
   }
 }
 
 function ensureTransition(
-  current:
-    DeviceAdministrativeStatus,
+  current: DeviceAdministrativeStatus,
 
-  target:
-    DeviceAdministrativeStatus,
+  target: DeviceAdministrativeStatus,
 ): void {
-
-  if (
-    current === target
-  ) {
+  if (current === target) {
     return;
   }
 
   const valid =
-    (
-      current ===
-      'INACTIVE' &&
-      target ===
-      'ACTIVE'
-    ) ||
-    (
-      current ===
-      'ACTIVE' &&
-      target ===
-      'INACTIVE'
-    ) ||
-    (
-      current ===
-      'INACTIVE' &&
-      target ===
-      'RETIRED'
-    );
+    (current === 'INACTIVE' && target === 'ACTIVE') ||
+    (current === 'ACTIVE' && target === 'INACTIVE') ||
+    (current === 'INACTIVE' && target === 'RETIRED');
 
-  if (
-    !valid
-  ) {
-
+  if (!valid) {
     throw conflict(
       'INVALID_DEVICE_STATUS_TRANSITION',
 
@@ -1067,77 +597,37 @@ function ensureTransition(
   }
 }
 
-function normalizeDeviceCode(
-  value: string,
-): string {
-
-  return value
-    .trim()
-    .toUpperCase();
+function normalizeDeviceCode(value: string): string {
+  return value.trim().toUpperCase();
 }
 
-function normalizePage(
-  request:
-    PageRequest,
-):
-  PageRequest {
-
+function normalizePage(request: PageRequest): PageRequest {
   return {
-    page:
+    page: Math.max(0, Math.trunc(request.page)),
+
+    size: Math.min(
+      100,
+
       Math.max(
-        0,
-        Math.trunc(
-          request.page,
-        ),
+        1,
+
+        Math.trunc(request.size || 20),
       ),
-
-    size:
-      Math.min(
-        100,
-
-        Math.max(
-          1,
-
-          Math.trunc(
-            request.size ||
-            20,
-          ),
-        ),
-      ),
+    ),
   };
 }
 
-function optionalText(
-  value?: string,
-):
-  string
-  | undefined {
+function optionalText(value?: string): string | undefined {
+  const normalized = value?.trim();
 
-  const normalized =
-    value?.trim();
-
-  return normalized
-    ? normalized
-    : undefined;
+  return normalized ? normalized : undefined;
 }
 
-function createLocalId():
-  string {
-
-  return (
-    globalThis.crypto
-      ?.randomUUID?.()
-    ??
-    `local-device-${Date.now()}`
-  );
+function createLocalId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `local-device-${Date.now()}`;
 }
 
-function cloneDevice(
-  device:
-    DeviceCatalogRecord,
-):
-  DeviceCatalogRecord {
-
+function cloneDevice(device: DeviceCatalogRecord): DeviceCatalogRecord {
   return {
     ...device,
 
@@ -1149,44 +639,27 @@ function cloneDevice(
       ...device.assignment,
     },
 
-    externalReference:
-      device.externalReference
-        ? {
-            ...device
-              .externalReference,
-          }
-        : undefined,
+    externalReference: device.externalReference
+      ? {
+          ...device.externalReference,
+        }
+      : undefined,
 
-    capabilities:
-      device.capabilities.map(
-        capability => ({
-          ...capability,
-        }),
-      ),
+    capabilities: device.capabilities.map((capability) => ({
+      ...capability,
+    })),
 
-    createdAt:
-      new Date(
-        device.createdAt,
-      ),
+    createdAt: new Date(device.createdAt),
 
-    updatedAt:
-      new Date(
-        device.updatedAt,
-      ),
+    updatedAt: new Date(device.updatedAt),
   };
 }
 
-function toComparable(
-  device:
-    DeviceCatalogRecord,
-): object {
-
+function toComparable(device: DeviceCatalogRecord): object {
   const {
-    updatedAt:
-      _updatedAt,
+    updatedAt: _updatedAt,
 
-    version:
-      _version,
+    version: _version,
 
     ...rest
   } = device;
@@ -1200,9 +673,7 @@ function apiError(
   code: string,
 
   message: string,
-):
-  ApiError {
-
+): ApiError {
   return {
     status,
     code,
@@ -1215,33 +686,19 @@ function badRequest(
   code: string,
 
   message: string,
-):
-  ApiError {
-
-  return apiError(
-    400,
-    code,
-    message,
-  );
+): ApiError {
+  return apiError(400, code, message);
 }
 
 function conflict(
   code: string,
 
   message: string,
-):
-  ApiError {
-
-  return apiError(
-    409,
-    code,
-    message,
-  );
+): ApiError {
+  return apiError(409, code, message);
 }
 
-function notFound():
-  ApiError {
-
+function notFound(): ApiError {
   return apiError(
     404,
 
@@ -1251,9 +708,7 @@ function notFound():
   );
 }
 
-function preconditionFailed():
-  ApiError {
-
+function preconditionFailed(): ApiError {
   return apiError(
     412,
 
@@ -1263,9 +718,7 @@ function preconditionFailed():
   );
 }
 
-function preconditionRequired():
-  ApiError {
-
+function preconditionRequired(): ApiError {
   return apiError(
     428,
 

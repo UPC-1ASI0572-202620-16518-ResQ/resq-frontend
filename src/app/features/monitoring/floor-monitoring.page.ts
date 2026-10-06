@@ -7,11 +7,13 @@ import { AlertService } from '../../core/services/data.services';
 import { DoughnutChartComponent, KpiCardComponent, LineChartComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { ThreeFloorViewerComponent } from './three-floor-viewer/three-floor-viewer.component';
 import { visualDevicePosition } from '../../shared/utils/floor-plan-device.utils';
+import { deviceDefinition, sensorDefinitions } from '../../core/models/device-domain';
+import { SensorHistoryComponent } from '../../shared/ui/sensor-history.component';
 
 @Component({
   selector: 'resq-floor-monitoring',
   standalone: true,
-  imports: [RouterLink, MatIconModule, KpiCardComponent, DoughnutChartComponent, LineChartComponent, StatusBadgeComponent, ThreeFloorViewerComponent],
+  imports: [RouterLink, MatIconModule, KpiCardComponent, DoughnutChartComponent, LineChartComponent, StatusBadgeComponent, ThreeFloorViewerComponent, SensorHistoryComponent],
   templateUrl: './floor-monitoring.page.html',
   styleUrls: ['./floor-monitoring.page.scss', './floor-monitoring.typography.scss', './floor-monitoring.renderer.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -38,9 +40,9 @@ export class FloorMonitoringPage {
   });
   readonly floorDevices = computed(() => this.floorSpaces().flatMap(space => space.devices));
   readonly environmentalMetric = signal<DeviceType>('Temperature');
-  readonly environmentalMetrics: DeviceType[] = ['Temperature', 'Smoke', 'Gas'];
+  readonly environmentalMetrics: DeviceType[] = sensorDefinitions.filter(item => item.type !== 'Motion').map(item => item.type);
   readonly environmentalReadings = computed(() => this.floorDevices().flatMap(device => device.readings)
-    .filter(reading => reading.metric === this.environmentalMetric())
+    .filter(reading => reading.metric === this.environmentalMetric() && reading.unit === deviceDefinition(this.environmentalMetric()).unit)
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
     .slice(-24));
   readonly deviceStatuses = ['Online', 'Warning', 'Critical', 'Offline'] as const;
@@ -101,11 +103,11 @@ export class FloorMonitoringPage {
   devicePosition(devices: Device[], index: number): FloorPlanPoint | undefined { return visualDevicePosition(devices, index); }
   currentReading(type: string): string {
     const reading = this.selected()?.devices.find(device => device.type === type)?.readings.at(-1);
-    return reading ? String(reading.value) : '—';
+    return reading ? `${reading.value} ${reading.unit}` : '—';
   }
   environmentalLabels(): string[] { return this.environmentalReadings().map(reading => reading.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); }
   environmentalValues(): number[] { return this.environmentalReadings().map(reading => reading.value); }
-  environmentalUnit(): string { return this.environmentalReadings()[0]?.unit ?? (this.environmentalMetric() === 'Temperature' ? '°C' : 'ppm'); }
+  environmentalUnit(): string { return deviceDefinition(this.environmentalMetric()).unit ?? ''; }
   spaceName(id: string): string {
     const space = this.store.spaces().find(item => item.id === id);
     return `${space?.name ?? 'Space'}${space?.roomNumber ? ' (Room ' + space.roomNumber + ')' : ''}`;

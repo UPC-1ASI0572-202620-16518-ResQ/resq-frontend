@@ -14,41 +14,16 @@ import {
   RiskDetectionSummary,
   RiskTypeCode,
   SensorReading,
+  SensorType,
   Space,
   SpaceThresholds,
 } from '../models/resq.models';
+import { defaultThresholds, deviceDefinition } from '../models/device-domain';
 
 const now = Date.now();
 const ago = (minutes: number): Date => new Date(now - minutes * 60_000);
-const threshold = (type: string): SpaceThresholds =>
-  type === 'Laboratory'
-    ? {
-        Temperature: { warning: 28, critical: 35 },
-        Smoke: { warning: 80, critical: 120 },
-        Gas: { warning: 200, critical: 300 },
-        Humidity: { warning: 70, critical: 85 },
-      }
-    : type === 'ServerRoom'
-      ? {
-          Temperature: { warning: 27, critical: 32 },
-          Smoke: { warning: 60, critical: 100 },
-          Gas: { warning: 250, critical: 400 },
-          Humidity: { warning: 65, critical: 80 },
-        }
-      : {
-          Temperature: { warning: 32, critical: 40 },
-          Smoke: { warning: 100, critical: 150 },
-          Gas: { warning: 250, critical: 400 },
-          Humidity: { warning: 70, critical: 85 },
-        };
+const threshold = defaultThresholds;
 
-const units: Record<Device['type'], string> = {
-  Temperature: '°C',
-  Smoke: 'ppm',
-  Gas: 'ppm',
-  Humidity: '%',
-  Motion: 'events',
-};
 const currentValues: Record<string, number> = {
   Temperature: 24.2,
   Smoke: 34,
@@ -58,9 +33,9 @@ const currentValues: Record<string, number> = {
 };
 const readings = (
   deviceId: string,
-  metric: Device['type'],
+  metric: SensorType,
   base: number,
-  unit = units[metric],
+  unit = deviceDefinition(metric).unit!,
 ): SensorReading[] => {
   const phase = [...deviceId].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 9;
   return Array.from({ length: 24 }, (_, index) => ({
@@ -78,13 +53,14 @@ const readings = (
   }));
 };
 
-const capabilityFor = (id: string, type: Device['type']): DeviceCapability => ({
+const capabilityFor = (id: string, type: SensorType): DeviceCapability => ({
   id: `${id}-${type.toLowerCase()}`,
   code: `${type.toLowerCase()}_measurement`,
   name: `${type} Measurement`,
   kind: 'MEASUREMENT',
+  category: 'SENSOR',
   hardware: `${type} sensing module`,
-  unit: units[type],
+  unit: deviceDefinition(type).unit,
 });
 
 const makeDevice = (
@@ -92,7 +68,7 @@ const makeDevice = (
   spaceId: string,
   buildingId: string,
   floorId: string,
-  type: Device['type'],
+  type: SensorType,
   status: Device['status'] = 'Online',
   value?: number,
 ): Device => {
@@ -180,6 +156,7 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
         code: 'gas_smoke_level',
         name: 'Gas / Smoke Level',
         kind: 'MEASUREMENT',
+        category: 'SENSOR',
         hardware: 'MQ-2',
         unit: 'ADC',
         description: 'Raw/relative gas and smoke level for the MVP.',
@@ -189,34 +166,64 @@ const makeMvpDevice = (spaceId: string, buildingId: string, floorId: string): De
         code: 'local_status_display',
         name: 'Local Status Display',
         kind: 'ACTUATION',
+        category: 'DISPLAY',
         hardware: 'SSD1306 OLED',
+        state: 'NORMAL',
       },
       {
         id: 'mvp-cap-alarm',
         code: 'audible_alarm',
         name: 'Audible Alarm',
         kind: 'ACTUATION',
+        category: 'ACTUATOR',
         hardware: 'Active Buzzer 5 V',
+        state: 'INACTIVE',
       },
       {
         id: 'mvp-cap-red-led',
         code: 'critical_status_indicator',
         name: 'Critical Status Indicator',
         kind: 'ACTUATION',
+        category: 'ACTUATOR',
         hardware: 'Red LED',
+        state: 'INACTIVE',
       },
       {
         id: 'mvp-cap-green-led',
         code: 'normal_status_indicator',
         name: 'Normal Status Indicator',
         kind: 'ACTUATION',
+        category: 'ACTUATOR',
         hardware: 'Green LED',
+        state: 'NORMAL',
+      },
+      {
+        id: 'mvp-cap-hvac',
+        code: 'environmental_ventilation',
+        name: 'Ventilation / HVAC',
+        kind: 'ACTUATION',
+        category: 'ACTUATOR',
+        hardware: 'Planned capability · not installed in MVP',
+        state: 'PLANNED',
+        description: 'Regulates temperature and environmental conditions when a response rule is triggered.',
+      },
+      {
+        id: 'mvp-cap-servo',
+        code: 'mechanical_servo',
+        name: 'Servomotor',
+        kind: 'ACTUATION',
+        category: 'ACTUATOR',
+        hardware: 'Planned capability · not installed in MVP',
+        state: 'PLANNED',
+        description: 'Opens or closes doors, windows, valves or ventilation dampers according to a configured rule.',
       },
     ],
     power: { source: 'USB 5 V', status: 'POWERED' },
     signalStrength: -58,
     lastSeen: ago(2),
     readings: readings(id, 'Gas', 1830, 'ADC'),
+    sensorThreshold: { warning: 2000, critical: 3000 },
+    availability: 'MVP',
     hardwareImageUrl: '/assets/devices/resq-mvp-node.webp',
     hardwareComponents: [
       {
@@ -416,7 +423,7 @@ function makeSpace(
       devices: [makeMvpDevice(id, buildingId, floorId)],
     };
   }
-  const types: Device['type'][] = ['Temperature', 'Smoke', 'Humidity'];
+  const types: SensorType[] = ['Temperature', 'Smoke', 'Humidity'];
   const devices = types.map((deviceType) => {
     const deviceId = `dev-${String(deviceCounter++).padStart(3, '0')}`;
     const deviceStatus: Device['status'] =
@@ -469,13 +476,13 @@ function positionDevices(space: Space): Space {
   const ys = space.polygon.map(point => point.y);
   const x = Math.min(...xs); const y = Math.min(...ys);
   const width = Math.max(...xs) - x; const height = Math.max(...ys) - y;
-  const positions: Record<Device['type'], [number, number]> = {
+  const positions: Record<SensorType, [number, number]> = {
     Temperature: [.24, .28], Smoke: [.74, .28], Gas: [.5, .5], Humidity: [.25, .72], Motion: [.74, .72],
   };
   return {
     ...space,
     devices: space.devices.map((device, index) => {
-      const [px, py] = positions[device.type];
+      const [px, py] = device.type in positions ? positions[device.type as SensorType] : [.5, .5];
       const offsetX = ((index % 3) - 1) * 10;
       const offsetY = Math.floor(index / 3) * 10;
       return { ...device, floorPlanPosition: { x: x + width * px + offsetX, y: y + height * py + offsetY } };
@@ -609,7 +616,7 @@ export const DEVICES: Device[] = [
   ...baseDevices,
   ...Array.from({ length: Math.max(0, 142 - baseDevices.length) }, (_, index) => {
     const space = SPACES[index % SPACES.length];
-    const type = (['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion'] as Device['type'][])[
+    const type = (['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion'] as SensorType[])[
       index % 5
     ];
     const status: Device['status'] =
