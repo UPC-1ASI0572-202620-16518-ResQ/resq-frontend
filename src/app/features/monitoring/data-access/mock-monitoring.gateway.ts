@@ -8,11 +8,8 @@ import {
   of,
 } from 'rxjs';
 
-import {
-  BUILDINGS,
-  DEVICES,
-  SPACES,
-} from '../../../core/mock-data/resq.mock';
+import { BuildingStoreService } from '../../../core/services/building-store.service';
+import { Device, Space } from '../../../core/models/resq.models';
 
 import {
   BuildingMonitoringStatus,
@@ -29,6 +26,8 @@ import {
 export class MockMonitoringGateway
   implements MonitoringGateway {
 
+  constructor(private readonly store: BuildingStoreService) {}
+
   getBuildingStatus(
     buildingId: string,
   ):
@@ -38,7 +37,7 @@ export class MockMonitoringGateway
     > {
 
     const building =
-      BUILDINGS.find(
+      this.store.buildings().find(
         item =>
           item.id ===
           buildingId,
@@ -54,7 +53,7 @@ export class MockMonitoringGateway
     }
 
     const zones =
-      SPACES
+      this.store.spaces()
         .filter(
           space =>
             space.buildingId ===
@@ -64,6 +63,8 @@ export class MockMonitoringGateway
           space =>
             toZoneMonitoringState(
               space.id,
+              this.store.spaces(),
+              this.store.devices(),
             ),
         )
         .filter(
@@ -75,7 +76,7 @@ export class MockMonitoringGateway
         );
 
     const devices =
-      DEVICES.filter(
+      this.store.devices().filter(
         device =>
           device.assignment
             .buildingId ===
@@ -148,6 +149,8 @@ export class MockMonitoringGateway
     return of(
       toZoneMonitoringState(
         zoneId,
+        this.store.spaces(),
+        this.store.devices(),
       ),
     ).pipe(
       delay(70),
@@ -163,7 +166,7 @@ export class MockMonitoringGateway
     > {
 
     const device =
-      DEVICES.find(
+      this.store.devices().find(
         item =>
           item.id ===
           deviceId,
@@ -181,6 +184,7 @@ export class MockMonitoringGateway
     const measurements =
       toDeviceMeasurements(
         device.id,
+        this.store.devices(),
       );
 
     const latestMeasurement =
@@ -232,6 +236,7 @@ export class MockMonitoringGateway
       const measurements =
         toDeviceMeasurements(
           query.deviceId,
+          this.store.devices(),
         );
 
       return of(
@@ -248,7 +253,7 @@ export class MockMonitoringGateway
     ) {
 
       const deviceIds =
-        DEVICES
+        this.store.devices()
           .filter(
             device =>
               device.assignment
@@ -265,6 +270,7 @@ export class MockMonitoringGateway
           deviceId =>
             toDeviceMeasurements(
               deviceId,
+              this.store.devices(),
             ),
         );
 
@@ -297,6 +303,7 @@ export class MockMonitoringGateway
     let measurements =
       toDeviceMeasurements(
         deviceId,
+        this.store.devices(),
       );
 
     if (range) {
@@ -334,11 +341,12 @@ export class MockMonitoringGateway
 
 function toDeviceMeasurements(
   deviceId: string,
+  devices: Device[],
 ):
   MonitoringMeasurement[] {
 
   const device =
-    DEVICES.find(
+    devices.find(
       item =>
         item.id ===
         deviceId,
@@ -414,12 +422,14 @@ function toDeviceMeasurements(
 
 function toZoneMonitoringState(
   zoneId: string,
+  spaces: Space[],
+  allDevices: Device[],
 ):
   ZoneMonitoringState
   | undefined {
 
   const space =
-    SPACES.find(
+    spaces.find(
       item =>
         item.id ===
         zoneId,
@@ -430,7 +440,7 @@ function toZoneMonitoringState(
   }
 
   const devices =
-    DEVICES.filter(
+    allDevices.filter(
       device =>
         device.assignment
           .zoneId ===
@@ -467,9 +477,8 @@ function toZoneMonitoringState(
       ),
 
     /*
-     * Space.status is already an existing
-     * projection in the current mock.
-     * Monitoring does NOT calculate risk here.
+     * BuildingStore exposes the Risk Detection projection. Monitoring only
+     * reads that classified state and never repeats threshold comparisons.
      */
     conditionCode:
       normalizeConditionCode(

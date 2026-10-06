@@ -7,7 +7,14 @@ import {
   signal,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  AbstractControl,
+  FormBuilder,
+  ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -397,7 +404,7 @@ export class SpacesPage {
           <h4>Environmental thresholds for {{ activeSensitivity() }}</h4>
           <div class="thresholds">
             @for (metric of metrics; track metric) {
-              <div>
+              <div [class.invalid-threshold]="thresholdError(metric)">
                 <span
                   ><b>{{ metric }}</b
                   ><small>{{ unit(metric) }}</small></span
@@ -405,6 +412,7 @@ export class SpacesPage {
                 ><label
                   >Critical<input type="number" [formControlName]="metric + 'Critical'"
                 /></label>
+                @if (thresholdError(metric)) {<small class="threshold-error">Warning threshold must be lower than the critical threshold.</small>}
               </div>
             }
           </div>
@@ -440,7 +448,7 @@ export class SpaceDetailPage implements OnInit {
   readonly tab = signal('Overview');
   readonly activeSensitivity = signal<SensitivityLevel>('Normal');
   readonly thresholdProfiles = signal<Partial<Record<SensitivityLevel, SpaceThresholds>>>({});
-  readonly metrics = ['Temperature', 'Smoke', 'Gas', 'Humidity'] as const;
+  readonly metrics = ['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion'] as const;
   readonly simulationDeviceId = signal('');
   sensors() {
     return (
@@ -488,7 +496,9 @@ export class SpaceDetailPage implements OnInit {
     GasCritical: [0, Validators.required],
     HumidityWarning: [0, Validators.required],
     HumidityCritical: [0, Validators.required],
-  });
+    MotionWarning: [0, Validators.required],
+    MotionCritical: [0, Validators.required],
+  }, { validators: thresholdOrderValidator(['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion']) });
 
   ngOnInit(): void {
     const found = this.store
@@ -533,10 +543,17 @@ export class SpaceDetailPage implements OnInit {
   unit(metric: string) {
     return sensorDefinitions.find((item) => item.type === metric)?.unit ?? '';
   }
+  thresholdError(metric: typeof this.metrics[number]): boolean {
+    return Boolean(this.form.errors?.['thresholdOrder']?.[metric]);
+  }
 
   save(): void {
     const space = this.space();
-    if (!space || this.form.invalid) return;
+    if (!space || this.form.invalid) {
+      this.form.markAllAsTouched();
+      this.snack.open('Warning threshold must be lower than the critical threshold for every metric.', 'Close', { duration: 3500 });
+      return;
+    }
     const sensitivity = this.activeSensitivity();
     const thresholds = this.thresholdsFromForm();
     const profiles = { ...this.thresholdProfiles(), [sensitivity]: thresholds };
@@ -564,24 +581,19 @@ export class SpaceDetailPage implements OnInit {
       Smoke: { warning: value.SmokeWarning, critical: value.SmokeCritical },
       Gas: { warning: value.GasWarning, critical: value.GasCritical },
       Humidity: { warning: value.HumidityWarning, critical: value.HumidityCritical },
+      Motion: { warning: value.MotionWarning, critical: value.MotionCritical },
     };
   }
 
   private patchConfiguration(sensitivity: SensitivityLevel, thresholds: SpaceThresholds): void {
-    this.form.patchValue(
-      {
-        sensitivity,
-        TemperatureWarning: thresholds.Temperature?.warning,
-        TemperatureCritical: thresholds.Temperature?.critical,
-        SmokeWarning: thresholds.Smoke?.warning,
-        SmokeCritical: thresholds.Smoke?.critical,
-        GasWarning: thresholds.Gas?.warning,
-        GasCritical: thresholds.Gas?.critical,
-        HumidityWarning: thresholds.Humidity?.warning,
-        HumidityCritical: thresholds.Humidity?.critical,
-      },
-      { emitEvent: false },
-    );
+    this.form.patchValue({
+      sensitivity,
+      TemperatureWarning: thresholds.Temperature?.warning, TemperatureCritical: thresholds.Temperature?.critical,
+      SmokeWarning: thresholds.Smoke?.warning, SmokeCritical: thresholds.Smoke?.critical,
+      GasWarning: thresholds.Gas?.warning, GasCritical: thresholds.Gas?.critical,
+      HumidityWarning: thresholds.Humidity?.warning, HumidityCritical: thresholds.Humidity?.critical,
+      MotionWarning: thresholds.Motion?.warning, MotionCritical: thresholds.Motion?.critical,
+    }, { emitEvent: false });
   }
 
   private cloneThresholds(thresholds: SpaceThresholds): SpaceThresholds {
@@ -589,4 +601,19 @@ export class SpaceDetailPage implements OnInit {
       Object.entries(thresholds).map(([metric, value]) => [metric, value ? { ...value } : value]),
     ) as SpaceThresholds;
   }
+}
+
+function thresholdOrderValidator(metrics: readonly string[]): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const invalid = Object.fromEntries(
+      metrics
+        .filter((metric) => {
+          const warning = Number(control.get(`${metric}Warning`)?.value);
+          const critical = Number(control.get(`${metric}Critical`)?.value);
+          return !Number.isFinite(warning) || !Number.isFinite(critical) || warning >= critical;
+        })
+        .map((metric) => [metric, true]),
+    );
+    return Object.keys(invalid).length ? { thresholdOrder: invalid } : null;
+  };
 }

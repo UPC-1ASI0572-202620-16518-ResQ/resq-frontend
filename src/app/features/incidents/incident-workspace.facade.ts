@@ -8,6 +8,17 @@ import {
   ZoneCatalogRecord,
 } from '../buildings/data-access/building.gateway';
 import { UserFacade } from '../users/data-access/user.facade';
+import {
+  DEVICE_GATEWAY,
+  DeviceCatalogRecord,
+  DeviceGateway,
+} from '../devices/data-access/device.gateway';
+import {
+  RISK_DETECTION_GATEWAY,
+  DetectionEvidenceRecord,
+  RiskDetectionGateway,
+} from '../risk-detection/data-access/risk-detection.gateway';
+import { capabilityLabel } from '../../shared/presentation/domain-labels';
 import { IncidentFacade } from './data-access/incident.facade';
 import { IncidentRecord, IncidentStatus } from './data-access/incident.gateway';
 
@@ -30,10 +41,26 @@ export interface IncidentWorkspaceRow {
   location: IncidentWorkspaceLocation;
 }
 
+export interface IncidentWorkspaceEvidence {
+  deviceId: string;
+  deviceName: string;
+  deviceCode: string;
+  metric: string;
+  value: number;
+  unit?: string;
+  warningThreshold?: number;
+  criticalThreshold?: number;
+  measuredAt: Date;
+}
+
+export interface IncidentWorkspaceDetail extends IncidentWorkspaceRow {
+  evidence: IncidentWorkspaceEvidence[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class IncidentWorkspaceFacade {
   private readonly rowsState = signal<IncidentWorkspaceRow[]>([]);
-  private readonly detailState = signal<IncidentWorkspaceRow | undefined>(undefined);
+  private readonly detailState = signal<IncidentWorkspaceDetail | undefined>(undefined);
   private readonly loadingState = signal(false);
   private readonly errorState = signal<ApiError | undefined>(undefined);
 
@@ -45,6 +72,8 @@ export class IncidentWorkspaceFacade {
   constructor(
     private readonly incidents: IncidentFacade,
     @Inject(BUILDING_GATEWAY) private readonly buildings: BuildingGateway,
+    @Inject(DEVICE_GATEWAY) private readonly devices: DeviceGateway,
+    @Inject(RISK_DETECTION_GATEWAY) private readonly risk: RiskDetectionGateway,
     private readonly user: UserFacade,
   ) {}
 
@@ -74,17 +103,26 @@ export class IncidentWorkspaceFacade {
     );
   }
 
-  loadDetail(incidentId: string): Observable<IncidentWorkspaceRow | undefined> {
+  loadDetail(incidentId: string): Observable<IncidentWorkspaceDetail | undefined> {
     this.loadingState.set(true);
     this.errorState.set(undefined);
 
     return forkJoin({
       incident: this.incidents.loadIncident(incidentId),
       buildings: this.buildings.getBuildings({}, { page: 0, size: 100 }),
+      devices: this.devices.getDevices({}, { page: 0, size: 200 }),
     }).pipe(
-      map(({ incident, buildings }) =>
-        incident ? this.toRow(incident, buildings.items) : undefined,
-      ),
+      switchMap(({ incident, buildings, devices }) => {
+        if (!incident) return of(undefined);
+        const row = this.toRow(incident, buildings.items);
+        if (!incident.riskDetectionId) return of({ ...row, evidence: [] });
+        return this.risk.getRiskDetectionEvidence(incident.riskDetectionId).pipe(
+          map((detection) => ({
+            ...row,
+            evidence: this.mapEvidence(detection?.evidence ?? [], devices.items),
+          })),
+        );
+      }),
       tap({
         next: (detail) => {
           this.detailState.set(detail);
@@ -160,14 +198,35 @@ export class IncidentWorkspaceFacade {
     const type = typeLabel(incident.type);
     return {
       incident,
-      title: `${type} response`,
-      description: `Incident ${incident.incidentId} requires operational follow-up in ${location.zoneName}.`,
+      title: `${type} critical incident`,
+      description: `Critical threshold exceeded. Incident ${incident.incidentId} requires operational follow-up in ${location.zoneName}.`,
       typeLabel: type,
       levelLabel: incident.level ?? 'Not classified',
       statusLabel: statusLabel(incident.status),
       assigneeLabel: incident.assignedTo ?? 'Unassigned',
       location,
     };
+  }
+
+  private mapEvidence(
+    evidence: DetectionEvidenceRecord[],
+    devices: DeviceCatalogRecord[],
+  ): IncidentWorkspaceEvidence[] {
+    return evidence.map((item) => {
+      const device = devices.find((candidate) => candidate.id === item.deviceId);
+      const capability = device?.capabilities.find((candidate) => candidate.code === item.variableType);
+      return {
+        deviceId: item.deviceId,
+        deviceName: device?.name ?? item.deviceId,
+        deviceCode: device?.deviceCode ?? item.deviceId,
+        metric: item.metric ?? capabilityLabel(item.variableType),
+        value: item.value,
+        unit: item.unit ?? capability?.unit,
+        warningThreshold: item.warningThreshold,
+        criticalThreshold: item.criticalThreshold,
+        measuredAt: item.measuredAt,
+      };
+    });
   }
 }
 

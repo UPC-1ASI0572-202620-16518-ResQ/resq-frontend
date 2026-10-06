@@ -71,6 +71,11 @@ export interface AlertResourceDto {
 
   generatedAt: string;
 
+  /** TODO(OpenAPI): optional compatibility fields until backend contract is published. */
+  status?: 'ACTIVE' | 'CLEARED';
+  clearedAt?: string | null;
+  clearReason?: 'RETURNED_TO_NORMAL' | 'CRITICAL_THRESHOLD_REACHED' | null;
+
   deliveries:
     NotificationDeliveryResourceDto[];
 }
@@ -129,6 +134,9 @@ export interface ResponseExecutionResourceDto {
     ResponseExecutionStatusDto;
 
   requestedAt: string;
+
+  /** TODO(OpenAPI): lifecycle timestamp pending final backend schema. */
+  executionRequestedAt?: string | null;
 
   authorization?:
     ResponseAuthorizationResourceDto

@@ -42,6 +42,10 @@ export function mapIncidentResourceDto(
       dto.assignedTo ??
       undefined,
 
+    assignedAt: dto.assignedAt ? new Date(dto.assignedAt) : undefined,
+    safeAt: dto.safeAt ? new Date(dto.safeAt) : undefined,
+    resolvedBy: dto.resolvedBy ?? undefined,
+
     createdAt:
       new Date(
         dto.createdAt,
@@ -93,13 +97,16 @@ export function mapLegacyIncidentToRecord(
     LegacyIncident,
 
   riskType:
-    IncidentRiskType = 'UNKNOWN',
+    IncidentRiskType = incident.riskTypeCode,
 ):
   IncidentRecord {
 
   return {
     incidentId:
       incident.id,
+
+    riskDetectionId:
+      incident.riskDetectionId,
 
     /*
      * The current legacy frontend calls this
@@ -133,6 +140,13 @@ export function mapLegacyIncidentToRecord(
         incident.status,
       ),
 
+    assignedTo:
+      incident.assignedTo,
+
+    assignedAt: incident.assignedAt ? new Date(incident.assignedAt) : undefined,
+    safeAt: incident.safeAt ? new Date(incident.safeAt) : undefined,
+    resolvedBy: incident.resolvedBy,
+
     createdAt:
       new Date(
         incident.createdAt,
@@ -144,6 +158,9 @@ export function mapLegacyIncidentToRecord(
             incident.resolvedAt,
           )
         : undefined,
+
+    resolutionNotes:
+      incident.resolutionNotes,
   };
 }
 
@@ -167,6 +184,9 @@ export function cloneIncident(
             incident.resolvedAt,
           )
         : undefined,
+
+    assignedAt: incident.assignedAt ? new Date(incident.assignedAt) : undefined,
+    safeAt: incident.safeAt ? new Date(incident.safeAt) : undefined,
   };
 }
 
