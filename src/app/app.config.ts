@@ -65,10 +65,16 @@ import {
   routes,
 } from './app.routes';
 
+import { provideSubscriptionDataAccess } from './features/subscriptions/data-access/subscription.providers';
+
 export const appConfig:
   ApplicationConfig = {
 
     providers: [
+
+      provideUserDataAccess('mock'),
+    provideSubscriptionDataAccess('mock'), // <--- Agrega el provider aquí
+    provideBuildingDataAccess('mock'),
 
       provideBrowserGlobalErrorListeners(),
 
