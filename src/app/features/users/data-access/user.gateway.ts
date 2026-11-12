@@ -10,11 +10,7 @@ export interface ContactInformationRecord {
   email: string;
 
   /**
-   * Temporarily optional because the current
-   * legacy frontend mock does not contain a phone.
-   *
-   * The final User domain expects contact
-   * information to include it.
+   * Optional because existing backend profiles may not have a phone.
    */
   phoneNumber?: string;
 }
@@ -23,11 +19,8 @@ export interface UserPreferencesRecord {
 
   /**
    * These fields are temporarily optional because
-   * the existing DEMO_USER has no persisted
-   * preferences.
-   *
-   * The real backend UserProfile should provide
-   * the complete preference value object.
+   * the backend profile contract does not expose
+   * persisted preferences.
    */
   language?: string;
 

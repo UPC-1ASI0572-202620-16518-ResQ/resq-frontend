@@ -140,6 +140,11 @@ export interface IncidentGateway {
     Observable<
       IncidentRecord
     >;
+
+  closeIncident(
+    incidentId: string,
+  ):
+    Observable<IncidentRecord>;
 }
 
 export const INCIDENT_GATEWAY =

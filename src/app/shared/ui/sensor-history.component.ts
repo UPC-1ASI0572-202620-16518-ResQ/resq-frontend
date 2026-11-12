@@ -17,6 +17,7 @@ import { LineChartComponent } from './ui.components';
         }
       </select></label
     >
+    <p>Current readings only. Historical trends are not exposed by the backend.</p>
     @if (readings().length) {
       <resq-line-chart
         [labels]="labels()"
@@ -25,7 +26,7 @@ import { LineChartComponent } from './ui.components';
         [unit]="readings()[0].unit"
       />
     } @else {
-      <p>No measurements recorded for this sensor.</p>
+      <p>No current measurement is available for this sensor. Older measurements are not provided by this API.</p>
     }`,
   styles: [
     `

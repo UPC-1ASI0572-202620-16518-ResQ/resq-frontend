@@ -156,13 +156,16 @@ export class IncidentsPage implements OnInit {
         @if (workspace.canResolve(row)) {
           <button type="button" (click)="showResolve.set(true)" [disabled]="busy()">Resolve incident</button>
         }
+        @if (workspace.canClose(row)) {
+          <button type="button" (click)="closeIncident()" [disabled]="busy()">Close incident</button>
+        }
         @if (row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED') {
           <button type="button" disabled>✓ {{ row.statusLabel }}</button>
         }
       </div>
 
-      @if (row.incident.status === 'IN_PROGRESS' && row.currentCondition !== 'Normal') {
-        <p class="contract-note">Resolution is blocked: the current measurement must be below the warning threshold. Current condition: {{ row.currentCondition }}.</p>
+      @if (row.currentCondition !== 'Normal') {
+        <p class="contract-note">Current safety is not verified ({{ row.currentCondition }}). This is an operator warning; the backend resolve contract validates notes and incident state, not IoT safety.</p>
       }
 
       @if (showResolve()) {
@@ -179,7 +182,7 @@ export class IncidentsPage implements OnInit {
       }
 
       <article class="critical-evidence">
-        <header><div><h3>Original Critical Detection</h3><p>This immutable evidence explains why Risk Detection created the Incident. Actor: SYSTEM.</p></div><span>Critical condition detected</span></header>
+        <header><div><h3>Original Critical Detection</h3><p>Only a confirmed incident-to-detection relationship is shown as evidence.</p></div><span>{{ row.detection ? 'Confirmed evidence' : 'Relationship unavailable' }}</span></header>
         @if (row.evidence.length) {
           @for (evidence of row.evidence; track evidence.deviceId + evidence.metric) {
             <div class="critical-reading">
@@ -189,16 +192,23 @@ export class IncidentsPage implements OnInit {
               <section><small>Device</small><b><a [routerLink]="['/devices', evidence.deviceId]">{{ evidence.deviceName }}</a></b><em>{{ evidence.deviceCode }}</em></section>
               <section><small>Zone</small><b>{{ row.location.zoneName }}</b></section>
               <section><small>Detected at</small><b>{{ evidence.measuredAt.toLocaleString() }}</b></section>
-              @if (evidence.criticalThreshold !== undefined) {<section><small>Detection rule</small><b>{{ evidence.value }} ≥ {{ evidence.criticalThreshold }} {{ evidence.unit || '' }}</b></section>}
+              @if (evidence.ruleId) {<section><small>Rule</small><b>{{ evidence.ruleId }}</b><em>{{ evidence.operator || 'Operator unavailable' }}</em></section>}
             </div>
           }
         } @else {
-          <p class="contract-note">Original critical detection evidence is unavailable.</p>
+          <p class="contract-note">The incident resource does not expose a riskDetectionId, so no detection is presented as confirmed evidence.</p>
+          @if (row.suggestedAlerts.length) {
+            <div class="critical-reading">
+              @for (candidate of row.suggestedAlerts; track candidate.alertId) {
+                <section><small>Unverified alert candidate</small><b><a [routerLink]="['/alerts', candidate.alertId]">{{ candidate.alertId }}</a></b><em>{{ candidate.severity }} · {{ candidate.generatedAt.toLocaleString() }} · not incident evidence</em></section>
+              }
+            </div>
+          }
         }
       </article>
 
       <article class="critical-evidence current-condition">
-        <header><div><h3>Current Condition</h3><p>The latest device reading determines whether the monitored condition is safe now.</p></div><span [class.safe]="row.currentCondition === 'Normal'">{{ row.currentCondition === 'Normal' ? 'SAFE' : 'UNSAFE' }}</span></header>
+        <header><div><h3>Current Condition</h3><p>Monitoring supplies freshness-filtered readings; Connectivity verifies the sensor link.</p></div><span [class.safe]="row.currentCondition === 'Normal'">{{ row.currentCondition === 'Normal' ? 'VERIFIED NORMAL' : row.currentCondition === 'Warning' || row.currentCondition === 'Critical' ? 'UNSAFE' : 'NOT VERIFIED' }}</span></header>
         @if (row.currentEvidence; as current) {
           <div class="critical-reading">
             <section><small>Current value</small><b>{{ current.value }} {{ current.unit || '' }}</b></section>
@@ -206,18 +216,17 @@ export class IncidentsPage implements OnInit {
             <section><small>Critical threshold</small><b>{{ current.criticalThreshold ?? 'Unavailable' }} {{ current.unit || '' }}</b></section>
             <section><small>Current classification</small><b>{{ row.currentCondition }}</b></section>
             <section><small>Latest reading at</small><b>{{ current.measuredAt.toLocaleString() }}</b></section>
+            <section><small>Connectivity</small><b>{{ row.currentConnection?.status || 'Unknown' }}</b></section>
+            <section><small>Last connection</small><b>{{ row.currentConnection?.lastHeartbeatAt?.toLocaleString() || 'Unavailable' }}</b></section>
           </div>
-          <p class="contract-note">{{ row.currentCondition === 'Normal' ? 'The monitored condition returned below the warning threshold.' : 'The monitored condition remains unsafe.' }}</p>
+          <p class="contract-note">{{ row.currentCondition === 'Normal' ? 'A current reading, online connectivity, and applicable active rules support a Normal classification.' : 'The available data does not verify that the environment is safe.' }}</p>
         } @else {
           <p class="contract-note">The current device reading is unavailable.</p>
         }
       </article>
 
       <article class="critical-evidence">
-        <header><div><h3>Critical Response Actions</h3><p>These actions require an assigned Administrator. Unsupported device capabilities are not invented.</p></div><span>HUMAN_REQUIRED</span></header>
-        @if (row.incident.status === 'ACTIVE' && !row.incident.assignedTo) {
-          <p class="contract-note">Take this incident before authorizing critical response actions.</p>
-        }
+        <header><div><h3>Critical Response Actions</h3><p>Authorization records a human decision; it does not confirm physical actuator execution.</p></div><span>HUMAN_REQUIRED</span></header>
         @if (row.responseExecutions.length) {
           @for (execution of row.responseExecutions; track execution.responseExecutionId) {
             <div class="critical-reading">
@@ -228,6 +237,7 @@ export class IncidentsPage implements OnInit {
               <section><small>Authorization mode</small><b>{{ execution.action.authorizationMode === 'HUMAN_REQUIRED' ? 'Human required' : 'Automatic' }}</b></section>
               <section><small>Status</small><b>{{ execution.status }}</b></section>
               <section><small>Requested at</small><b>{{ execution.requestedAt.toLocaleString() }}</b></section>
+              @if (execution.alertId) {<section><small>Alert</small><b><a [routerLink]="['/alerts', execution.alertId]">{{ execution.alertId }}</a></b></section>}
               @if (execution.status === 'SUCCEEDED') {<section><small>Lifecycle</small><b>AUTHORIZED → EXECUTION_REQUESTED → SUCCEEDED</b></section>}
               @if (execution.authorization) {
                 <section><small>{{ execution.authorization.decision === 'APPROVED' ? 'Authorized by' : 'Rejected by' }}</small><b>{{ workspace.actorLabel(execution.authorization.decidedByUserId) }}</b></section>
@@ -236,12 +246,13 @@ export class IncidentsPage implements OnInit {
               @if (execution.executionRequestedAt) {<section><small>Execution requested</small><b>{{ execution.executionRequestedAt.toLocaleString() }}</b></section>}
               @if (execution.result) {<section><small>Result</small><b>{{ execution.result.resultCode }} · {{ execution.result.message || 'Completed' }}</b></section><section><small>Completed at</small><b>{{ execution.result.completedAt.toLocaleString() }}</b></section>}
               @if (workspace.canAuthorize(execution)) {
-                <section><small>Decision</small><b><button type="button" (click)="decide(execution.responseExecutionId, 'APPROVED')" [disabled]="busy()">Approve &amp; Execute</button> <button type="button" class="secondary" (click)="decide(execution.responseExecutionId, 'REJECTED')" [disabled]="busy()">Reject</button></b></section>
+                <section><small>Decision</small><b><button type="button" (click)="decide(execution.responseExecutionId, 'APPROVED')" [disabled]="busy()">Approve / Authorize</button> <button type="button" class="secondary" (click)="decide(execution.responseExecutionId, 'REJECTED')" [disabled]="busy()">Reject</button></b></section>
               }
             </div>
           }
         } @else {
-          <p class="contract-note">No supported critical actuator capability is available for this Incident's device.</p>
+          <p class="contract-note">No response actions can be shown. The backend incident resource does not currently link to an alert or risk detection.</p>
+          @if (row.suggestedAlerts.length) {<p class="contract-note">Open an unverified alert candidate above to inspect and decide any actions directly on the confirmed alert resource.</p>}
         }
       </article>
 
@@ -251,13 +262,14 @@ export class IncidentsPage implements OnInit {
           <div class="timeline">
             @if (row.evidence.at(0); as detected) {<div class="done"><i>✓</i><section><b>Critical condition detected</b><small>{{ detected.measuredAt.toLocaleString() }}</small><p>Risk Detection classified the measurement as CRITICAL.</p></section></div>}
             <div class="done"><i>✓</i><section><b>Incident created</b><small>{{ row.incident.createdAt.toLocaleString() }}</small><p>Risk Detection created this Incident independently after the critical threshold was reached.</p></section></div>
-            <div [class.done]="row.incident.assignedTo"><i>{{ row.incident.assignedTo ? '✓' : '2' }}</i><section><b>Assignment</b><small>{{ row.incident.assignedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.assigneeLabel }}</p></section></div>
+            <div [class.done]="row.incident.assignedTo"><i>{{ row.incident.assignedTo ? '✓' : '2' }}</i><section><b>Assignment</b><small>{{ row.incident.assignedTo ? 'Recorded; timestamp unavailable' : 'Pending' }}</small><p>{{ row.assigneeLabel }}</p></section></div>
             @for (execution of row.responseExecutions; track execution.responseExecutionId) {
               <div [class.done]="execution.authorization"><i>{{ execution.authorization ? '✓' : '3' }}</i><section><b>{{ actionLabel(execution.action.actionCode) }}</b><small>{{ execution.authorization?.decidedAt?.toLocaleString() || 'Authorization pending' }}</small><p>{{ execution.authorization ? execution.authorization.decision + ' by ' + workspace.actorLabel(execution.authorization.decidedByUserId) : 'Administrator decision required.' }}</p></section></div>
               @if (execution.result) {<div class="done"><i>✓</i><section><b>Action result</b><small>{{ execution.result.completedAt.toLocaleString() }}</small><p>{{ execution.result.message || execution.result.resultCode }}</p></section></div>}
             }
-            <div [class.done]="row.incident.safeAt"><i>{{ row.incident.safeAt ? '✓' : '4' }}</i><section><b>Safe condition verified</b><small>{{ row.incident.safeAt?.toLocaleString() || 'Pending' }}</small><p>The current measurement must be below the warning threshold.</p></section></div>
+            <div [class.done]="row.currentCondition === 'Normal'"><i>{{ row.currentCondition === 'Normal' ? '✓' : '4' }}</i><section><b>Current condition check</b><small>{{ row.currentEvidence?.measuredAt?.toLocaleString() || 'Not verified' }}</small><p>{{ row.currentCondition === 'Normal' ? 'Current Monitoring and Connectivity data classify the condition as Normal; this check is not persisted by Incident Management.' : 'No persisted safe-condition verification is available.' }}</p></section></div>
             <div [class.done]="row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED'"><i>{{ row.incident.resolvedAt ? '✓' : '5' }}</i><section><b>Resolution</b><small>{{ row.incident.resolvedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.incident.resolutionNotes || 'Resolution notes have not been registered yet.' }}</p></section></div>
+            <div [class.done]="row.incident.status === 'CLOSED'"><i>{{ row.incident.status === 'CLOSED' ? '✓' : '6' }}</i><section><b>Closure</b><small>{{ row.incident.status === 'CLOSED' ? 'Closed' : 'Pending' }}</small><p>Closure is available only after resolution.</p></section></div>
           </div>
         </article>
 
@@ -272,14 +284,14 @@ export class IncidentsPage implements OnInit {
             <dt>Assigned at</dt><dd>{{ row.incident.assignedAt?.toLocaleString() || '—' }}</dd>
             <dt>Current condition</dt><dd>{{ row.currentCondition }}</dd>
             <dt>Safe at</dt><dd>{{ row.incident.safeAt?.toLocaleString() || '—' }}</dd>
-            <dt>Building</dt><dd>{{ row.location.buildingName }}</dd>
+            <dt>Building</dt><dd>@if (row.location.buildingId) {<a [routerLink]="['/buildings', row.location.buildingId]">{{ row.location.buildingName }}</a>} @else { {{ row.location.buildingName }} }</dd>
             <dt>Floor</dt><dd>{{ row.location.floorLabel || '—' }}</dd>
-            <dt>Zone</dt><dd>{{ row.location.zoneName }}</dd>
+            <dt>Zone</dt><dd><a [routerLink]="['/spaces', row.location.zoneId]">{{ row.location.zoneName }}</a></dd>
             <dt>Created</dt><dd>{{ row.incident.createdAt.toLocaleString() }}</dd>
             <dt>Resolved</dt><dd>{{ row.incident.resolvedAt?.toLocaleString() || '—' }}</dd>
             <dt>Resolved by</dt><dd>{{ row.incident.resolvedBy ? workspace.actorLabel(row.incident.resolvedBy) : '—' }}</dd>
           </dl>
-          <p class="contract-note">Incident creation is not exposed as a manual Web action. Assignment and resolution are the supported operator actions.</p>
+          <p class="contract-note">Assignment remains unavailable because IAM profile ids are integers while Incident Management requires an attendant GUID. Resolution and post-resolution closure are supported.</p>
         </aside>
       </div>
     } @else {
@@ -295,10 +307,11 @@ export class IncidentDetailPage implements OnInit {
   readonly busy = signal(false);
   readonly showResolve = signal(false);
   resolutionNotes = '';
+  private incidentId = '';
 
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('incidentId') ?? '';
-    this.workspace.loadDetail(id).subscribe({ error: () => undefined });
+    this.incidentId = this.route.snapshot.paramMap.get('incidentId') ?? '';
+    this.reload();
   }
 
   assignToMe(): void {
@@ -306,6 +319,7 @@ export class IncidentDetailPage implements OnInit {
     this.workspace.assignToCurrentUser().subscribe({
       next: () => {
         this.busy.set(false);
+        this.reload();
         this.snack.open('Incident assigned to your user.', 'Close', { duration: 2200 });
       },
       error: (error: { message?: string }) => {
@@ -324,6 +338,7 @@ export class IncidentDetailPage implements OnInit {
         this.busy.set(false);
         this.showResolve.set(false);
         this.resolutionNotes = '';
+        this.reload();
         this.snack.open('Incident resolved.', 'Close', { duration: 2200 });
       },
       error: (error: { message?: string }) => {
@@ -338,9 +353,10 @@ export class IncidentDetailPage implements OnInit {
     this.workspace.decideAuthorization(executionId, decision).subscribe({
       next: () => {
         this.busy.set(false);
+        this.reload();
         this.snack.open(
           decision === 'APPROVED'
-            ? 'Critical action authorized and completed.'
+            ? 'Authorization approved. Physical execution is not confirmed.'
             : 'Critical action rejected.',
           'Close',
           { duration: 2600 },
@@ -351,6 +367,26 @@ export class IncidentDetailPage implements OnInit {
         this.snack.open(error.message ?? 'Authorization failed.', 'Close', { duration: 3500 });
       },
     });
+  }
+
+  closeIncident(): void {
+    if (!window.confirm('Close this resolved incident? This transition is final in the current workflow.')) return;
+    this.busy.set(true);
+    this.workspace.close().subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.reload();
+        this.snack.open('Incident closed.', 'Close', { duration: 2200 });
+      },
+      error: (error: { message?: string }) => {
+        this.busy.set(false);
+        this.snack.open(error.message ?? 'Incident closure failed.', 'Close', { duration: 3500 });
+      },
+    });
+  }
+
+  private reload(): void {
+    if (this.incidentId) this.workspace.loadDetail(this.incidentId).subscribe({ error: () => undefined });
   }
 
   actionLabel(value: string): string {

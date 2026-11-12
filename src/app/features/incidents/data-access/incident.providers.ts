@@ -15,17 +15,11 @@ import {
   HttpIncidentGateway,
 } from './http-incident.gateway';
 
-import {
-  MockIncidentGateway,
-} from './mock-incident.gateway';
-
-export type IncidentDataSource =
-  | 'mock'
-  | 'http';
+export type IncidentDataSource = 'http';
 
 export function provideIncidentDataAccess(
   source:
-    IncidentDataSource = 'mock',
+    IncidentDataSource = 'http',
 ):
   EnvironmentProviders {
 
@@ -37,10 +31,7 @@ export function provideIncidentDataAccess(
       provide:
         INCIDENT_GATEWAY,
 
-      useClass:
-        source === 'http'
-          ? HttpIncidentGateway
-          : MockIncidentGateway,
+      useClass: HttpIncidentGateway,
     },
   ]);
 }

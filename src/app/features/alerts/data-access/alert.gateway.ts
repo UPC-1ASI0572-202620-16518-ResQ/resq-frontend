@@ -126,9 +126,11 @@ export interface ResponseExecutionRecord {
 
   organizationId: string;
 
+  alertId?: string;
+
   riskDetectionId: string;
 
-  policyId: string;
+  policyId?: string;
 
   action:
     ResponseActionSnapshotRecord;
@@ -218,6 +220,8 @@ export interface AlertQueryFilters {
 }
 
 export interface ResponseExecutionQueryFilters {
+  alertId?: string;
+
   riskDetectionId?: string;
 
   status?:

@@ -23,7 +23,7 @@ export interface MonitoringMeasurement {
 
   buildingId: string;
 
-  zoneId: string;
+  zoneId?: string;
 
   variableType: string;
 
@@ -38,7 +38,7 @@ export interface MonitoringMeasurement {
 export interface DeviceMonitoringState {
   deviceId: string;
 
-  zoneId: string;
+  zoneId?: string;
 
   availability:
     DeviceAvailability;

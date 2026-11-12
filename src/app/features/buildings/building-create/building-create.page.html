@@ -30,7 +30,7 @@
       <div class="building-info-layout">
         <div class="form-fields">
           <label>Building Name *<input formControlName="name" placeholder="Science Building"/>@if(buildingForm.controls.name.touched&&buildingForm.controls.name.invalid){<small class="field-error">Enter a building name.</small>}</label>
-          <label>Address *<input formControlName="address" placeholder="120 Discovery Avenue"/>@if(buildingForm.controls.address.touched&&buildingForm.controls.address.invalid){<small class="field-error">Enter an address.</small>}</label>
+          <label>Address *<input formControlName="address" placeholder="Street, district, city, PE"/>@if(buildingForm.controls.address.touched&&buildingForm.controls.address.invalid){<small class="field-error">Enter an address.</small>}</label>
           <label>Description<textarea formControlName="description" rows="4" placeholder="Optional building description"></textarea></label>
           <label>Number of Floors *<input type="number" min="1" max="20" formControlName="numberOfFloors"/>@if(buildingForm.controls.numberOfFloors.touched&&buildingForm.controls.numberOfFloors.invalid){<small class="field-error">Choose between 1 and 20 floors.</small>}</label>
         </div>

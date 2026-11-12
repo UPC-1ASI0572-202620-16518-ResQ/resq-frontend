@@ -1,7 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Observable, delay, of } from 'rxjs';
-
-import { DEMO_USER, INCIDENTS } from '../mock-data/resq.mock';
+import { Observable, of } from 'rxjs';
 
 import {
   Alert,
@@ -14,13 +12,10 @@ import {
   DeviceCapability,
   DeviceStatusSummary,
   Floor,
-  Incident,
-  IncidentStatus,
   SearchResult,
   SensorReading,
   Space,
   SpaceThresholds,
-  User,
 } from '../models/resq.models';
 
 import { BuildingStoreService } from './building-store.service';
@@ -42,10 +37,10 @@ export class BuildingService {
   private readonly store = inject(BuildingStoreService);
   readonly buildings = this.store.buildings;
   getBuildings(): Observable<Building[]> {
-    return of(this.store.buildings()).pipe(delay(150));
+    return of(this.store.buildings());
   }
   getBuildingById(id: string): Observable<Building | undefined> {
-    return of(this.store.getBuilding(id)).pipe(delay(100));
+    return of(this.store.getBuilding(id));
   }
 }
 
@@ -53,10 +48,10 @@ export class BuildingService {
 export class FloorService {
   private readonly store = inject(BuildingStoreService);
   getFloorsByBuilding(buildingId: string): Observable<Floor[]> {
-    return of(this.store.getBuilding(buildingId)?.floors ?? []).pipe(delay(100));
+    return of(this.store.getBuilding(buildingId)?.floors ?? []);
   }
   getFloorById(id: string): Observable<Floor | undefined> {
-    return of(this.store.floors().find((item) => item.id === id)).pipe(delay(80));
+    return of(this.store.floors().find((item) => item.id === id));
   }
 }
 
@@ -65,13 +60,13 @@ export class SpaceService {
   private readonly store = inject(BuildingStoreService);
   private readonly response = inject(SensorResponseService);
   getSpaces(): Observable<Space[]> {
-    return of(this.store.spaces()).pipe(delay(120));
+    return of(this.store.spaces());
   }
   getSpacesByFloor(floorId: string): Observable<Space[]> {
-    return of(this.store.spaces().filter((item) => item.floorId === floorId)).pipe(delay(100));
+    return of(this.store.spaces().filter((item) => item.floorId === floorId));
   }
   getSpaceById(id: string): Observable<Space | undefined> {
-    return of(this.store.spaces().find((item) => item.id === id)).pipe(delay(80));
+    return of(this.store.spaces().find((item) => item.id === id));
   }
   updateConfiguration(
     id: string,
@@ -146,33 +141,27 @@ export class DeviceService {
     if (spaceId) this.response.reconcile(spaceId);
   }
   getDevices(): Observable<Device[]> {
-    return of(this.store.devices()).pipe(delay(120));
+    return of(this.store.devices());
   }
   getDeviceById(id: string): Observable<Device | undefined> {
-    return of(this.store.devices().find((item) => item.id === id)).pipe(delay(80));
+    return of(this.store.devices().find((item) => item.id === id));
   }
   getDevicesBySpace(spaceId: string): Observable<Device[]> {
-    return of(this.store.devices().filter((item) => item.spaceId === spaceId)).pipe(delay(80));
+    return of(this.store.devices().filter((item) => item.spaceId === spaceId));
   }
   getDevicesByBuilding(buildingId: string): Observable<Device[]> {
     return of(
       this.store.devices().filter((item) => item.assignment.buildingId === buildingId),
-    ).pipe(delay(80));
+    );
   }
   getDevicesByFloor(floorId: string): Observable<Device[]> {
-    return of(this.store.devices().filter((item) => item.assignment.floorId === floorId)).pipe(
-      delay(80),
-    );
+    return of(this.store.devices().filter((item) => item.assignment.floorId === floorId));
   }
   getDeviceCapabilities(deviceId: string): Observable<DeviceCapability[]> {
-    return of(this.store.devices().find((item) => item.id === deviceId)?.capabilities ?? []).pipe(
-      delay(80),
-    );
+    return of(this.store.devices().find((item) => item.id === deviceId)?.capabilities ?? []);
   }
   getDeviceMeasurements(deviceId: string): Observable<SensorReading[]> {
-    return of(this.store.devices().find((item) => item.id === deviceId)?.readings ?? []).pipe(
-      delay(80),
-    );
+    return of(this.store.devices().find((item) => item.id === deviceId)?.readings ?? []);
   }
   getStatusSummary(): Observable<DeviceStatusSummary> {
     return of({
@@ -183,7 +172,7 @@ export class DeviceService {
         .filter((item) => item.healthStatus === 'WARNING' || item.healthStatus === 'CRITICAL')
         .length,
       offline: this.store.devices().filter((item) => item.connectivityStatus === 'OFFLINE').length,
-    }).pipe(delay(80));
+    });
   }
 }
 
@@ -206,13 +195,13 @@ export class AlertService {
         .length,
   );
   getAlerts(): Observable<AlertListItem[]> {
-    return of(this.listItems()).pipe(delay(120));
+    return of(this.listItems());
   }
   getAlertById(id: string): Observable<Alert | undefined> {
-    return of(this.events.alerts().find((item) => item.alertId === id)).pipe(delay(80));
+    return of(this.events.alerts().find((item) => item.alertId === id));
   }
   getAlertsByZone(zoneId: string): Observable<AlertListItem[]> {
-    return of(this.listItems().filter((item) => item.location.zoneId === zoneId)).pipe(delay(80));
+    return of(this.listItems().filter((item) => item.location.zoneId === zoneId));
   }
   getAlertsBySpace(spaceId: string): Observable<AlertListItem[]> {
     return this.getAlertsByZone(spaceId);
@@ -226,12 +215,10 @@ export class AlertService {
         )
         .map((detection) => detection.riskDetectionId),
     );
-    return of(this.listItems().filter((item) => detectionIds.has(item.riskDetectionId))).pipe(
-      delay(80),
-    );
+    return of(this.listItems().filter((item) => detectionIds.has(item.riskDetectionId)));
   }
   getRecentAlerts(period: AlertPeriod): Observable<AlertListItem[]> {
-    return of(this.filterByPeriod(this.listItems(), period)).pipe(delay(80));
+    return of(this.filterByPeriod(this.listItems(), period));
   }
   getAlertSummary(period: AlertPeriod): Observable<AlertSummary> {
     const alerts = this.filterByPeriod(this.listItems(), period);
@@ -240,11 +227,11 @@ export class AlertService {
       critical: 0,
       warning: alerts.filter((item) => item.severity === 'Warning').length,
       notificationFailures: alerts.reduce((total, item) => total + item.delivery.failed, 0),
-    }).pipe(delay(80));
+    });
   }
   getAlertDetail(id: string): Observable<AlertDetailViewModel | undefined> {
     const alert = this.events.alerts().find((item) => item.alertId === id);
-    if (!alert) return of(undefined).pipe(delay(80));
+    if (!alert) return of(undefined);
     const listItem = this.toListItem(alert);
     const detection = this.events
       .detections()
@@ -275,7 +262,7 @@ export class AlertService {
           targetDeviceCode: device?.deviceCode ?? execution.action.targetDeviceId,
         };
       });
-    return of({ ...listItem, alert, evidence, responseExecutions }).pipe(delay(100));
+    return of({ ...listItem, alert, evidence, responseExecutions });
   }
   private toListItem(alert: Alert): AlertListItem {
     const detection = this.events
@@ -352,27 +339,6 @@ export class AlertService {
 }
 
 @Injectable({ providedIn: 'root' })
-export class IncidentService {
-  private readonly items = signal<Incident[]>(INCIDENTS);
-  readonly incidents = this.items.asReadonly();
-  getIncidents(): Observable<Incident[]> {
-    return of(this.items()).pipe(delay(120));
-  }
-  getIncidentById(id: string): Observable<Incident | undefined> {
-    return of(this.items().find((item) => item.id === id)).pipe(delay(80));
-  }
-  updateStatus(id: string, status: IncidentStatus): void {
-    this.items.update((items) =>
-      items.map((item) =>
-        item.id === id
-          ? { ...item, status, resolvedAt: status === 'Resolved' ? new Date() : undefined }
-          : item,
-      ),
-    );
-  }
-}
-
-@Injectable({ providedIn: 'root' })
 export class SearchService {
   private readonly store = inject(BuildingStoreService);
   search(query: string): Observable<SearchResult[]> {
@@ -416,20 +382,7 @@ export class SearchService {
           route: `/devices/${item.id}`,
         })),
     ];
-    return of(results.slice(0, 10)).pipe(delay(100));
-  }
-}
-
-@Injectable({ providedIn: 'root' })
-export class AuthMockService {
-  readonly currentUser = signal<User | null>(null);
-  login(email: string, password: string): boolean {
-    const valid = email === 'admin@resq.io' && password === 'password123';
-    if (valid) this.currentUser.set(DEMO_USER);
-    return valid;
-  }
-  logout(): void {
-    this.currentUser.set(null);
+    return of(results.slice(0, 10));
   }
 }
 

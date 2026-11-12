@@ -2,6 +2,8 @@ import {
   InjectionToken,
 } from '@angular/core';
 
+import { environment } from '../../../environments/environment';
+
 export interface ApiConfig {
   baseUrl: string;
   requestTimeoutMs: number;
@@ -14,7 +16,7 @@ export const API_CONFIG =
 
 export const DEFAULT_API_CONFIG:
   ApiConfig = {
-    baseUrl: '',
+    baseUrl: environment.apiBaseUrl,
     requestTimeoutMs: 15_000,
   };
 

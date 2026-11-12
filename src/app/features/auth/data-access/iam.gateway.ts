@@ -7,15 +7,15 @@ import {
 } from 'rxjs';
 
 export interface AuthenticationInput {
-  loginIdentifier: string;
-
-  credentialSecret: string;
+  username: string;
+  password: string;
 }
 
 export interface AuthenticationSessionRecord {
-  identityId: string;
-
-  sessionToken: string;
+  userId: number;
+  username: string;
+  token: string;
+  role: string;
 }
 
 export interface AssignRoleInput {

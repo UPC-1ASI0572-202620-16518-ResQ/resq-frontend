@@ -1,11 +1,5 @@
 import { Injectable, signal } from '@angular/core';
 import {
-  ALERTS,
-  INCIDENTS,
-  RESPONSE_EXECUTIONS,
-  RISK_DETECTIONS,
-} from '../mock-data/resq.mock';
-import {
   Alert,
   AlertClearReason,
   DetectionEvidence,
@@ -28,21 +22,18 @@ export interface UpsertResult<T> {
 }
 
 /**
- * Session-only aggregate projection used by every mock adapter.
- *
- * It is the single mock boundary for event correlation, deduplication and
- * lifecycle state. A future SSE/WebSocket ingress can issue these same domain
- * commands without moving threshold rules into pages or transport adapters.
+ * Empty session projection retained only for unsupported editor interactions.
+ * Server data is never populated from this store or used as an API fallback.
  */
 @Injectable({ providedIn: 'root' })
 export class RiskEventStoreService {
   private readonly detectionsState = signal<RiskDetectionSummary[]>(
-    structuredClone(RISK_DETECTIONS),
+    [],
   );
-  private readonly alertsState = signal<Alert[]>(structuredClone(ALERTS));
-  private readonly incidentsState = signal<Incident[]>(structuredClone(INCIDENTS));
+  private readonly alertsState = signal<Alert[]>([]);
+  private readonly incidentsState = signal<Incident[]>([]);
   private readonly executionsState = signal<ResponseExecution[]>(
-    structuredClone(RESPONSE_EXECUTIONS),
+    [],
   );
 
   readonly detections = this.detectionsState.asReadonly();

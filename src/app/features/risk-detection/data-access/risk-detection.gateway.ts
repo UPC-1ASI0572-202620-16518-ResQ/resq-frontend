@@ -49,9 +49,7 @@ export interface DetectionEvidenceRecord {
   /**
    * Required by the backend domain contract.
    *
-   * Optional temporarily because the current legacy
-   * frontend mock does not preserve measurementId
-   * inside RiskDetectionSummary.
+   * Optional for compatibility with incomplete historical records.
    */
   measurementId?: string;
 
@@ -97,8 +95,7 @@ export interface RiskDetectionRecord {
   /**
    * Required by the final Risk Detection model.
    *
-   * Optional temporarily because the legacy mock
-   * does not keep the originating ruleId.
+   * Optional for compatibility with incomplete historical records.
    */
   ruleId?: string;
 
@@ -132,6 +129,23 @@ export interface ConfigureDetectionRuleInput {
 }
 
 export interface RiskDetectionGateway {
+
+  getDetectionRules():
+    Observable<DetectionRuleRecord[]>;
+
+  getDetectionRuleById(
+    ruleId: string,
+  ):
+    Observable<DetectionRuleRecord | undefined>;
+
+  getRiskDetections(
+    filters?: {
+      buildingId?: string;
+      zoneId?: string;
+      riskTypeCode?: string;
+    },
+  ):
+    Observable<RiskDetectionRecord[]>;
 
   getRiskDetectionById(
     riskDetectionId: string,

@@ -45,6 +45,8 @@ export class AuthSessionFacade {
   readonly identityId =
     this.iam.identityId;
 
+  readonly username = computed(() => this.iam.session()?.username ?? '');
+
   readonly profile =
     this.user.profile;
 
@@ -81,8 +83,8 @@ export class AuthSessionFacade {
 
     return this.iam
       .authenticate({
-        loginIdentifier,
-        credentialSecret,
+        username: loginIdentifier,
+        password: credentialSecret,
       })
       .pipe(
 

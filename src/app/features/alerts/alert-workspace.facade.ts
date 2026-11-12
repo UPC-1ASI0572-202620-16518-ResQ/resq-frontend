@@ -15,6 +15,7 @@ import {
 import {
   RISK_DETECTION_GATEWAY,
   DetectionEvidenceRecord,
+  DetectionRuleRecord,
   RiskDetectionGateway,
   RiskDetectionRecord,
 } from '../risk-detection/data-access/risk-detection.gateway';
@@ -165,18 +166,21 @@ export class AlertWorkspaceFacade {
         }
 
         return forkJoin({
-          risk: this.risk.getRiskDetectionEvidence(alert.context.riskDetectionId),
+          risk: isGuidRiskId(alert.context.riskDetectionId)
+            ? this.risk.getRiskDetectionEvidence(alert.context.riskDetectionId)
+            : of(undefined),
           executions: this.alerts.getResponseExecutions({
-            riskDetectionId: alert.context.riskDetectionId,
+            alertId: alert.alertId,
           }),
+          rules: this.risk.getDetectionRules(),
         }).pipe(
-          map(({ risk, executions }) => {
+          map(({ risk, executions, rules }) => {
             const row = this.toRow(alert, buildings.items);
             return {
               ...row,
               alert,
               risk,
-              evidence: this.mapEvidence(risk?.evidence ?? [], devices.items),
+              evidence: this.mapEvidence(risk?.evidence ?? [], devices.items, rules),
               responseExecutions: executions,
             } satisfies AlertWorkspaceDetail;
           }),
@@ -230,8 +234,8 @@ export class AlertWorkspaceFacade {
       riskDetectionId: alert.context.riskDetectionId,
       riskTypeCode: alert.context.riskTypeCode,
       riskTypeLabel: label,
-      title: `${label} warning`,
-      description: 'Warning threshold exceeded. The critical threshold has not been reached.',
+      title: `${label} ${alert.context.severityCode.toLowerCase()} alert`,
+      description: `${alert.context.severityCode} risk threshold matched according to Risk Detection.`,
       severity: alert.context.severityCode,
       status: alert.status,
       clearedAt: alert.clearedAt,
@@ -246,10 +250,14 @@ export class AlertWorkspaceFacade {
   private mapEvidence(
     evidence: DetectionEvidenceRecord[],
     devices: DeviceCatalogRecord[],
+    rules: DetectionRuleRecord[],
   ): AlertWorkspaceEvidence[] {
     return evidence.map((item) => {
       const device = devices.find((candidate) => candidate.id === item.deviceId);
       const capability = device?.capabilities.find((candidate) => candidate.code === item.variableType);
+      const applicable = rules.filter(
+        (rule) => rule.status === 'ACTIVE' && rule.condition.variableType === item.variableType,
+      );
       return {
         measurementId: item.measurementId,
         deviceId: item.deviceId,
@@ -260,8 +268,8 @@ export class AlertWorkspaceFacade {
         hardware: capabilityHardware(item.variableType),
         value: item.value,
         unit: item.unit ?? capability?.unit,
-        warningThreshold: item.warningThreshold,
-        criticalThreshold: item.criticalThreshold,
+        warningThreshold: item.warningThreshold ?? applicable.find((rule) => rule.severityCode.toUpperCase() === 'WARNING')?.condition.threshold,
+        criticalThreshold: item.criticalThreshold ?? applicable.find((rule) => rule.severityCode.toUpperCase() === 'CRITICAL')?.condition.threshold,
         measuredAt: item.measuredAt,
       };
     });
@@ -301,4 +309,9 @@ function summarizeDelivery(deliveries: NotificationDeliveryRecord[]): AlertDeliv
       ? `${delivered}/${deliveries.length} delivered`
       : 'No deliveries',
   };
+}
+
+/** Connectivity alerts contain a synthetic identifier, not a Risk Detection GUID. */
+function isGuidRiskId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }

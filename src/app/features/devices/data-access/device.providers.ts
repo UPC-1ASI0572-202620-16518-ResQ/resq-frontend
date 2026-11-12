@@ -15,17 +15,11 @@ import {
   HttpDeviceGateway,
 } from './http-device.gateway';
 
-import {
-  MockDeviceGateway,
-} from './mock-device.gateway';
-
-export type DeviceDataSource =
-  'mock'
-  | 'http';
+export type DeviceDataSource = 'http';
 
 export function provideDeviceDataAccess(
   source:
-    DeviceDataSource = 'mock',
+    DeviceDataSource = 'http',
 ):
   EnvironmentProviders {
 
@@ -37,10 +31,7 @@ export function provideDeviceDataAccess(
       provide:
         DEVICE_GATEWAY,
 
-      useClass:
-        source === 'http'
-          ? HttpDeviceGateway
-          : MockDeviceGateway,
+      useClass: HttpDeviceGateway,
     },
   ]);
 }

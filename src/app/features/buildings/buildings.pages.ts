@@ -23,19 +23,20 @@ import {
 } from '@angular/material/snack-bar';
 
 import {
-  AlertListItem,
   Building,
   RiskStatus,
   riskRank,
 } from '../../core/models/resq.models';
 
 import {
-  AlertService,
-} from '../../core/services/data.services';
-
-import {
   BuildingStoreService,
 } from '../../core/services/building-store.service';
+import { forkJoin } from 'rxjs';
+import { AlertWorkspaceFacade, AlertWorkspaceRow } from '../alerts/alert-workspace.facade';
+import { DeviceWorkspaceFacade } from '../devices/device-workspace.facade';
+import { BuildingFacade } from './data-access/building.facade';
+import { BuildingCatalogRecord, ZoneCatalogRecord } from './data-access/building.gateway';
+import { mapCatalogBuildingToPresentation } from './building-legacy.mapper';
 
 import {
   ThreeBuildingViewerComponent,
@@ -2654,8 +2655,9 @@ export class BuildingsPage {
   private readonly router =
     inject(Router);
 
-  private readonly alertService =
-    inject(AlertService);
+  private readonly alertWorkspace = inject(AlertWorkspaceFacade);
+  private readonly deviceWorkspace = inject(DeviceWorkspaceFacade);
+  private readonly buildingFacade = inject(BuildingFacade);
 
 
   readonly buildings =
@@ -2663,7 +2665,7 @@ export class BuildingsPage {
 
 
   readonly recentAlertItems =
-    signal<AlertListItem[]>([]);
+    signal<AlertWorkspaceRow[]>([]);
 
 
   readonly query =
@@ -2702,11 +2704,19 @@ export class BuildingsPage {
 
 
   constructor() {
-    this.alertService
-      .getRecentAlerts('24h')
-      .subscribe(items =>
-        this.recentAlertItems.set(items)
-      );
+    forkJoin({
+      buildings: this.buildingFacade.loadBuildings({}, { page: 0, size: 100 }),
+      alerts: this.alertWorkspace.loadAlerts(),
+      devices: this.deviceWorkspace.loadFleet(),
+    }).subscribe({
+      next: ({ buildings, alerts }) => {
+        this.recentAlertItems.set(alerts);
+        this.buildingStore.replaceBuildings(
+          buildings.items.map((building) => mapCatalogBuildingToPresentation(building, alerts)),
+        );
+      },
+      error: () => undefined,
+    });
   }
 
   readonly displayedBuildings =
@@ -2817,10 +2827,7 @@ export class BuildingsPage {
 
   activeDevices(): number {
 
-    return this.buildingStore.devices().filter(
-      device =>
-        device.status !== 'Offline'
-    ).length;
+    return this.deviceWorkspace.rows().filter((row) => row.connection?.status === 'ONLINE').length;
 
   }
 
@@ -2853,22 +2860,8 @@ export class BuildingsPage {
     building: Building
   ): number {
 
-    const spaceIds =
-      new Set(
-        building.floors.flatMap(
-          floor =>
-            floor.spaces.map(
-              space => space.id
-            )
-        )
-      );
-
-
-    return this.buildingStore.devices().filter(
-      device =>
-        spaceIds.has(
-          device.spaceId
-        )
+    return this.deviceWorkspace.rows().filter(
+      row => row.catalog.assignment.buildingId === building.id,
     ).length;
 
   }
@@ -2878,21 +2871,10 @@ export class BuildingsPage {
     building: Building
   ): number {
 
-    const spaceIds =
-      new Set(
-        building.floors.flatMap(
-          floor =>
-            floor.spaces.map(
-              space => space.id
-            )
-        )
-      );
-
-
-    return this.buildingStore.devices().filter(
-      device =>
-        spaceIds.has(device.spaceId) &&
-        device.status === 'Offline'
+    return this.deviceWorkspace.rows().filter(
+      row =>
+        row.catalog.assignment.buildingId === building.id &&
+        row.connection?.status !== 'ONLINE',
     ).length;
 
   }
@@ -3147,6 +3129,7 @@ export class BuildingsPage {
   standalone: true,
 
   imports: [
+    FormsModule,
     RouterLink,
     MatIconModule,
     StatusBadgeComponent,
@@ -3448,6 +3431,39 @@ export class BuildingsPage {
 
       </article>
 
+      <article class="zone-management">
+        <header>
+          <div><h2>Zones</h2><p>Zones are persisted by the API. Floors are represented by each zone's floor label.</p></div>
+          <button type="button" (click)="startZoneCreate()"><mat-icon>add</mat-icon>Add Zone</button>
+        </header>
+
+        @if (zoneFormOpen()) {
+          <form (ngSubmit)="saveZone()">
+            <label>Zone code<input name="zoneCode" [(ngModel)]="zoneCode" required [disabled]="!!editingZoneId()" placeholder="LAB_101" /></label>
+            <label>Name<input name="zoneName" [(ngModel)]="zoneName" required placeholder="Laboratory 101" /></label>
+            <label>Floor label<input name="floorLabel" [(ngModel)]="zoneFloorLabel" required list="building-floor-labels" placeholder="Floor 1" /></label>
+            <datalist id="building-floor-labels">@for (label of floorLabels(); track label) {<option [value]="label"></option>}</datalist>
+            <label class="zone-description">Description<textarea name="zoneDescription" [(ngModel)]="zoneDescription" rows="2"></textarea></label>
+            <div><button type="button" class="secondary" (click)="cancelZoneForm()">Cancel</button><button type="submit" [disabled]="zoneSaving() || !zoneCode.trim() || !zoneName.trim() || !zoneFloorLabel.trim()">{{ editingZoneId() ? 'Save Zone' : 'Create Zone' }}</button></div>
+          </form>
+        }
+
+        <div class="zone-list">
+          @for (zone of catalogBuilding()?.zones ?? []; track zone.id) {
+            <section [class.inactive]="zone.administrativeStatus === 'INACTIVE'">
+              <div><b>{{ zone.name }}</b><small>{{ zone.zoneCode }} · {{ zone.floorLabel || 'No floor label' }}</small></div>
+              <resq-status-badge [status]="zone.administrativeStatus" />
+              <span>{{ zone.description || 'No description' }}</span>
+              <a [routerLink]="['/spaces', zone.id]">Open zone</a>
+              <button type="button" class="secondary" (click)="startZoneEdit(zone)">Edit</button>
+              <button type="button" (click)="toggleZoneStatus(zone)">{{ zone.administrativeStatus === 'ACTIVE' ? 'Deactivate' : 'Activate' }}</button>
+            </section>
+          } @empty {
+            <p>No zones have been created for this building.</p>
+          }
+        </div>
+      </article>
+
       @if (deleteConfirmationOpen()) {
         <div class="delete-dialog-backdrop" role="presentation">
           <section class="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-building-title">
@@ -3497,6 +3513,22 @@ export class BuildingsPage {
       align-items: center;
       justify-content: center;
     }
+
+    .zone-management { margin-top: 24px; padding: 24px; border: 1px solid #dce7df; border-radius: 16px; background: #fff; }
+    .zone-management > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    .zone-management h2 { margin: 0 0 4px; }
+    .zone-management p { margin: 0; color: #617067; }
+    .zone-management button, .zone-management a { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; padding: 8px 13px; border: 0; border-radius: 8px; background: #176b3a; color: #fff; font-weight: 700; text-decoration: none; cursor: pointer; }
+    .zone-management .secondary { border: 1px solid #bfd0c4; background: #fff; color: #294b36; }
+    .zone-management form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 20px 0; padding: 16px; border: 1px solid #dce7df; border-radius: 12px; background: #f7faf8; }
+    .zone-management form label { display: grid; gap: 6px; color: #324a39; font-size: 12px; font-weight: 700; }
+    .zone-management input, .zone-management textarea { width: 100%; padding: 10px 11px; border: 1px solid #bdccc1; border-radius: 8px; font: inherit; }
+    .zone-management .zone-description { grid-column: 1 / -1; }
+    .zone-management form > div { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 9px; }
+    .zone-list { display: grid; gap: 10px; margin-top: 18px; }
+    .zone-list section { display: grid; grid-template-columns: minmax(180px, 1.2fr) 90px minmax(160px, 1fr) auto auto auto; align-items: center; gap: 12px; padding: 13px; border: 1px solid #dce7df; border-radius: 10px; }
+    .zone-list section.inactive { opacity: .65; background: #f4f5f4; }
+    .zone-list small { display: block; margin-top: 3px; color: #69776e; }
 
 
     .detail-head {
@@ -4122,7 +4154,7 @@ export class BuildingsPage {
 export class BuildingDetailPage
   implements OnInit {
 
-  readonly recentAlertItems = signal<AlertListItem[]>([]);
+  readonly recentAlertItems = signal<AlertWorkspaceRow[]>([]);
 
   readonly building =
     signal<Building | undefined>(
@@ -4131,6 +4163,13 @@ export class BuildingDetailPage
 
   readonly hoveredFloorId = signal<string | undefined>(undefined);
   readonly deleteConfirmationOpen = signal(false);
+  readonly zoneFormOpen = signal(false);
+  readonly editingZoneId = signal<string | undefined>(undefined);
+  readonly zoneSaving = signal(false);
+  zoneCode = '';
+  zoneName = '';
+  zoneDescription = '';
+  zoneFloorLabel = '';
 
 
   constructor(
@@ -4140,14 +4179,27 @@ export class BuildingDetailPage
     private readonly router:
       Router,
 
-    private readonly buildingStore:
-      BuildingStoreService,
-
     private readonly snackBar:
       MatSnackBar,
-    private readonly alertService:
-      AlertService,
+    private readonly alertWorkspace: AlertWorkspaceFacade,
+    private readonly buildingFacade: BuildingFacade,
+    private readonly deviceWorkspace: DeviceWorkspaceFacade,
+    private readonly store: BuildingStoreService,
   ) {}
+
+  catalogBuilding(): BuildingCatalogRecord | undefined {
+    return this.buildingFacade.selected();
+  }
+
+  floorLabels(): string[] {
+    return [
+      ...new Set(
+        (this.catalogBuilding()?.zones ?? [])
+          .map((zone) => zone.floorLabel?.trim())
+          .filter((label): label is string => Boolean(label)),
+      ),
+    ];
+  }
 
 
   ngOnInit(): void {
@@ -4158,15 +4210,18 @@ export class BuildingDetailPage
         .get('buildingId');
 
 
-    this.building.set(
-      buildingId
-        ? this.buildingStore.getBuilding(buildingId)
-        : undefined
-    );
-
-    this.alertService
-      .getRecentAlerts('24h')
-      .subscribe(items => this.recentAlertItems.set(items));
+    if (!buildingId) return;
+    forkJoin({
+      building: this.buildingFacade.loadBuilding(buildingId),
+      alerts: this.alertWorkspace.loadAlerts(),
+      devices: this.deviceWorkspace.loadFleet(),
+    }).subscribe({
+      next: ({ building, alerts }) => {
+        this.recentAlertItems.set(alerts);
+        if (building) this.building.set(mapCatalogBuildingToPresentation(building.building, alerts));
+      },
+      error: () => this.building.set(undefined),
+    });
 
   }
 
@@ -4189,24 +4244,9 @@ export class BuildingDetailPage
 
   devices(): number {
 
-    const ids =
-      new Set(
-        this.building()
-          ?.floors
-          .flatMap(
-            floor =>
-              floor.spaces.map(
-                space =>
-                  space.id
-              )
-          ) ??
-        []
-      );
-
-
-    return this.buildingStore.devices().filter(
-      device =>
-        ids.has(device.spaceId)
+    const buildingId = this.building()?.id;
+    return this.deviceWorkspace.rows().filter(
+      row => row.catalog.assignment.buildingId === buildingId,
     ).length;
 
   }
@@ -4215,7 +4255,9 @@ export class BuildingDetailPage
   floorDevices(floorId: string): number {
     const floor = this.building()?.floors.find(item => item.id === floorId);
     const spaceIds = new Set(floor?.spaces.map(space => space.id) ?? []);
-    return this.buildingStore.devices().filter(device => spaceIds.has(device.spaceId)).length;
+    return this.deviceWorkspace.rows().filter((row) =>
+      row.catalog.assignment.zoneId ? spaceIds.has(row.catalog.assignment.zoneId) : false,
+    ).length;
   }
 
 
@@ -4276,12 +4318,117 @@ export class BuildingDetailPage
   }
 
   confirmDeleteBuilding(): void {
-    const buildingId = this.building()?.id;
-    if (!buildingId) return;
-    this.buildingStore.deleteBuilding(buildingId);
     this.deleteConfirmationOpen.set(false);
-    this.snackBar.open('Building deleted successfully', 'Close', { duration: 3000, horizontalPosition: 'right', verticalPosition: 'top' });
-    this.router.navigate(['/buildings']);
+    this.snackBar.open('Building deletion is not supported by the backend.', 'Close', { duration: 3000, horizontalPosition: 'right', verticalPosition: 'top' });
+  }
+
+  startZoneCreate(): void {
+    this.editingZoneId.set(undefined);
+    this.zoneCode = '';
+    this.zoneName = '';
+    this.zoneDescription = '';
+    this.zoneFloorLabel = this.floorLabels()[0] ?? '';
+    this.zoneFormOpen.set(true);
+  }
+
+  startZoneEdit(zone: ZoneCatalogRecord): void {
+    this.editingZoneId.set(zone.id);
+    this.zoneCode = zone.zoneCode;
+    this.zoneName = zone.name;
+    this.zoneDescription = zone.description ?? '';
+    this.zoneFloorLabel = zone.floorLabel ?? '';
+    this.zoneFormOpen.set(true);
+  }
+
+  cancelZoneForm(): void {
+    this.zoneFormOpen.set(false);
+    this.editingZoneId.set(undefined);
+  }
+
+  saveZone(): void {
+    const name = this.zoneName.trim();
+    const floorLabel = this.zoneFloorLabel.trim();
+    const zoneCode = this.zoneCode.trim().toUpperCase();
+    if (!name || !floorLabel || !zoneCode || this.zoneSaving()) return;
+    this.zoneSaving.set(true);
+    const editingId = this.editingZoneId();
+    const operation = editingId
+      ? this.buildingFacade.updateZone(editingId, {
+          name,
+          description: this.zoneDescription.trim() || undefined,
+          floorLabel,
+        })
+      : this.buildingFacade.addZone({
+          zoneCode,
+          name,
+          description: this.zoneDescription.trim() || undefined,
+          floorLabel,
+        });
+    operation.subscribe({
+      next: (result) => {
+        this.zoneSaving.set(false);
+        this.cancelZoneForm();
+        this.applyCatalogUpdate(result.building);
+        this.snackBar.open(editingId ? 'Zone updated.' : 'Zone created.', 'Close', { duration: 2600 });
+      },
+      error: (error: { message?: string }) => {
+        this.zoneSaving.set(false);
+        this.snackBar.open(error.message ?? 'Zone could not be saved.', 'Close', { duration: 3500 });
+      },
+    });
+  }
+
+  toggleZoneStatus(zone: ZoneCatalogRecord): void {
+    const next = zone.administrativeStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    if (!window.confirm(`${next === 'ACTIVE' ? 'Activate' : 'Deactivate'} ${zone.name}?`)) return;
+    this.zoneSaving.set(true);
+    this.buildingFacade
+      .changeZoneAdministrativeStatus(zone.id, { administrativeStatus: next })
+      .subscribe({
+        next: (result) => {
+          this.zoneSaving.set(false);
+          this.applyCatalogUpdate(result.building);
+          this.snackBar.open(`Zone ${next === 'ACTIVE' ? 'activated' : 'deactivated'}.`, 'Close', { duration: 2500 });
+        },
+        error: (error: { message?: string }) => {
+          this.zoneSaving.set(false);
+          this.snackBar.open(error.message ?? 'Zone status could not be changed.', 'Close', { duration: 3500 });
+        },
+      });
+  }
+
+  private applyCatalogUpdate(catalog: BuildingCatalogRecord): void {
+    const current = this.store.getBuilding(catalog.id);
+    const mapped = mapCatalogBuildingToPresentation(catalog, this.recentAlertItems());
+    const presentation: Building = {
+      ...mapped,
+      floors: mapped.floors.map((floor) => {
+        const existingFloor = current?.floors.find((item) => item.name === floor.name);
+        const existingSpaces = new Map(existingFloor?.spaces.map((space) => [space.id, space]) ?? []);
+        return {
+          ...floor,
+          planImageUrl: existingFloor?.planImageUrl,
+          planElements: existingFloor?.planElements ?? [],
+          planConfigured: existingFloor?.planConfigured ?? false,
+          spaces: floor.spaces.map((space) => {
+            const existing = existingSpaces.get(space.id);
+            return existing
+              ? {
+                  ...space,
+                  type: existing.type,
+                  sensitivity: existing.sensitivity,
+                  thresholds: existing.thresholds,
+                  thresholdProfiles: existing.thresholdProfiles,
+                  polygon: existing.polygon,
+                }
+              : space;
+          }),
+        };
+      }),
+    };
+    this.building.set(presentation);
+    if (this.store.getBuilding(catalog.id)) this.store.updateBuilding(presentation);
+    else this.store.createBuilding(presentation);
   }
 
 }

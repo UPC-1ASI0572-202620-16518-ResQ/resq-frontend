@@ -13,6 +13,7 @@ import {
   catchError,
   map,
   of,
+  switchMap,
   throwError,
 } from 'rxjs';
 
@@ -33,9 +34,9 @@ import {
 
 import {
   AssignIncidentResourceDto,
-  IncidentPageResourceDto,
   IncidentResourceDto,
   ResolveIncidentResourceDto,
+  UpdateIncidentStatusResourceDto,
 } from './incident.dto';
 
 import {
@@ -45,7 +46,6 @@ import {
 } from './incident.gateway';
 
 import {
-  mapIncidentPageResourceDto,
   mapIncidentResourceDto,
 } from './incident.mapper';
 
@@ -79,35 +79,7 @@ export class HttpIncidentGateway
       >
     > {
 
-    let params =
-      new HttpParams()
-        .set(
-          'page',
-          String(
-            Math.max(
-              0,
-              Math.trunc(
-                page.page,
-              ),
-            ),
-          ),
-        )
-        .set(
-          'size',
-          String(
-            Math.min(
-              100,
-
-              Math.max(
-                1,
-                Math.trunc(
-                  page.size ||
-                  20,
-                ),
-              ),
-            ),
-          ),
-        );
+    let params = new HttpParams();
 
     if (
       filters.zoneId
@@ -120,59 +92,9 @@ export class HttpIncidentGateway
         );
     }
 
-    if (
-      filters.type
-    ) {
-
-      params =
-        params.set(
-          'type',
-          filters.type,
-        );
-    }
-
-    if (
-      filters.status
-    ) {
-
-      params =
-        params.set(
-          'status',
-          filters.status,
-        );
-    }
-
-    if (
-      filters.startDate
-    ) {
-
-      params =
-        params.set(
-          'startDate',
-
-          filters
-            .startDate
-            .toISOString(),
-        );
-    }
-
-    if (
-      filters.endDate
-    ) {
-
-      params =
-        params.set(
-          'endDate',
-
-          filters
-            .endDate
-            .toISOString(),
-        );
-    }
-
     return this.http
       .get<
-        IncidentPageResourceDto
+        IncidentResourceDto[]
       >(
         buildApiUrl(
           this.apiConfig,
@@ -185,9 +107,23 @@ export class HttpIncidentGateway
       )
       .pipe(
 
-        map(
-          mapIncidentPageResourceDto,
-        ),
+        map((resources) => {
+          let items = resources.map(mapIncidentResourceDto);
+          if (filters.type) items = items.filter((item) => item.type === filters.type);
+          if (filters.status) items = items.filter((item) => item.status === filters.status);
+          if (filters.startDate) items = items.filter((item) => item.createdAt >= filters.startDate!);
+          if (filters.endDate) items = items.filter((item) => item.createdAt <= filters.endDate!);
+          const size = Math.min(100, Math.max(1, Math.trunc(page.size || 20)));
+          const currentPage = Math.max(0, Math.trunc(page.page));
+          const totalElements = items.length;
+          return {
+            items: items.slice(currentPage * size, (currentPage + 1) * size),
+            page: currentPage,
+            size,
+            totalElements,
+            totalPages: Math.ceil(totalElements / size),
+          };
+        }),
 
         catchError(
           error =>
@@ -221,9 +157,7 @@ export class HttpIncidentGateway
       )
       .pipe(
 
-        map(
-          mapIncidentResourceDto,
-        ),
+        map(mapIncidentResourceDto),
 
         catchError(
           error => {
@@ -263,7 +197,7 @@ export class HttpIncidentGateway
     };
 
     return this.http
-      .patch<
+      .put<
         IncidentResourceDto
       >(
         buildApiUrl(
@@ -276,9 +210,7 @@ export class HttpIncidentGateway
       )
       .pipe(
 
-        map(
-          mapIncidentResourceDto,
-        ),
+        switchMap(() => this.requireIncident(incidentId)),
 
         catchError(
           error =>
@@ -308,7 +240,7 @@ export class HttpIncidentGateway
     };
 
     return this.http
-      .patch<
+      .put<
         IncidentResourceDto
       >(
         buildApiUrl(
@@ -321,9 +253,7 @@ export class HttpIncidentGateway
       )
       .pipe(
 
-        map(
-          mapIncidentResourceDto,
-        ),
+        switchMap(() => this.requireIncident(incidentId)),
 
         catchError(
           error =>
@@ -335,5 +265,31 @@ export class HttpIncidentGateway
             ),
         ),
       );
+  }
+
+  closeIncident(incidentId: string): Observable<IncidentRecord> {
+    const body: UpdateIncidentStatusResourceDto = { status: 'Closed' };
+    return this.http
+      .put<void>(
+        buildApiUrl(this.apiConfig, `${this.incidentsPath}/${incidentId}/status`),
+        body,
+      )
+      .pipe(
+        switchMap(() => this.requireIncident(incidentId)),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
+  }
+
+  private requireIncident(incidentId: string): Observable<IncidentRecord> {
+    return this.getIncidentById(incidentId).pipe(
+      switchMap((incident) => incident
+        ? of(incident)
+        : throwError(() => ({
+            status: 404,
+            code: 'NOT_FOUND',
+            message: 'Incident was not found after the operation.',
+            fieldErrors: [],
+          }))),
+    );
   }
 }

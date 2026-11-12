@@ -1,16 +1,9 @@
-import {
-  Injectable,
-} from '@angular/core';
-
-import {
-  Observable,
-  throwError,
-} from 'rxjs';
-
-import {
-  ApiError,
-} from '../../../core/api/api-error';
-
+import { HttpClient } from '@angular/common/http';
+import { Inject, Injectable } from '@angular/core';
+import { Observable, catchError, map, throwError } from 'rxjs';
+import { API_CONFIG, ApiConfig, buildApiUrl } from '../../../core/api/api.config';
+import { mapHttpError } from '../../../core/api/http-error.mapper';
+import { AuthenticationResultResourceDto } from './iam.dto';
 import {
   AssignRoleInput,
   AuthenticationInput,
@@ -18,88 +11,33 @@ import {
   IamGateway,
   RoleAssignmentRecord,
 } from './iam.gateway';
+import { mapAuthenticationResultResourceDto } from './iam.mapper';
 
-/**
- * HTTP adapter placeholder for IAM.
- *
- * The current project report describes resources
- * such as:
- *
- * POST /api/v1/auth/sessions
- *
- * POST
- * /api/v1/iam/identities/{identityId}/role-assignments
- *
- * as conceptual REST resources.
- *
- * Before activating this adapter the backend team
- * must confirm:
- *
- * - exact request payloads;
- * - exact response payloads;
- * - token/session mechanism;
- * - authentication header format;
- * - role-assignment response contract;
- * - organization context behavior.
- */
 @Injectable()
-export class HttpIamGateway
-  implements IamGateway {
+export class HttpIamGateway implements IamGateway {
+  constructor(
+    private readonly http: HttpClient,
+    @Inject(API_CONFIG) private readonly apiConfig: ApiConfig,
+  ) {}
 
-  authenticate(
-    _input:
-      AuthenticationInput,
-  ):
-    Observable<
-      AuthenticationSessionRecord
-    > {
-
-    return this.notFinalized(
-      'authenticate',
-    );
+  authenticate(input: AuthenticationInput): Observable<AuthenticationSessionRecord> {
+    return this.http
+      .post<AuthenticationResultResourceDto>(
+        buildApiUrl(this.apiConfig, '/api/v1/authentication/sign-in'),
+        { username: input.username, password: input.password },
+      )
+      .pipe(
+        map(mapAuthenticationResultResourceDto),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
   }
 
-  assignRole(
-    _identityId:
-      string,
-
-    _input:
-      AssignRoleInput,
-  ):
-    Observable<
-      RoleAssignmentRecord
-    > {
-
-    return this.notFinalized(
-      'assignRole',
-    );
-  }
-
-  private notFinalized<T>(
-    operation:
-      string,
-  ):
-    Observable<T> {
-
-    const error:
-      ApiError = {
-
-      status:
-        0,
-
-      code:
-        'IAM_HTTP_CONTRACT_NOT_FINALIZED',
-
-      message:
-        `IAM HTTP operation "${operation}" cannot be enabled until the backend authentication and role-assignment contract is finalized.`,
-
-      fieldErrors:
-        [],
-    };
-
-    return throwError(
-      () =>
-        error,
-    );
+  assignRole(_identityId: string, _input: AssignRoleInput): Observable<RoleAssignmentRecord> {
+    return throwError(() => ({
+      status: 501,
+      code: 'UNSUPPORTED_OPERATION',
+      message: 'The backend does not expose role-assignment operations.',
+      fieldErrors: [],
+    }));
   }
 }

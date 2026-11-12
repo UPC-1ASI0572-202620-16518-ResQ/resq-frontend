@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { BuildingStoreService } from '../../core/services/building-store.service';
 import { StatusBadgeComponent } from './ui.components';
+import { AnalyticsWorkspaceFacade } from '../../features/analytics/analytics-workspace.facade';
 
 @Component({
   selector: 'resq-response-activity',
@@ -12,21 +12,20 @@ import { StatusBadgeComponent } from './ui.components';
   template: `<section class="activity">
     <header>
       <h3>Response activity</h3>
-      <small>Session measurements and simulation</small>
+      <small>Current measurements reported by Monitoring</small>
     </header>
     @for (event of events(); track event.id) {
       <a [routerLink]="['/devices', event.deviceId]"
         ><div>
           <b>{{ event.sensor }} · {{ event.value }} {{ event.unit }}</b
           ><small
-            >{{ event.message }} · {{ event.createdAt | date: 'shortTime' }} ·
-            {{ event.simulated ? 'Simulation' : 'Measurement' }}</small
-          ><small>{{ event.targets.length }} response targets</small>
+            >{{ event.message }} · {{ event.createdAt | date: 'shortTime' }}</small
+          >
         </div>
         <resq-status-badge [status]="event.risk"
       /></a>
     } @empty {
-      <p>No response events in this session.</p>
+      <p>No current measurements are available.</p>
     }
   </section>`,
   styles: [
@@ -73,17 +72,23 @@ import { StatusBadgeComponent } from './ui.components';
 export class ResponseActivityComponent {
   readonly spaceId = input('');
   readonly deviceId = input('');
-  readonly store = inject(BuildingStoreService);
+  readonly analytics = inject(AnalyticsWorkspaceFacade);
   readonly events = computed(() =>
-    this.store
-      .events()
-      .filter(
-        (event) =>
-          (!this.spaceId() || event.spaceId === this.spaceId()) &&
-          (!this.deviceId() ||
-            event.deviceId === this.deviceId() ||
-            event.targets.some((target) => target.deviceId === this.deviceId())),
+    this.analytics.measurements()
+      .filter((measurement) =>
+        (!this.spaceId() || measurement.zoneId === this.spaceId()) &&
+        (!this.deviceId() || measurement.deviceId === this.deviceId()),
       )
+      .map((measurement) => ({
+        id: measurement.measurementId,
+        deviceId: measurement.deviceId,
+        sensor: measurement.variableType,
+        value: measurement.measurementValue.value,
+        unit: measurement.measurementValue.unit,
+        message: 'Measurement',
+        createdAt: measurement.measuredAt,
+        risk: 'Recorded',
+      }))
       .slice(0, 10),
   );
 }

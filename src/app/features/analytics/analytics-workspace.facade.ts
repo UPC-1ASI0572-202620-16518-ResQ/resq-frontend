@@ -5,6 +5,7 @@ import { AlertWorkspaceFacade, AlertWorkspaceRow } from '../alerts/alert-workspa
 import { DeviceWorkspaceFacade, DeviceWorkspaceRow } from '../devices/device-workspace.facade';
 import { IncidentWorkspaceFacade, IncidentWorkspaceRow } from '../incidents/incident-workspace.facade';
 import { MONITORING_GATEWAY, MonitoringGateway, MonitoringMeasurement } from '../monitoring/data-access/monitoring.gateway';
+import { BuildingCatalogRecord } from '../buildings/data-access/building.gateway';
 
 @Injectable({ providedIn: 'root' })
 export class AnalyticsWorkspaceFacade {
@@ -12,6 +13,7 @@ export class AnalyticsWorkspaceFacade {
   private readonly incidentsState = signal<IncidentWorkspaceRow[]>([]);
   private readonly devicesState = signal<DeviceWorkspaceRow[]>([]);
   private readonly measurementsState = signal<MonitoringMeasurement[]>([]);
+  private readonly buildingsState = signal<BuildingCatalogRecord[]>([]);
   private readonly loadingState = signal(false);
   private readonly errorState = signal<ApiError | undefined>(undefined);
 
@@ -19,6 +21,7 @@ export class AnalyticsWorkspaceFacade {
   readonly incidents = this.incidentsState.asReadonly();
   readonly devices = this.devicesState.asReadonly();
   readonly measurements = this.measurementsState.asReadonly();
+  readonly buildings = this.buildingsState.asReadonly();
   readonly loading = this.loadingState.asReadonly();
   readonly error = this.errorState.asReadonly();
 
@@ -42,6 +45,7 @@ export class AnalyticsWorkspaceFacade {
         this.alertsState.set(alerts);
         this.incidentsState.set(incidents);
         this.devicesState.set(devices);
+        this.buildingsState.set(this.deviceWorkspace.buildings());
         if (!devices.length) {
           return of([] as MonitoringMeasurement[]);
         }

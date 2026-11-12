@@ -11,15 +11,9 @@ import {
   RiskDetectionFacade,
 } from './risk-detection.facade';
 
-import {
-  MockRiskDetectionGateway,
-} from './mock-risk-detection.gateway';
+import { HttpRiskDetectionGateway } from './http-risk-detection.gateway';
 
-/**
- * Risk Detection remains on the mock adapter
- * until backend confirms the final REST resources
- * and publishes the API contract.
- */
+/** Registers the real Risk Detection HTTP adapter. */
 export function provideRiskDetectionDataAccess():
   EnvironmentProviders {
 
@@ -31,8 +25,7 @@ export function provideRiskDetectionDataAccess():
       provide:
         RISK_DETECTION_GATEWAY,
 
-      useClass:
-        MockRiskDetectionGateway,
+      useClass: HttpRiskDetectionGateway,
     },
   ]);
 }

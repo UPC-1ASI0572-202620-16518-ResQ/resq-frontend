@@ -298,7 +298,7 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
   }
 
   private deviceColor(status: DeviceStatus): number {
-    return ({ Online: 0x1570ef, Warning: 0xf79009, Critical: 0xf04438, Offline: 0x98a2b3 })[status];
+    return ({ Online: 0x1570ef, Warning: 0xf79009, Critical: 0xf04438, Offline: 0x98a2b3, Unknown: 0x98a2b3 })[status];
   }
 
   private addStructuralElement(element: FloorPlanElement, baseY: number, activeFloor: boolean): void {

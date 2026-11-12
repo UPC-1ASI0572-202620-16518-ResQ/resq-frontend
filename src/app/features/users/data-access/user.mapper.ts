@@ -17,39 +17,24 @@ export function mapUserProfileResourceDto(
   UserProfileRecord {
 
   return {
-    userId:
-      dto.userId,
+    userId: String(dto.id),
 
-    firstName:
-      dto.firstName,
-
-    lastName:
-      dto.lastName,
+    ...splitLegacyName(dto.fullName),
 
     contactInformation: {
 
       email:
-        dto.contactInformation
-          .email,
+        dto.email,
 
       phoneNumber:
-        dto.contactInformation
-          .phoneNumber,
+        dto.phoneNumber || undefined,
     },
 
     preferences: {
 
-      language:
-        dto.preferences
-          .language,
-
-      timeZone:
-        dto.preferences
-          .timeZone,
-
-      receiveSMSAlerts:
-        dto.preferences
-          .receiveSMSAlerts,
+      language: undefined,
+      timeZone: undefined,
+      receiveSMSAlerts: undefined,
     },
   };
 }

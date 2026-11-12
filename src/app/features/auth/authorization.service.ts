@@ -3,7 +3,7 @@ import { ApiError } from '../../core/api/api-error';
 import { IamFacade } from './data-access/iam.facade';
 import { UserFacade } from '../users/data-access/user.facade';
 
-export type ResqRole = 'ADMINISTRATOR' | 'VIEWER';
+export type ResqRole = 'CITIZEN' | 'VOLUNTEER';
 
 export interface SessionPrincipal {
   identityId?: string;
@@ -11,13 +11,7 @@ export interface SessionPrincipal {
   role: ResqRole;
 }
 
-/**
- * Frontend mock authorization projection.
- *
- * UI checks improve usability, while mock gateways repeat authorization checks
- * as the trusted boundary. The production backend must derive roles from the
- * authenticated request and enforce every command server-side.
- */
+/** UI authorization projection derived from the role returned by IAM. */
 @Injectable({ providedIn: 'root' })
 export class AuthorizationService {
   private readonly iam = inject(IamFacade);
@@ -29,21 +23,16 @@ export class AuthorizationService {
     return {
       identityId,
       userId,
-      role: identityId
-        ? identityId === 'identity-user-1'
-          ? 'ADMINISTRATOR'
-          : 'VIEWER'
-        : userId === 'user-1'
-          ? 'ADMINISTRATOR'
-          : 'VIEWER',
+      role: normalizeRole(this.iam.role()),
     };
   });
 
-  readonly isAdministrator = computed(() => this.principal().role === 'ADMINISTRATOR');
-  readonly canManageIncidents = this.isAdministrator;
-  readonly canAuthorizeCriticalResponses = this.isAdministrator;
+  /** The current API protects these endpoints with authentication only; IAM exposes no admin role. */
+  readonly isAdministrator = computed(() => false);
+  readonly canManageIncidents = computed(() => Boolean(this.principal().identityId));
+  readonly canAuthorizeCriticalResponses = computed(() => Boolean(this.principal().identityId));
   readonly roleLabel = computed(() =>
-    this.isAdministrator() ? 'Administrator' : 'Viewer',
+    this.principal().role === 'VOLUNTEER' ? 'Volunteer' : 'Citizen',
   );
 
   requireAuthenticated(): SessionPrincipal {
@@ -60,7 +49,7 @@ export class AuthorizationService {
       throw authorizationError(
         403,
         'INCIDENT_MANAGEMENT_FORBIDDEN',
-        'Administrator permission is required to manage incidents.',
+        'An authenticated session is required to manage incidents.',
       );
     }
     return principal;
@@ -72,11 +61,15 @@ export class AuthorizationService {
       throw authorizationError(
         403,
         'CRITICAL_RESPONSE_FORBIDDEN',
-        'Administrator permission is required to authorize critical responses.',
+        'An authenticated session is required to authorize critical responses.',
       );
     }
     return principal;
   }
+}
+
+function normalizeRole(role?: string): ResqRole {
+  return role?.trim().toUpperCase() === 'VOLUNTEER' ? 'VOLUNTEER' : 'CITIZEN';
 }
 
 function authorizationError(status: number, code: string, message: string): ApiError {

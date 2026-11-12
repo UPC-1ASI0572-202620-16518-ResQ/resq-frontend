@@ -1,5 +1,6 @@
 import {
   provideHttpClient,
+  withInterceptors,
 } from '@angular/common/http';
 
 import {
@@ -66,15 +67,12 @@ import {
 } from './app.routes';
 
 import { provideSubscriptionDataAccess } from './features/subscriptions/data-access/subscription.providers';
+import { authInterceptor } from './features/auth/auth.interceptor';
 
 export const appConfig:
   ApplicationConfig = {
 
     providers: [
-
-      provideUserDataAccess('mock'),
-    provideSubscriptionDataAccess('mock'), // <--- Agrega el provider aquí
-    provideBuildingDataAccess('mock'),
 
       provideBrowserGlobalErrorListeners(),
 
@@ -84,25 +82,17 @@ export const appConfig:
 
       provideAnimationsAsync(),
 
-      provideHttpClient(),
+      provideHttpClient(withInterceptors([authInterceptor])),
 
       provideIamDataAccess(),
 
-      provideUserDataAccess(
-        'mock',
-      ),
+      provideUserDataAccess('http'),
 
-      provideBuildingDataAccess(
-        'mock',
-      ),
+      provideBuildingDataAccess('http'),
 
-      provideDeviceDataAccess(
-        'mock',
-      ),
+      provideDeviceDataAccess('http'),
 
-      provideConnectivityDataAccess(
-        'mock',
-      ),
+      provideConnectivityDataAccess('http'),
 
       provideMonitoringDataAccess(),
 
@@ -110,9 +100,9 @@ export const appConfig:
 
       provideAlertResponseDataAccess(),
 
-      provideIncidentDataAccess(
-        'mock',
-      ),
+      provideIncidentDataAccess('http'),
+
+      provideSubscriptionDataAccess('http'),
 
       provideCharts(
         withDefaultRegisterables(),

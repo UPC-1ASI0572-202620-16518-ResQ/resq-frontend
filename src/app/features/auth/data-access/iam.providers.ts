@@ -11,17 +11,9 @@ import {
   IamFacade,
 } from './iam.facade';
 
-import {
-  MockIamGateway,
-} from './mock-iam.gateway';
+import { HttpIamGateway } from './http-iam.gateway';
 
-/**
- * IAM stays on the mock implementation until the
- * backend authentication/session contract is final.
- *
- * HttpIamGateway already exists as the future seam
- * but is intentionally not selectable yet.
- */
+/** Registers the real IAM HTTP adapter. */
 export function provideIamDataAccess():
   EnvironmentProviders {
 
@@ -33,8 +25,7 @@ export function provideIamDataAccess():
       provide:
         IAM_GATEWAY,
 
-      useClass:
-        MockIamGateway,
+      useClass: HttpIamGateway,
     },
   ]);
 }

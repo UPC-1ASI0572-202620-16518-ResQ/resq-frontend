@@ -1,16 +1,19 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import {
-  AlertListItem,
   Device,
   DeviceType,
   FloorPlanElement,
   FloorPlanPoint,
 } from '../../core/models/resq.models';
 import { BuildingStoreService } from '../../core/services/building-store.service';
-import { AlertService } from '../../core/services/data.services';
+import { FloorPlanLocalStorageService } from '../../core/services/floor-plan-local-storage.service';
+import {
+  AlertWorkspaceFacade,
+  AlertWorkspaceRow,
+} from '../alerts/alert-workspace.facade';
 import {
   DoughnutChartComponent,
   KpiCardComponent,
@@ -22,10 +25,8 @@ import { visualDevicePosition } from '../../shared/utils/floor-plan-device.utils
 import {
   deviceDefinition,
   sensorDefinitions,
-  sensorThreshold,
 } from '../../core/models/device-domain';
 import { SensorHistoryComponent } from '../../shared/ui/sensor-history.component';
-import { RiskDetectionSimulationService } from '../risk-detection/risk-detection-simulation.service';
 
 @Component({
   selector: 'resq-floor-monitoring',
@@ -51,12 +52,13 @@ import { RiskDetectionSimulationService } from '../risk-detection/risk-detection
 export class FloorMonitoringPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly alertService = inject(AlertService);
-  private readonly simulation = inject(RiskDetectionSimulationService);
+  private readonly alertWorkspace = inject(AlertWorkspaceFacade);
   private readonly snack = inject(MatSnackBar);
   readonly store = inject(BuildingStoreService);
-  readonly buildingId = signal(this.route.snapshot.paramMap.get('buildingId') ?? 'science');
-  readonly floorId = signal(this.route.snapshot.paramMap.get('floorId') ?? 'science-f2');
+  private readonly localPlans = inject(FloorPlanLocalStorageService);
+  private readonly restoredPlanKeys = new Set<string>();
+  readonly buildingId = signal(this.route.snapshot.paramMap.get('buildingId') ?? '');
+  readonly floorId = signal(this.route.snapshot.paramMap.get('floorId') ?? '');
   readonly building = computed(() => this.store.getBuilding(this.buildingId()));
   readonly floor = computed(() => this.store.getFloor(this.buildingId(), this.floorId()));
   readonly sortedFloors = computed(() =>
@@ -76,6 +78,9 @@ export class FloorMonitoringPage {
     const ids = new Set(this.buildingSpaces().map((space) => space.id));
     return this.store.devices().filter((device) => ids.has(device.spaceId));
   });
+  readonly buildingConnectedDevices = computed(
+    () => this.buildingDevices().filter((device) => device.connectivityStatus === 'ONLINE').length,
+  );
   readonly floorDevices = computed(() => this.floorSpaces().flatMap((space) => space.devices));
   readonly environmentalMetric = signal<DeviceType>('Temperature');
   readonly environmentalMetrics: DeviceType[] = sensorDefinitions
@@ -113,14 +118,18 @@ export class FloorMonitoringPage {
   readonly view = signal<'2d' | '3d'>('2d');
   readonly zoom = signal(1);
   readonly detailTab = signal('Overview');
-  readonly alertItems = signal<AlertListItem[]>([]);
-  readonly recentAlerts = computed(() =>
-    this.alertItems()
+  readonly alertItems = this.alertWorkspace.rows;
+  readonly recentAlerts = computed(() => {
+    const floorZoneIds = new Set(this.floorSpaces().map((space) => space.id));
+    return this.alertItems()
       .filter(
-        (alert) => alert.status === 'ACTIVE' && alert.location.floorId === this.floorId(),
+        (alert) =>
+          alert.status === 'ACTIVE' &&
+          !!alert.location.zoneId &&
+          floorZoneIds.has(alert.location.zoneId),
       )
-      .slice(0, 4),
-  );
+      .slice(0, 4);
+  });
   readonly selectedAlerts = computed(() =>
     this.alertItems()
       .filter(
@@ -138,7 +147,29 @@ export class FloorMonitoringPage {
   readonly lastSimulation = signal('');
 
   constructor() {
-    this.alertService.getRecentAlerts('24h').subscribe((alerts) => this.alertItems.set(alerts));
+    this.alertWorkspace.loadAlerts().subscribe();
+    // The sidebar links to /monitoring without route parameters.
+    // Resolve it to an actual API-backed floor once buildings arrive.
+    effect(() => {
+      if (this.route.snapshot.paramMap.has('buildingId')) return;
+      if (this.buildingId()) return;
+      const building = this.store.buildings().find((item) => item.floors.length > 0);
+      const floor = building?.floors[0];
+      if (!building || !floor) return;
+      this.buildingId.set(building.id);
+      this.floorId.set(floor.id);
+      void this.router.navigate(['/monitoring', building.id, 'floors', floor.id], { replaceUrl: true });
+    });
+    effect(() => {
+      const buildingId = this.buildingId();
+      const floorId = this.floorId();
+      const floor = this.store.getFloor(buildingId, floorId);
+      if (!floor) return;
+      const key = `${buildingId}:${floorId}`;
+      if (this.restoredPlanKeys.has(key)) return;
+      this.restoredPlanKeys.add(key);
+      this.localPlans.restoreToStore(this.store, buildingId, floorId);
+    });
   }
 
   selectSpace(spaceId: string): void {
@@ -229,47 +260,11 @@ export class FloorMonitoringPage {
     const space = this.store.spaces().find((item) => item.id === id);
     return `${space?.name ?? 'Space'}${space?.roomNumber ? ' (Room ' + space.roomNumber + ')' : ''}`;
   }
-  minutesAgo(alert: AlertListItem): number {
+  minutesAgo(alert: AlertWorkspaceRow): number {
     return Math.max(1, Math.round((Date.now() - alert.generatedAt.getTime()) / 60000));
   }
-  simulateGasLevel(level: 'Normal' | 'Warning' | 'Critical'): void {
-    const space = this.selected();
-    const device = space?.devices.find((item) => item.type === 'Gas');
-    const thresholds = device && space ? sensorThreshold(device, space) : undefined;
-    if (!thresholds) {
-      this.snack.open('Select a space with a configured Gas sensor.', 'Close', { duration: 3000 });
-      return;
-    }
-    const value =
-      level === 'Critical'
-        ? thresholds.critical
-        : level === 'Warning'
-          ? (thresholds.warning + thresholds.critical) / 2
-          : thresholds.warning - Math.max(1, Math.abs(thresholds.warning) * 0.25);
-    this.simulateGas(value);
-  }
   simulateGas(value: number): void {
-    const device = this.selected()?.devices.find((item) => item.type === 'Gas');
-    if (!device) {
-      this.snack.open('Select a space with a Gas device to run the threshold demo.', 'Close', {
-        duration: 3000,
-      });
-      return;
-    }
-    const result = this.simulation.simulateMeasurement(device.id, value);
-    if (!result) {
-      this.snack.open(
-        'The measurement could not be classified because thresholds are unavailable.',
-        'Close',
-        { duration: 3000 },
-      );
-      return;
-    }
-    this.lastSimulation.set(result.message);
-    this.alertService.getRecentAlerts('24h').subscribe((alerts) => this.alertItems.set(alerts));
-    this.snack.open(result.message, 'Close', {
-      duration: result.classification === 'Critical' ? 6000 : 4000,
-      panelClass: `risk-notification-${result.classification.toLowerCase()}`,
-    });
+    void value;
+    this.snack.open('Telemetry simulation is disabled when using the real backend.', 'Close', { duration: 3500 });
   }
 }

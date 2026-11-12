@@ -25,11 +25,9 @@ import {
   comparisonOperators,
   deviceDefinition,
   isSensorType,
-  makeDevice,
   sensorThreshold,
 } from '../../core/models/device-domain';
 import { BuildingStoreService } from '../../core/services/building-store.service';
-import { DeviceService } from '../../core/services/data.services';
 import { SensorResponseService } from '../../core/services/sensor-response.service';
 import { StatusBadgeComponent } from './ui.components';
 
@@ -51,7 +49,6 @@ export class DeviceConfigurationComponent implements OnInit {
   readonly closed = output<void>();
   readonly store = inject(BuildingStoreService);
   readonly response = inject(SensorResponseService);
-  private readonly devices = inject(DeviceService);
   readonly catalog = DEVICE_CATALOG;
   readonly operators = comparisonOperators;
   readonly current = computed(() =>
@@ -157,97 +154,13 @@ export class DeviceConfigurationComponent implements OnInit {
     this.critical = thresholds?.critical ?? 0;
   }
   save(): void {
-    this.error.set('');
-    try {
-      const area = this.area();
-      if (!area) throw new Error('Select an area before creating the device.');
-      const device = this.current() ?? makeDevice(this.type, area, this.store.devices());
-      if (
-        this.isSensor() &&
-        (!this.unit.trim() || (this.useAreaThreshold && this.unit !== this.definition().unit))
-      )
-        throw new Error(
-          'Use sensor thresholds in this measurement unit; area thresholds use the catalog unit.',
-        );
-      const bounds = area.polygon;
-      const position = this.current()
-        ? { x: this.x, y: this.y }
-        : {
-            x: bounds.length
-              ? bounds.reduce((sum, point) => sum + point.x, 0) / bounds.length
-              : 500,
-            y: bounds.length
-              ? bounds.reduce((sum, point) => sum + point.y, 0) / bounds.length
-              : 250,
-          };
-      if (!Number.isFinite(position.x) || !Number.isFinite(position.y))
-        throw new Error('Position must be finite.');
-      const changedArea = device.spaceId !== area.id;
-      if (this.positioned && !changedArea && bounds.length && !this.inside(position, bounds))
-        throw new Error('Position must be inside the selected area.');
-      const updated: Device = {
-        ...device,
-        name: this.name.trim() || device.name,
-        displayName: this.displayName.trim() || undefined,
-        code: this.code.trim() || device.code,
-        deviceCode: this.code.trim() || device.deviceCode,
-        description: this.description,
-        spaceId: area.id,
-        floorPlanPosition: this.positioned
-          ? changedArea
-            ? {
-                x: bounds.reduce((sum, p) => sum + p.x, 0) / bounds.length,
-                y: bounds.reduce((sum, p) => sum + p.y, 0) / bounds.length,
-              }
-            : position
-          : undefined,
-        specifications: {
-          ...device.specifications,
-          manufacturer: this.manufacturer || device.specifications.manufacturer,
-          model: this.model || device.specifications.model,
-          serialNumber: this.serialNumber || device.specifications.serialNumber,
-        },
-        sensorThreshold:
-          this.isSensor() && !this.useAreaThreshold
-            ? { warning: Number(this.warning), critical: Number(this.critical) }
-            : undefined,
-        capabilities: device.capabilities.map((cap) =>
-          cap.kind === 'MEASUREMENT' ? { ...cap, unit: this.unit } : cap,
-        ),
-      };
-      if (
-        device.readings.length &&
-        this.unit !== device.capabilities.find((cap) => cap.kind === 'MEASUREMENT')?.unit &&
-        this.isSensor()
-      )
-        throw new Error(
-          'Changing the unit of existing measurements requires a calibrated conversion.',
-        );
-      this.changing.emit();
-      this.devices.saveDevice(updated);
-      this.x = updated.floorPlanPosition?.x ?? 0;
-      this.y = updated.floorPlanPosition?.y ?? 0;
-      this.name = updated.name;
-      this.code = updated.code;
-      this.saved.emit(this.store.devices().find((item) => item.id === updated.id)!);
-    } catch (error) {
-      this.error.set(error instanceof Error ? error.message : 'Device could not be saved.');
-    }
+    this.error.set('Floor-plan device configuration is not supported by the backend API.');
   }
   removePosition(): void {
-    const device = this.current();
-    if (!device) return;
-    this.changing.emit();
-    this.devices.saveDevice({ ...device, floorPlanPosition: undefined });
-    this.removed.emit(device.id);
+    this.error.set('Floor-plan position persistence is not supported by the backend API.');
   }
   deleteDevice(): void {
-    const device = this.current();
-    if (!device) return;
-    this.changing.emit();
-    this.devices.deleteDevice(device.id);
-    this.removed.emit(device.id);
-    this.closed.emit();
+    this.error.set('Physical device deletion is not supported by the backend API.');
   }
   rules() {
     const device = this.current();

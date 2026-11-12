@@ -101,7 +101,7 @@ export class SensorResponseService {
       sensor: device.type,
       value,
       unit,
-      risk: evaluated.status === 'Online' ? 'Normal' : evaluated.status,
+      risk: evaluated.status === 'Online' || evaluated.status === 'Unknown' ? 'Normal' : evaluated.status,
       ruleIds: matches.map((match) => match.ruleId),
       targets: matches.flatMap((match) => match.targets),
       message: matches.length

@@ -44,7 +44,7 @@ import { SubscriptionFacade } from '../subscriptions/data-access/subscription.fa
               <div><dt>Rol</dt><dd>{{ authorization.roleLabel() }}</dd></div>
               <div><dt>Estado de la cuenta</dt><dd class="active-state">Activa</dd></div>
               <div><dt>Idioma</dt><dd>{{language.language() === 'es' ? 'Español' : 'Inglés'}}</dd></div>
-              <div><dt>Zona horaria</dt><dd>{{profile()?.preferences?.timeZone || 'America/Lima'}}</dd></div>
+              <div><dt>Zona horaria</dt><dd>{{profile()?.preferences?.timeZone || 'No disponible en la API'}}</dd></div>
             </dl>
             <form [formGroup]="contactForm" (ngSubmit)="saveContact()">
               <div class="fields">
@@ -93,7 +93,7 @@ import { SubscriptionFacade } from '../subscriptions/data-access/subscription.fa
               </div>
               <footer>
                 <button type="button" class="cancel" (click)="resetPreferences()">Restablecer</button>
-                <button type="submit" [disabled]="user.saving()">{{ user.saving() ? 'Guardando...' : 'Guardar preferencias' }}</button>
+                <button type="submit">Aplicar en esta sesión</button>
               </footer>
             </form>
           }
@@ -128,14 +128,14 @@ import { SubscriptionFacade } from '../subscriptions/data-access/subscription.fa
               </dl>
               <footer>
                 <button type="button" class="cancel" (click)="cancelSubscription()">Cancelar</button>
-                <button type="button" (click)="renewSubscription()">Renovar</button>
+                <button type="button" disabled title="La API no publica un catálogo de planes o periodos de renovación">Renovar</button>
               </footer>
             } @else {
               <div class="state">
                 <p>para tener los beneficios compre su suscripción</p>
               </div>
               <footer>
-                <button type="button" (click)="activateSubscription()">Activar</button>
+                <button type="button" disabled title="La API no publica un catálogo de planes o precios">Activar</button>
               </footer>
             }
           }
@@ -202,10 +202,7 @@ export class SettingsPage implements OnInit {
   savePreferences(): void {
     const value = this.preferencesForm.getRawValue();
     this.language.setLanguage(this.language.fromPreference(value.language));
-    this.user.updatePreferences({ ...(value.language ? { language: value.language } : {}), ...(value.timeZone ? { timeZone: value.timeZone } : {}), receiveSMSAlerts: value.receiveSMSAlerts }).subscribe({
-      next: () => { this.populateForms(); this.snack.open('Preferencias guardadas.', 'Cerrar', { duration: 2200 }); },
-      error: () => undefined,
-    });
+    this.snack.open('Idioma aplicado en esta sesión. La API no permite persistir preferencias.', 'Cerrar', { duration: 3500 });
   }
 
   resetContact(): void { this.populateContact(); }
@@ -216,29 +213,6 @@ export class SettingsPage implements OnInit {
   private populateForms(): void { this.populateContact(); this.populatePreferences(); }
   private populateContact(): void { const profile = this.profile(); this.contactForm.setValue({ email: profile?.contactInformation.email ?? '', phoneNumber: profile?.contactInformation.phoneNumber ?? '' }); }
   private populatePreferences(): void { const preferences = this.profile()?.preferences; this.preferencesForm.setValue({ language: preferences?.language ?? this.language.toPreference(), timeZone: preferences?.timeZone ?? '', receiveSMSAlerts: preferences?.receiveSMSAlerts ?? false }); this.language.setLanguage(this.language.fromPreference(preferences?.language ?? this.language.toPreference())); }
-
-  activateSubscription(): void {
-    const now = new Date();
-    const nextYear = new Date();
-    nextYear.setFullYear(now.getFullYear() + 1);
-
-    this.subscription.activate({ startDate: now, endDate: nextYear }).subscribe({
-      next: () => this.snack.open('Suscripción activada exitosamente.', 'Cerrar', { duration: 3000 })
-    });
-  }
-
-  renewSubscription(): void {
-    const sub = this.subscription.subscription();
-    if (!sub) return;
-
-    const baseDate = sub.endDate.getTime() > Date.now() ? sub.endDate : new Date();
-    const newEndDate = new Date(baseDate);
-    newEndDate.setFullYear(newEndDate.getFullYear() + 1);
-
-    this.subscription.renew(sub.id, { newEndDate }).subscribe({
-      next: () => this.snack.open('Suscripción renovada por 1 año más.', 'Cerrar', { duration: 3000 })
-    });
-  }
 
   cancelSubscription(): void {
     const sub = this.subscription.subscription();

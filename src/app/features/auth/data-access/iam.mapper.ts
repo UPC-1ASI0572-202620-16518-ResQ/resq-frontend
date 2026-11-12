@@ -15,11 +15,10 @@ export function mapAuthenticationResultResourceDto(
   AuthenticationSessionRecord {
 
   return {
-    identityId:
-      dto.identityId,
-
-    sessionToken:
-      dto.sessionToken,
+    userId: dto.id,
+    username: dto.username,
+    token: dto.token,
+    role: dto.role,
   };
 }
 
@@ -42,4 +41,4 @@ export function mapRoleAssignmentResourceDto(
     organizationId:
       dto.organizationId,
   };
-}   
+}

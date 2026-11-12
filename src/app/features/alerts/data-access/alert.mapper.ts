@@ -126,11 +126,12 @@ export function mapResponseExecutionResourceDto(
     organizationId:
       dto.organizationId,
 
+    alertId: dto.alertId,
+
     riskDetectionId:
       dto.riskDetectionId,
 
-    policyId:
-      dto.policyId,
+    policyId: dto.policyId,
 
     action: {
 

@@ -73,7 +73,6 @@ export function defaultThresholds(type: SpaceType): SpaceThresholds {
         : {};
   return structuredClone({ ...common, ...overrides });
 }
-
 export function matchesCondition(
   value: number,
   operator: ResponseRule['operator'],
@@ -92,78 +91,4 @@ export function matchesCondition(
     default:
       return value >= threshold;
   }
-}
-
-export function makeDevice(
-  type: DeviceType,
-  space: Space,
-  devices: Device[],
-  position?: Device['floorPlanPosition'],
-): Device {
-  const definition = deviceDefinition(type);
-  const prefix = type.toUpperCase();
-  let number = 1;
-  const used = new Set(devices.map((device) => device.deviceCode.toUpperCase()));
-  while (used.has(`${prefix}-${String(number).padStart(3, '0')}`)) number++;
-  const code = `${prefix}-${String(number).padStart(3, '0')}`;
-  const id = crypto.randomUUID();
-  const now = new Date();
-  return {
-    id,
-    organizationId: devices[0]?.organizationId ?? 'securitybear',
-    deviceCode: code,
-    code,
-    name: `${definition.label} ${code}`,
-    description: '',
-    type,
-    status: 'Online',
-    availability: 'SIMULATED',
-    spaceId: space.id,
-    assignment: {
-      buildingId: space.buildingId,
-      floorId: space.floorId,
-      zoneId: space.id,
-      spaceId: space.id,
-    },
-    administrativeStatus: 'ACTIVE',
-    connectivityStatus: 'ONLINE',
-    healthStatus: 'NORMAL',
-    specifications: {
-      manufacturer: 'Unspecified',
-      model: definition.label,
-      serialNumber: code,
-      firmware: '',
-      protocol: 'Simulation',
-      samplingIntervalSeconds: 60,
-    },
-    capabilities: [
-      {
-        id: `${id}-cap`,
-        code: definition.capabilityCode,
-        name: definition.label,
-        category: definition.category,
-        kind: definition.category === 'SENSOR' ? 'MEASUREMENT' : 'ACTUATION',
-        hardware: definition.hardware,
-        unit: definition.unit,
-        state:
-          definition.category === 'DISPLAY'
-            ? 'NORMAL'
-            : type === 'Servomotor'
-              ? 'CLOSED'
-              : definition.category === 'ACTUATOR'
-                ? 'INACTIVE'
-                : undefined,
-      },
-    ],
-    power: { source: 'Simulation', status: 'POWERED' },
-    lastSeen: now,
-    readings: [],
-    hardwareComponents: [],
-    firmware: '',
-    signal: 0,
-    createdAt: now,
-    updatedAt: now,
-    version: 1,
-    floorPlanPosition: position,
-  };
 }

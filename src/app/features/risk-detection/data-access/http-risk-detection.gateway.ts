@@ -1,126 +1,111 @@
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Inject, Injectable } from '@angular/core';
+import { Observable, catchError, map, of, throwError } from 'rxjs';
+import { API_CONFIG, ApiConfig, buildApiUrl } from '../../../core/api/api.config';
+import { mapHttpError } from '../../../core/api/http-error.mapper';
 import {
-  Injectable,
-} from '@angular/core';
-
-import {
-  Observable,
-  throwError,
-} from 'rxjs';
-
-import {
-  ApiError,
-} from '../../../core/api/api-error';
-
+  ChangeDetectionRuleStatusResourceDto,
+  ConfigureDetectionRuleResourceDto,
+  DetectionRuleResourceDto,
+  RiskDetectionResourceDto,
+} from './risk-detection.dto';
 import {
   ConfigureDetectionRuleInput,
   DetectionRuleRecord,
   RiskDetectionGateway,
   RiskDetectionRecord,
 } from './risk-detection.gateway';
+import {
+  mapDetectionRuleResourceDto,
+  mapRiskDetectionResourceDto,
+} from './risk-detection.mapper';
 
-/**
- * Placeholder HTTP adapter for Risk Detection.
- *
- * The current Project Report describes resources
- * such as:
- *
- * POST  /api/v1/risk-detection/rules
- * PATCH /api/v1/risk-detection/rules/{ruleId}/status
- * GET   /api/v1/risk-detections/{riskDetectionId}
- * GET   /api/v1/risk-detections/{riskDetectionId}/evidence
- *
- * as conceptual REST examples.
- *
- * The adapter is therefore intentionally disabled
- * until backend publishes its final OpenAPI/Swagger
- * contract and resource schemas.
- */
 @Injectable()
-export class HttpRiskDetectionGateway
-  implements RiskDetectionGateway {
+export class HttpRiskDetectionGateway implements RiskDetectionGateway {
+  private readonly detectionsPath = '/api/v1/risk-detections';
+  private readonly rulesPath = '/api/v1/risk-detection/rules';
 
-  getRiskDetectionById(
-    _riskDetectionId:
-      string,
-  ):
-    Observable<
-      RiskDetectionRecord
-      | undefined
-    > {
+  constructor(
+    private readonly http: HttpClient,
+    @Inject(API_CONFIG) private readonly apiConfig: ApiConfig,
+  ) {}
 
-    return this.notFinalized(
-      'getRiskDetectionById',
-    );
+  getDetectionRules(): Observable<DetectionRuleRecord[]> {
+    return this.http
+      .get<DetectionRuleResourceDto[]>(buildApiUrl(this.apiConfig, this.rulesPath))
+      .pipe(
+        map((items) => items.map(mapDetectionRuleResourceDto)),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
   }
 
-  getRiskDetectionEvidence(
-    _riskDetectionId:
-      string,
-  ):
-    Observable<
-      RiskDetectionRecord
-      | undefined
-    > {
-
-    return this.notFinalized(
-      'getRiskDetectionEvidence',
-    );
+  getDetectionRuleById(ruleId: string): Observable<DetectionRuleRecord | undefined> {
+    return this.http
+      .get<DetectionRuleResourceDto>(buildApiUrl(this.apiConfig, `${this.rulesPath}/${ruleId}`))
+      .pipe(
+        map(mapDetectionRuleResourceDto),
+        catchError((error) => {
+          const mapped = mapHttpError(error);
+          return mapped.status === 404 ? of(undefined) : throwError(() => mapped);
+        }),
+      );
   }
 
-  configureDetectionRule(
-    _input:
-      ConfigureDetectionRuleInput,
-  ):
-    Observable<
-      DetectionRuleRecord
-    > {
-
-    return this.notFinalized(
-      'configureDetectionRule',
-    );
+  getRiskDetections(
+    filters: { buildingId?: string; zoneId?: string; riskTypeCode?: string } = {},
+  ): Observable<RiskDetectionRecord[]> {
+    let params = new HttpParams();
+    if (filters.buildingId) params = params.set('buildingId', filters.buildingId);
+    if (filters.zoneId) params = params.set('zoneId', filters.zoneId);
+    if (filters.riskTypeCode) params = params.set('riskTypeCode', filters.riskTypeCode);
+    return this.http
+      .get<RiskDetectionResourceDto[]>(buildApiUrl(this.apiConfig, this.detectionsPath), { params })
+      .pipe(
+        map((items) => items.map(mapRiskDetectionResourceDto)),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
   }
 
-  changeDetectionRuleStatus(
-    _ruleId:
-      string,
-
-    _active:
-      boolean,
-  ):
-    Observable<
-      DetectionRuleRecord
-    > {
-
-    return this.notFinalized(
-      'changeDetectionRuleStatus',
-    );
+  getRiskDetectionById(id: string): Observable<RiskDetectionRecord | undefined> {
+    return this.getOptional(`${this.detectionsPath}/${id}`);
   }
 
-  private notFinalized<T>(
-    operation:
-      string,
-  ):
-    Observable<T> {
+  getRiskDetectionEvidence(id: string): Observable<RiskDetectionRecord | undefined> {
+    return this.getOptional(`${this.detectionsPath}/${id}/evidence`);
+  }
 
-    const error:
-      ApiError = {
+  configureDetectionRule(input: ConfigureDetectionRuleInput): Observable<DetectionRuleRecord> {
+    const body: ConfigureDetectionRuleResourceDto = { ...input };
+    return this.http
+      .post<DetectionRuleResourceDto>(buildApiUrl(this.apiConfig, this.rulesPath), body)
+      .pipe(
+        map(mapDetectionRuleResourceDto),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
+  }
 
-      status:
-        0,
+  changeDetectionRuleStatus(ruleId: string, active: boolean): Observable<DetectionRuleRecord> {
+    const body: ChangeDetectionRuleStatusResourceDto = { active };
+    return this.http
+      .patch<DetectionRuleResourceDto>(
+        buildApiUrl(this.apiConfig, `${this.rulesPath}/${ruleId}/status`),
+        body,
+      )
+      .pipe(
+        map(mapDetectionRuleResourceDto),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
+  }
 
-      code:
-        'RISK_DETECTION_HTTP_CONTRACT_NOT_FINALIZED',
-
-      message:
-        `Risk Detection HTTP operation "${operation}" cannot be enabled until the backend contract is finalized.`,
-
-      fieldErrors:
-        [],
-    };
-
-    return throwError(
-      () =>
-        error,
-    );
+  private getOptional(path: string): Observable<RiskDetectionRecord | undefined> {
+    return this.http
+      .get<RiskDetectionResourceDto>(buildApiUrl(this.apiConfig, path))
+      .pipe(
+        map(mapRiskDetectionResourceDto),
+        catchError((error) => {
+          const mapped = mapHttpError(error);
+          return mapped.status === 404 ? of(undefined) : throwError(() => mapped);
+        }),
+      );
   }
 }

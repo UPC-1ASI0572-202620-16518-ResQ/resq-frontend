@@ -18,11 +18,12 @@
           </select></label
         ><button type="button" class="danger" (click)="clearPlan()">
           <mat-icon>delete_outline</mat-icon>Clear Plan</button
-        ><button type="button" class="primary" (click)="save()">
+        ><button type="button" class="primary" (click)="save()" [disabled]="!hasUnsavedChanges()">
           <mat-icon>save</mat-icon>Save Floor Plan
         </button>
       </div>
     </header>
+    <p class="local-plan-notice">Plano guardado en este navegador; no sincronizado con el servidor.</p>
 
     <nav class="toolbar" aria-label="Floor plan tools">
       @for (tool of tools; track tool.name) {
@@ -136,7 +137,7 @@
           }
         }
         @if (leftPanel() === 'devices') {
-          <button type="button" class="add-plan-device" (click)="selectTool('Device')">
+          <button type="button" class="add-plan-device" (click)="openDeviceManager()" title="Register a real device in Device Management, then return here to place it">
             <mat-icon>add</mat-icon>Add device
           </button>
           <nav class="device-category-tabs">
@@ -221,7 +222,7 @@
 
         <div class="upload-card">
           <mat-icon>image</mat-icon><b>Floor plan background</b
-          ><small>JPG, PNG or WEBP · max 8 MB</small
+          ><small>JPG, PNG or WEBP · max 2 MB for browser storage</small
           ><label
             ><mat-icon>upload</mat-icon>{{ planImageUrl() ? 'Change Image' : 'Upload Floor Plan'
             }}<input
@@ -495,15 +496,7 @@
               </button>
             </header>
             @if (selectedDevice() || selectedTool() === 'Device') {
-              <resq-device-configuration
-                [deviceId]="selectedDevice()?.id || ''"
-                [spaces]="deviceSpaces()"
-                [initialSpaceId]="creationSpaceId()"
-                (saved)="deviceSaved($event)"
-                (changing)="checkpointDeviceChange()"
-                (removed)="deviceRemoved($event)"
-                (closed)="closeProperties()"
-              />
+              <section class="area-properties"><p>Select a registered device and place it inside its assigned zone. Coordinates are stored only in this browser.</p></section>
             } @else if (selectedArea(); as area) {
               <section class="area-properties">
                 <h3>Area information</h3>

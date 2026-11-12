@@ -1,6 +1,4 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { BUILDINGS, DEVICES } from '../mock-data/resq.mock';
-import { INITIAL_RESPONSE_RULES } from '../mock-data/response-rules.mock';
 import {
   Building,
   Device,
@@ -14,8 +12,6 @@ import {
   RiskStatus,
 } from '../models/resq.models';
 import { capabilityCategory } from '../models/device-domain';
-import { evaluateZone } from '../models/response-evaluation';
-import { evaluateMeasurement } from './risk-evaluation.service';
 
 export interface FloorPlanUpdate {
   planImageUrl?: string;
@@ -29,10 +25,10 @@ export interface FloorPlanUpdate {
  */
 @Injectable({ providedIn: 'root' })
 export class BuildingStoreService {
-  private readonly devicesState = signal<Device[]>(structuredClone(DEVICES));
-  private readonly buildingsState = signal<Building[]>(structuredClone(BUILDINGS));
+  private readonly devicesState = signal<Device[]>([]);
+  private readonly buildingsState = signal<Building[]>([]);
 
-  private readonly rulesState = signal<ResponseRule[]>(structuredClone(INITIAL_RESPONSE_RULES));
+  private readonly rulesState = signal<ResponseRule[]>([]);
   private readonly eventsState = signal<ResponseEvent[]>([]);
   readonly rules = this.rulesState.asReadonly();
   readonly events = this.eventsState.asReadonly();
@@ -43,13 +39,12 @@ export class BuildingStoreService {
   readonly floors = computed(() => this.buildings().flatMap((building) => building.floors));
   readonly spaces = computed(() => this.floors().flatMap((floor) => floor.spaces));
 
-  constructor() {
-    // Initial risk/output projections use exactly the same evaluator as telemetry.
-    this.updateDevices(
-      this.spaces().flatMap(
-        (space) => evaluateZone(space, space.devices, this.rules(), evaluateMeasurement).devices,
-      ),
-    );
+  replaceBuildings(buildings: Building[]): void {
+    this.buildingsState.set(structuredClone(buildings));
+  }
+
+  replaceDevices(devices: Device[]): void {
+    this.devicesState.set(structuredClone(devices));
   }
 
   private attachDevicesToSpaces(buildings: Building[], devices: Device[]): Building[] {
@@ -77,10 +72,13 @@ export class BuildingStoreService {
           return {
             ...space,
             devices: assigned,
-            status:
-              statuses.length && statuses.every((status) => status === 'Offline')
+            status: (() => {
+              const deviceStatus = statuses.length && statuses.every((item) => item === 'Offline')
                 ? ('Offline' as const)
-                : highest(statuses),
+                : highest(statuses);
+              // Keep warning/critical risk computed from real alert responses.
+              return riskRank[space.status] > riskRank[deviceStatus] ? space.status : deviceStatus;
+            })(),
           };
         });
         return { ...floor, spaces, status: highest(spaces.map((space) => space.status)) };

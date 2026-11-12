@@ -1,6 +1,8 @@
 import { Inject, Injectable, computed, signal } from '@angular/core';
 import { Observable, forkJoin, map, of, switchMap, tap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
+import { BuildingStoreService } from '../../core/services/building-store.service';
+import { mapWorkspaceDeviceToPresentation } from './device-legacy.mapper';
 import { capabilityHardware, capabilityLabel, riskTypeLabel } from '../../shared/presentation/domain-labels';
 import {
   ALERT_RESPONSE_GATEWAY,
@@ -109,7 +111,7 @@ export class DeviceWorkspaceFacade {
           row.connection.signalStrength !== undefined &&
           row.connection.signalStrength < -75,
       ).length,
-      offline: rows.filter((row) => row.connection?.status !== 'ONLINE').length,
+      offline: rows.filter((row) => row.connection?.status === 'OFFLINE' || row.connection?.status === 'TIMEOUT').length,
     };
   });
 
@@ -120,6 +122,7 @@ export class DeviceWorkspaceFacade {
     @Inject(CONNECTIVITY_GATEWAY) private readonly connectivity: ConnectivityGateway,
     @Inject(ALERT_RESPONSE_GATEWAY) private readonly alertsGateway: AlertResponseGateway,
     @Inject(RISK_DETECTION_GATEWAY) private readonly riskGateway: RiskDetectionGateway,
+    private readonly buildingProjection: BuildingStoreService,
   ) {}
 
   loadFleet(): Observable<DeviceWorkspaceRow[]> {
@@ -144,7 +147,7 @@ export class DeviceWorkspaceFacade {
               current: this.monitoring.getCurrentMeasurements({ deviceId: device.id }),
             }).pipe(
               map(({ monitoring, connection, current }) =>
-                this.toRow(device, buildings.items, monitoring, connection, current.at(0)),
+                this.toRow(device, buildings.items, monitoring, connection, newestMeasurement(current)),
               ),
             ),
           ),
@@ -153,6 +156,7 @@ export class DeviceWorkspaceFacade {
       tap({
         next: (rows) => {
           this.rowsState.set(rows);
+          this.buildingProjection.replaceDevices(rows.map(mapWorkspaceDeviceToPresentation));
           this.loadingState.set(false);
         },
         error: (error: ApiError) => {
@@ -182,7 +186,9 @@ export class DeviceWorkspaceFacade {
           return of(undefined);
         }
 
-        const relevantAlertRisks = result.alerts.map((alert) =>
+        const relevantAlertRisks = result.alerts
+          .filter((alert) => isGuidRiskId(alert.context.riskDetectionId))
+          .map((alert) =>
           this.riskGateway.getRiskDetectionEvidence(alert.context.riskDetectionId).pipe(
             map((risk) => ({ alert, risk })),
           ),
@@ -194,9 +200,14 @@ export class DeviceWorkspaceFacade {
 
         return riskResults$.pipe(
           map((riskResults) => {
-            const deviceAlerts = riskResults
+            const compactDeviceId = deviceId.replace(/-/g, '').toUpperCase();
+            const connectivityAlerts = result.alerts
+              .filter((alert) => alert.context.riskDetectionId.toUpperCase() === `CONNECTIVITY-${compactDeviceId}`);
+            const matchingRiskAlerts = riskResults
               .filter(({ risk }) => risk?.evidence.some((evidence) => evidence.deviceId === deviceId))
-              .map(({ alert }) => ({
+              .map(({ alert }) => alert);
+            const deviceAlerts = [...matchingRiskAlerts, ...connectivityAlerts]
+              .map((alert) => ({
                 id: alert.alertId,
                 riskTypeCode: alert.context.riskTypeCode,
                 riskTypeLabel: riskTypeLabel(alert.context.riskTypeCode),
@@ -205,7 +216,7 @@ export class DeviceWorkspaceFacade {
               }))
               .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime());
 
-            const current = result.measurements.at(-1);
+            const current = newestMeasurement(result.measurements);
             return {
               ...this.toRow(
                 catalog,
@@ -223,6 +234,7 @@ export class DeviceWorkspaceFacade {
       tap({
         next: (detail) => {
           this.detailState.set(detail);
+          if (detail) this.buildingProjection.updateDevice(mapWorkspaceDeviceToPresentation(detail));
           this.loadingState.set(false);
         },
         error: (error: ApiError) => {
@@ -319,4 +331,12 @@ export class DeviceWorkspaceFacade {
       floorLabel: zone?.floorLabel,
     };
   }
+}
+
+function isGuidRiskId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function newestMeasurement(items: MonitoringMeasurement[]): MonitoringMeasurement | undefined {
+  return [...items].sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())[0];
 }

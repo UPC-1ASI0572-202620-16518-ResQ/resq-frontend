@@ -5,12 +5,13 @@ import {
   ElementRef,
   OnInit,
   ViewChild,
+  effect,
+  untracked,
   computed,
   inject,
   signal,
 } from '@angular/core';
 import { A11yModule } from '@angular/cdk/a11y';
-import { DeviceConfigurationComponent } from '../../../shared/ui/device-configuration.component';
 import {
   capabilityCategory,
   defaultThresholds,
@@ -36,6 +37,7 @@ import {
   ResponseRule,
 } from '../../../core/models/resq.models';
 import { BuildingStoreService } from '../../../core/services/building-store.service';
+import { FloorPlanLocalStorageService } from '../../../core/services/floor-plan-local-storage.service';
 import { SensorResponseService } from '../../../core/services/sensor-response.service';
 import { visualDevicePosition } from '../../../shared/utils/floor-plan-device.utils';
 
@@ -77,7 +79,6 @@ interface AssignmentConflict {
     MatIconModule,
     MatSnackBarModule,
     A11yModule,
-    DeviceConfigurationComponent,
   ],
   templateUrl: './floor-plan-editor.page.html',
   styleUrls: ['./floor-plan-editor.page.scss', './floor-plan-editor.area.scss'],
@@ -88,6 +89,7 @@ export class FloorPlanEditorPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly store = inject(BuildingStoreService);
+  private readonly localPlans = inject(FloorPlanLocalStorageService);
   private readonly snackBar = inject(MatSnackBar);
   readonly response = inject(SensorResponseService);
 
@@ -219,6 +221,37 @@ export class FloorPlanEditorPage implements OnInit {
   private redoStack: EditorSnapshot[] = [];
   private uniqueCounter = 0;
   private deviceTargetAreaId?: string;
+  private readonly restoredFloorKeys = new Set<string>();
+
+  constructor() {
+    effect(() => {
+      const buildingId = this.route.snapshot.paramMap.get('buildingId') ?? '';
+      const floorId = this.route.snapshot.paramMap.get('floorId') ?? '';
+      const floor = this.store.getFloor(buildingId, floorId);
+      if (floor && !this.floor() && !this.hasUnsavedChanges()) {
+        untracked(() => this.loadFloor(buildingId, floorId));
+      }
+    });
+    effect(() => {
+      const remoteDevices = this.store.devices();
+      const selectedFloor = this.floor();
+      if (!selectedFloor || this.hasUnsavedChanges()) return;
+      // Updating the presentation list never creates positions or saves geometry.
+      untracked(() => this.spaces.update((spaces) => spaces.map((space) => ({
+        ...space,
+        devices: remoteDevices
+          .filter((device) => device.assignment.spaceId === space.id)
+          .map((device) => {
+            const prior = space.devices.find((old) => old.id === device.id);
+            return { ...device, floorPlanPosition: prior?.floorPlanPosition };
+          }),
+      }))));
+    });
+  }
+
+  openDeviceManager(): void {
+    void this.router.navigate(['/devices']);
+  }
 
   ngOnInit(): void {
     this.route.paramMap.subscribe((params) =>
@@ -227,6 +260,11 @@ export class FloorPlanEditorPage implements OnInit {
   }
 
   private loadFloor(buildingId: string, floorId: string): void {
+    const restoreKey = `${buildingId}:${floorId}`;
+    if (!this.restoredFloorKeys.has(restoreKey)) {
+      this.localPlans.restoreToStore(this.store, buildingId, floorId);
+      this.restoredFloorKeys.add(restoreKey);
+    }
     const building = this.store.getBuilding(buildingId);
     const floor = this.store.getFloor(buildingId, floorId);
     this.building.set(building);
@@ -291,13 +329,7 @@ export class FloorPlanEditorPage implements OnInit {
   }
 
   saveAndSwitchFloor(): void {
-    const floorId = this.pendingFloorId();
-    if (!floorId) return;
-    if (this.selectedArea() && this.areaName().trim()) this.applyAreaChanges();
-    if (this.assignmentConflict()) return;
     this.save();
-    this.pendingFloorId.set(undefined);
-    this.navigateToFloor(floorId);
   }
 
   private navigateToFloor(floorId: string): void {
@@ -403,8 +435,8 @@ export class FloorPlanEditorPage implements OnInit {
       this.imageError.set('Use a JPG, PNG or WEBP image.');
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      this.imageError.set('The floor plan image must be smaller than 8 MB.');
+    if (file.size > 2 * 1024 * 1024) {
+      this.imageError.set('For reliable browser storage, the floor plan image must be smaller than 2 MB.');
       return;
     }
     const reader = new FileReader();
@@ -735,30 +767,49 @@ export class FloorPlanEditorPage implements OnInit {
     const building = this.building();
     const floor = this.floor();
     if (!building || !floor) return;
-    if (this.hasAreaOverlaps()) {
-      this.showOverlapWarning();
-      return;
+    const spaces = this.spaces().map((space) => ({
+      ...space,
+      devices: this.devicesForSpace(space),
+    }));
+    const result = this.localPlans.save(
+      building.id,
+      floor.name,
+      this.planImageUrl(),
+      this.elements(),
+      spaces,
+    );
+    if (result.ok) {
+      this.store.updateFloor(building.id, {
+        ...floor,
+        spaces: structuredClone(spaces),
+        planImageUrl: this.planImageUrl(),
+        planElements: structuredClone(this.elements()),
+        planConfigured: Boolean(
+          this.planImageUrl() ||
+          this.elements().length ||
+          spaces.some((space) => space.polygon.length >= 3),
+        ),
+      });
+      for (const space of spaces) {
+        for (const device of space.devices) {
+          if (device.spaceId === space.id && device.floorPlanPosition) {
+            this.store.updateDevicePosition(
+              building.id,
+              floor.id,
+              space.id,
+              device.id,
+              device.floorPlanPosition,
+            );
+          }
+        }
+      }
+      this.hasUnsavedChanges.set(false);
+      const pending = this.pendingFloorId();
+      this.pendingFloorId.set(undefined);
+      if (pending) this.navigateToFloor(pending);
     }
-    const localIds = new Set(this.spaces().map((space) => space.id));
-    for (const existing of this.store.getFloor(building.id, floor.id)?.spaces ?? [])
-      if (!localIds.has(existing.id)) this.store.deleteSpace(building.id, floor.id, existing.id);
-    for (const local of this.spaces()) {
-      const space = { ...local, devices: this.devicesForSpace(local) };
-      if (this.store.getSpace(building.id, floor.id, space.id))
-        this.store.updateSpace(building.id, floor.id, space);
-      else this.store.addSpace(building.id, floor.id, space);
-    }
-    this.store.syncFloorDevices(building.id, floor.id, this.floorDevices());
-    this.spaces().forEach((space) => this.response.reconcile(space.id));
-    this.store.updateFloorPlan(building.id, floor.id, {
-      planImageUrl: this.planImageUrl(),
-      planElements: this.elements(),
-      planConfigured: this.areas().length > 0,
-    });
-    this.floor.set(this.store.getFloor(building.id, floor.id));
-    this.hasUnsavedChanges.set(false);
-    this.snackBar.open('Floor plan saved successfully', 'Close', {
-      duration: 3000,
+    this.snackBar.open(result.message, 'Close', {
+      duration: result.ok ? 3500 : 5000,
       horizontalPosition: 'right',
       verticalPosition: 'top',
     });
@@ -1046,11 +1097,15 @@ export class FloorPlanEditorPage implements OnInit {
       });
       return;
     }
+    if (target.id !== device.spaceId) {
+      this.snackBar.open('Visual placement cannot reassign a device. Use Device Management to change its zone first.', 'Close', { duration: 4200 });
+      return;
+    }
     this.checkpoint();
     this.moveDeviceLocally(device.id, target.id, point);
-    this.store.moveDevice(device.id, target.id, point);
-    this.response.reconcile(device.spaceId);
-    this.response.reconcile(target.id);
+    const building = this.building();
+    const floor = this.floor();
+    if (building && floor) this.store.updateDevicePosition(building.id, floor.id, target.id, device.id, point);
     this.selectedTool.set('Select');
   }
 
@@ -1068,8 +1123,18 @@ export class FloorPlanEditorPage implements OnInit {
       });
       return;
     }
+    if (target.id !== original.spaceId) {
+      this.moveDeviceLocally(original.id, original.spaceId, original.floorPlanPosition);
+      this.undoStack.pop();
+      this.hasUnsavedChanges.set(drag.dirtyBefore ?? false);
+      this.updateHistoryState();
+      this.snackBar.open('Visual placement cannot reassign a device. Reassign it in Device Management first.', 'Close', { duration: 4200 });
+      return;
+    }
     this.moveDeviceLocally(original.id, target.id, drag.current);
-    this.store.moveDevice(original.id, target.id, drag.current);
+    const building = this.building();
+    const floor = this.floor();
+    if (building && floor) this.store.updateDevicePosition(building.id, floor.id, target.id, original.id, drag.current);
     this.selectDevice(original.id, false);
   }
 

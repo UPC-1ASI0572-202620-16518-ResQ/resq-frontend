@@ -24,19 +24,19 @@ export function mapIncidentResourceDto(
 
   return {
     incidentId:
-      dto.incidentId,
+      dto.id,
 
     zoneId:
       dto.zoneId,
 
     type:
-      dto.type,
+      normalizeCode(dto.type) as IncidentRecord['type'],
 
     level:
-      dto.level,
+      normalizeCode(dto.level) as IncidentRecord['level'],
 
     status:
-      dto.status,
+      normalizeCode(dto.status) as IncidentRecord['status'],
 
     assignedTo:
       dto.assignedTo ??
@@ -236,4 +236,11 @@ function mapLegacyStatus(
     case 'Resolved':
       return 'RESOLVED';
   }
+}
+
+function normalizeCode(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toUpperCase();
 }

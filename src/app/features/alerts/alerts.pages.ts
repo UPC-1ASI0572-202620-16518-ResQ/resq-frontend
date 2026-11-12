@@ -10,6 +10,7 @@ import { EmptyStateComponent, KpiCardComponent, LoadingStateComponent, StatusBad
 import { AlertWorkspaceFacade, AlertWorkspaceRow } from './alert-workspace.facade';
 import { ResponseExecutionRecord } from './data-access/alert.gateway';
 import { ResponseActivityComponent } from '../../shared/ui/response-activity.component';
+import { MatSnackBar } from '@angular/material/snack-bar';
 
 @Component({
   selector: 'resq-alerts-page',
@@ -78,7 +79,7 @@ import { ResponseActivityComponent } from '../../shared/ui/response-activity.com
     } @else if (workspace.error()) {
       <resq-empty-state title="Alerts could not be loaded" [message]="workspace.error()!.message" />
     } @else {
-      <div class="result-summary"><b>{{ filteredCount() }} warning alerts</b><span>Alerts are created only when a warning threshold is exceeded.</span></div>
+      <div class="result-summary"><b>{{ filteredCount() }} alerts</b><span>Alerts reflect persisted Risk Detection events and delivery attempts.</span></div>
       <section class="table-card" aria-label="Alerts">
         <div class="table-scroll">
           <table mat-table [dataSource]="dataSource" matSort>
@@ -170,9 +171,9 @@ export class AlertsPage implements OnInit {
       <div class="detail-grid">
         <main>
           <article class="card context-card"><div class="card-head"><div><h3>Alert Context</h3><p>Risk Detection created this Warning Alert. Actor: SYSTEM.</p></div></div><dl class="context-grid"><div><dt>Alert ID</dt><dd><code>{{ current.id }}</code></dd></div><div><dt>Status</dt><dd>{{ current.status === 'ACTIVE' ? 'Active' : 'Cleared' }}</dd></div><div><dt>Risk Detection ID</dt><dd><code>{{ current.riskDetectionId }}</code></dd></div><div><dt>Risk Type</dt><dd>{{ current.riskTypeLabel }}</dd></div><div><dt>Detected At</dt><dd>{{ formatDate(current.detectedAt) }}</dd></div><div><dt>Generated At</dt><dd>{{ formatDate(current.generatedAt) }}</dd></div><div><dt>Building</dt><dd>{{ current.location.buildingName }}</dd></div><div><dt>Floor</dt><dd>{{ current.location.floorLabel || '—' }}</dd></div><div><dt>Zone</dt><dd>{{ current.location.zoneName }}</dd></div>@if(current.clearedAt){<div><dt>Cleared At</dt><dd>{{ formatDate(current.clearedAt) }}</dd></div><div><dt>Clear reason</dt><dd>{{ clearReason(current.clearReason) }}</dd></div>}</dl>@if(current.clearReason){<p class="inline-empty">{{ clearDescription(current.clearReason) }}</p>}</article>
-          <article class="card evidence-card"><div class="card-head"><div><h3>Detection Evidence</h3><p>Warning threshold exceeded.</p></div></div>@if(current.evidence.length){<div class="evidence-list">@for(evidence of current.evidence;track evidence.deviceId + evidence.variableType){<section><div class="evidence-device"><span>◉</span><div><a [routerLink]="['/devices',evidence.deviceId]">{{ evidence.deviceName }}</a><small>{{ evidence.deviceCode }} · {{ evidence.hardware }}</small></div></div><div class="measurement"><span>{{ evidence.measurementName }}</span><b>{{ evidence.value }} {{ evidence.unit || '' }}</b></div><dl><div><dt>Measured value</dt><dd>{{ evidence.value }} {{ evidence.unit || '' }}</dd></div><div><dt>Warning threshold</dt><dd>{{ evidence.warningThreshold ?? 'Unavailable' }} {{ evidence.unit || '' }}</dd></div><div><dt>Critical threshold</dt><dd>{{ evidence.criticalThreshold ?? 'Unavailable' }} {{ evidence.unit || '' }}</dd></div><div><dt>Detected at</dt><dd>{{ formatDate(evidence.measuredAt) }}</dd></div><div><dt>Variable</dt><dd><code>{{ evidence.variableType }}</code></dd></div></dl>@if(evidence.warningThreshold !== undefined && evidence.criticalThreshold !== undefined){<p class="threshold-proof">{{ evidence.warningThreshold }} ≤ {{ evidence.value }} &lt; {{ evidence.criticalThreshold }} · Warning threshold exceeded</p>}</section>}</div>}@else{<p class="inline-empty">Detection evidence is unavailable in the current data source.</p>}</article>
+          <article class="card evidence-card"><div class="card-head"><div><h3>Detection Evidence</h3><p>Persisted measurement evidence from Risk Detection.</p></div></div>@if(current.evidence.length){<div class="evidence-list">@for(evidence of current.evidence;track evidence.deviceId + evidence.variableType){<section><div class="evidence-device"><span>◉</span><div><a [routerLink]="['/devices',evidence.deviceId]">{{ evidence.deviceName }}</a><small>{{ evidence.deviceCode }} · {{ evidence.hardware }}</small></div></div><div class="measurement"><span>{{ evidence.measurementName }}</span><b>{{ evidence.value }} {{ evidence.unit || '' }}</b></div><dl><div><dt>Measured value</dt><dd>{{ evidence.value }} {{ evidence.unit || '' }}</dd></div><div><dt>Warning threshold</dt><dd>{{ evidence.warningThreshold ?? 'Unavailable' }} {{ evidence.unit || '' }}</dd></div><div><dt>Critical threshold</dt><dd>{{ evidence.criticalThreshold ?? 'Unavailable' }} {{ evidence.unit || '' }}</dd></div><div><dt>Detected at</dt><dd>{{ formatDate(evidence.measuredAt) }}</dd></div><div><dt>Variable</dt><dd><code>{{ evidence.variableType }}</code></dd></div></dl><p class="threshold-proof">Threshold operators and global scope are shown in Monitoring Configuration.</p></section>}</div>}@else{<p class="inline-empty">Detection evidence is unavailable in the current data source.</p>}</article>
           <article class="card delivery-card"><div class="card-head"><div><h3>Notification Delivery</h3><p>Communication attempts associated with this alert.</p></div></div>@if(current.alert.deliveries.length){<div class="delivery-list">@for(delivery of current.alert.deliveries;track delivery.deliveryId){<section><div class="delivery-heading"><div><b>{{ delivery.channel }}</b><small>{{ delivery.deliveryId }}</small></div><resq-status-badge [status]="delivery.status" /></div><dl><div><dt>Recipient</dt><dd><code>{{ delivery.recipientUserId }}</code></dd></div><div><dt>Destination</dt><dd>{{ delivery.destination }}</dd></div><div><dt>Requested</dt><dd>{{ formatDate(delivery.requestedAt) }}</dd></div><div><dt>Completed</dt><dd>{{ delivery.completedAt ? formatDate(delivery.completedAt) : '—' }}</dd></div>@if(delivery.failureReason){<div class="failure"><dt>Failure reason</dt><dd>{{ delivery.failureReason }}</dd></div>}</dl></section>}</div>}@else{<p class="inline-empty">No notification deliveries were requested.</p>}</article>
-          @if(current.responseExecutions.length){<article class="card response-card"><div class="card-head"><div><h3>SYSTEM RESPONSE</h3><p>Warning responses are executed automatically.</p></div></div><div class="response-list">@for(execution of current.responseExecutions;track execution.responseExecutionId){<section><div class="response-heading"><div><b>{{ actionLabel(execution) }}</b><small>{{ execution.responseExecutionId }}</small></div><resq-status-badge [status]="execution.status" /></div><dl><div><dt>Actor</dt><dd>SYSTEM</dd></div><div><dt>Authorization</dt><dd>Automatic</dd></div><div><dt>Target Device</dt><dd><a [routerLink]="['/devices',execution.action.targetDeviceId]">{{ execution.action.targetDeviceId }}</a></dd></div><div><dt>Capability</dt><dd><code>{{ execution.action.targetCapabilityCode }}</code></dd></div><div><dt>Requested</dt><dd>{{ formatDate(execution.requestedAt) }}</dd></div>@if(execution.result){<div class="result"><dt>Result</dt><dd>{{ execution.result.message || execution.result.resultCode }}</dd></div>}</dl></section>}</div></article>}
+          <article class="card response-card"><div class="card-head"><div><h3>Response Actions</h3><p>Authorization records a human decision. AUTHORIZED does not confirm physical execution.</p></div></div>@if(current.responseExecutions.length){<div class="response-list">@for(execution of current.responseExecutions;track execution.responseExecutionId){<section><div class="response-heading"><div><b>{{ actionLabel(execution) }}</b><small>{{ execution.responseExecutionId }}</small></div><resq-status-badge [status]="execution.status" /></div><dl><div><dt>Actor</dt><dd>{{ execution.action.authorizationMode === 'HUMAN_REQUIRED' ? 'Authenticated operator' : 'SYSTEM' }}</dd></div><div><dt>Authorization mode</dt><dd>{{ execution.action.authorizationMode }}</dd></div><div><dt>Target Device</dt><dd><a [routerLink]="['/devices',execution.action.targetDeviceId]">{{ execution.action.targetDeviceId }}</a></dd></div><div><dt>Capability</dt><dd><code>{{ execution.action.targetCapabilityCode }}</code></dd></div><div><dt>Requested</dt><dd>{{ formatDate(execution.requestedAt) }}</dd></div>@if(execution.authorization){<div><dt>Decision</dt><dd>{{ execution.authorization.decision }} · {{ execution.authorization.decidedByUserId }} · {{ formatDate(execution.authorization.decidedAt) }}</dd></div>}@if(execution.result){<div class="result"><dt>Confirmed result</dt><dd>{{ execution.result.message || execution.result.resultCode }}</dd></div>}@if(workspace.canDecideAuthorization(execution)){<div class="result"><dt>Decision</dt><dd><button type="button" [disabled]="busy()" (click)="decide(execution.responseExecutionId,'APPROVED')">Approve / Authorize</button> <button type="button" [disabled]="busy()" (click)="decide(execution.responseExecutionId,'REJECTED')">Reject</button></dd></div>}</dl></section>}</div>}@else{<p class="inline-empty">This alert has no response actions.</p>}</article>
         </main>
         <aside><article class="card incident-card"><div class="card-head"><div><h3>Independent Critical Outcome</h3><p>Alerts do not escalate into Incidents.</p></div></div><p class="inline-empty">This alert was generated because the warning threshold was exceeded. Incidents are generated independently when the critical threshold is reached.</p><a routerLink="/incidents">Open Incidents →</a></article></aside>
       </div>
@@ -184,17 +185,41 @@ export class AlertsPage implements OnInit {
 })
 export class AlertDetailPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly snack = inject(MatSnackBar);
   readonly workspace = inject(AlertWorkspaceFacade);
-  ngOnInit(): void { this.workspace.loadDetail(this.route.snapshot.paramMap.get('alertId') ?? '').subscribe({ error: () => undefined }); }
+  readonly busy = signal(false);
+  private alertId = '';
+  ngOnInit(): void { this.alertId = this.route.snapshot.paramMap.get('alertId') ?? ''; this.reload(); }
   severityIcon(severity: string): string { return severity === 'Critical' ? '!' : severity === 'Warning' ? '△' : 'i'; }
   formatDate(date: Date): string { return date.toLocaleString([], { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
   actionLabel(execution: ResponseExecutionRecord): string { return execution.action.actionCode.replace(/[_-]+/g,' ').replace(/\b\w/g,(value)=>value.toUpperCase()); }
   clearReason(reason: AlertWorkspaceRow['clearReason']): string { return reason === 'CRITICAL_THRESHOLD_REACHED' ? 'Critical threshold reached' : 'Returned to normal'; }
   clearDescription(reason: AlertWorkspaceRow['clearReason']): string {
     return reason === 'CRITICAL_THRESHOLD_REACHED'
-      ? 'The warning episode ended because the measurement entered the critical range. A separate Incident was created.'
+      ? 'The alert episode ended because the measurement entered the critical range. The API does not expose a confirmed alert-to-incident relationship.'
       : 'The warning episode ended because the measurement returned to normal.';
   }
+  decide(executionId: string, decision: 'APPROVED' | 'REJECTED'): void {
+    this.busy.set(true);
+    this.workspace.decideAuthorization(executionId, decision).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.reload();
+        this.snack.open(
+          decision === 'APPROVED'
+            ? 'Authorization approved. Physical execution is not confirmed.'
+            : 'Response authorization rejected.',
+          'Close',
+          { duration: 3200 },
+        );
+      },
+      error: (error: { message?: string }) => {
+        this.busy.set(false);
+        this.snack.open(error.message ?? 'Authorization decision failed.', 'Close', { duration: 3500 });
+      },
+    });
+  }
+  private reload(): void { if (this.alertId) this.workspace.loadDetail(this.alertId).subscribe({ error: () => undefined }); }
 }
 
 function periodCutoff(period: string): Date | undefined { const now = Date.now(); if(period==='24h') return new Date(now-86_400_000); if(period==='7d') return new Date(now-7*86_400_000); if(period==='30d') return new Date(now-30*86_400_000); return undefined; }

@@ -20,16 +20,14 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatIconModule } from '@angular/material/icon';
 import {
-  AlertListItem,
   SensitivityLevel,
   Space,
   SpaceThresholds,
 } from '../../core/models/resq.models';
-import { AlertService, SpaceService } from '../../core/services/data.services';
+import { SpaceService } from '../../core/services/data.services';
 import { BuildingStoreService } from '../../core/services/building-store.service';
 import { SensorResponseService } from '../../core/services/sensor-response.service';
 import { SensorHistoryComponent } from '../../shared/ui/sensor-history.component';
-import { DeviceConfigurationComponent } from '../../shared/ui/device-configuration.component';
 import { ResponseActivityComponent } from '../../shared/ui/response-activity.component';
 import {
   capabilityCategory,
@@ -37,6 +35,13 @@ import {
   sensorDefinitions,
 } from '../../core/models/device-domain';
 import { StatusBadgeComponent } from '../../shared/ui/ui.components';
+import { AlertWorkspaceFacade } from '../alerts/alert-workspace.facade';
+import {
+  RISK_DETECTION_GATEWAY,
+  ComparisonOperator,
+  DetectionRuleRecord,
+  RiskDetectionGateway,
+} from '../risk-detection/data-access/risk-detection.gateway';
 
 @Component({
   selector: 'resq-spaces-page',
@@ -53,7 +58,7 @@ import { StatusBadgeComponent } from '../../shared/ui/ui.components';
           placeholder="Search rooms or spaces..." /></label
       ><select [(ngModel)]="building" (ngModelChange)="apply()">
         <option value="">All buildings</option>
-        @for (item of buildings; track item.id) {
+        @for (item of buildings(); track item.id) {
           <option [value]="item.id">{{ item.name }}</option>
         }</select
       ><select [(ngModel)]="type" (ngModelChange)="apply()">
@@ -85,7 +90,7 @@ import { StatusBadgeComponent } from '../../shared/ui/ui.components';
       </div>
     </div>
     <div class="result-count">
-      <b>{{ filtered().length }} spaces</b><span>Live data updated moments ago</span>
+      <b>{{ filtered().length }} spaces</b><span>Data from the ResQ API</span>
     </div>
     @if (view() === 'cards') {
       <div class="space-grid">
@@ -156,9 +161,9 @@ import { StatusBadgeComponent } from '../../shared/ui/ui.components';
 })
 export class SpacesPage {
   private readonly store = inject(BuildingStoreService);
-  private readonly alertService = inject(AlertService);
-  readonly alertItems = signal<AlertListItem[]>([]);
-  readonly buildings = this.store.buildings();
+  private readonly alertWorkspace = inject(AlertWorkspaceFacade);
+  readonly alertItems = this.alertWorkspace.rows;
+  readonly buildings = this.store.buildings;
   readonly types = [
     'Laboratory',
     'Classroom',
@@ -169,28 +174,27 @@ export class SpacesPage {
     'Stairs',
     'Restroom',
   ];
-  readonly filtered = signal(this.store.spaces());
+  private readonly filterRevision = signal(0);
+  readonly filtered = computed(() => {
+    this.filterRevision();
+    const q = this.query.toLowerCase();
+    return this.store.spaces().filter((space) =>
+      (!q || `${space.name} ${space.roomNumber}`.toLowerCase().includes(q)) &&
+      (!this.building || space.buildingId === this.building) &&
+      (!this.type || space.type === this.type) &&
+      (!this.risk || space.status === this.risk),
+    );
+  });
   readonly view = signal<'cards' | 'table'>('cards');
   query = '';
   building = '';
   type = '';
   risk = '';
   constructor() {
-    this.alertService.getRecentAlerts('all').subscribe((items) => this.alertItems.set(items));
+    this.alertWorkspace.loadAlerts().subscribe();
   }
   apply(): void {
-    const q = this.query.toLowerCase();
-    this.filtered.set(
-      this.store
-        .spaces()
-        .filter(
-          (s) =>
-            (!q || `${s.name} ${s.roomNumber}`.toLowerCase().includes(q)) &&
-            (!this.building || s.buildingId === this.building) &&
-            (!this.type || s.type === this.type) &&
-            (!this.risk || s.status === this.risk),
-        ),
-    );
+    this.filterRevision.update((revision) => revision + 1);
   }
   icon(space: Space): string {
     return space.type === 'Laboratory'
@@ -226,7 +230,6 @@ export class SpacesPage {
     RouterLink,
     MatIconModule,
     StatusBadgeComponent,
-    DeviceConfigurationComponent,
     ResponseActivityComponent,
     SensorHistoryComponent,
   ],
@@ -269,9 +272,13 @@ export class SpacesPage {
             <div class="reading-grid">
               @for (device of sensors(); track device.id) {
                 <div>
-                  <span>{{ device.type }}</span
-                  ><b>{{ device.readings.at(-1)?.value }} {{ device.readings.at(-1)?.unit }}</b
-                  ><resq-status-badge [status]="device.status" />
+                  <span>{{ device.type }}</span>
+                  @if (device.readings.at(-1); as reading) {
+                    <b>{{ reading.value }} {{ reading.unit }}</b>
+                  } @else {
+                    <span>No current reading</span>
+                  }
+                  <resq-status-badge [status]="device.status" />
                 </div>
               }
             </div>
@@ -348,26 +355,9 @@ export class SpacesPage {
           </section>
         </div>
         <section class="response-simulator">
-          <h3>Configure & simulate a sensor</h3>
-          <label
-            >Sensor<select
-              [ngModel]="simulationDeviceId()"
-              (ngModelChange)="simulationDeviceId.set($event)"
-            >
-              <option value="">Select a sensor</option>
-              @for (device of simulationDevices(); track device.id) {
-                <option [value]="device.id">{{ device.displayName || device.name }}</option>
-              }
-            </select></label
-          >
+          <h3>Sensor configuration</h3>
+          <p>Telemetry simulation is unavailable while connected to the real backend.</p>
         </section>
-        @for (id of simulationDeviceId() ? [simulationDeviceId()] : []; track id) {
-          <resq-device-configuration
-            [deviceId]="id"
-            [spaces]="store.spaces()"
-            (closed)="simulationDeviceId.set('')"
-          />
-        }
         <resq-response-activity [spaceId]="space()!.id" />
       }
       @if (tab() === 'Alerts') {
@@ -385,45 +375,42 @@ export class SpacesPage {
         </div>
       }
       @if (tab() === 'Monitoring Configuration') {
-        <form class="config" [formGroup]="form" (ngSubmit)="save()">
+        <section class="config rules-config">
           <div class="config-intro">
-            <h3>Monitoring Configuration</h3>
-            <p>Each sensitivity level keeps its own warning and critical thresholds.</p>
+            <div>
+              <h3>Global Risk Detection Rules</h3>
+              <p>These backend rules apply across the organization by variable type, not only to {{ space()!.name }}.</p>
+            </div>
+            <button type="button" (click)="showRuleForm.set(!showRuleForm())">{{ showRuleForm() ? 'Cancel' : 'Create global rule' }}</button>
           </div>
-          <label
-            >Sensitivity level<select
-              formControlName="sensitivity"
-              (change)="changeSensitivity($any($event.target).value)"
-            >
-              <option>Low</option>
-              <option>Normal</option>
-              <option>High</option>
-              <option>Custom</option>
-            </select></label
-          >
-          <h4>Environmental thresholds for {{ activeSensitivity() }}</h4>
-          <div class="thresholds">
-            @for (metric of metrics; track metric) {
-              <div [class.invalid-threshold]="thresholdError(metric)">
-                <span
-                  ><b>{{ metric }}</b
-                  ><small>{{ unit(metric) }}</small></span
-                ><label>Warning<input type="number" [formControlName]="metric + 'Warning'" /></label
-                ><label
-                  >Critical<input type="number" [formControlName]="metric + 'Critical'"
-                /></label>
-                @if (thresholdError(metric)) {
-                  <small class="threshold-error"
-                    >Warning threshold must be lower than the critical threshold.</small
-                  >
-                }
-              </div>
+          <p class="contract-note">Per-zone sensitivity profiles are not supported by the API. The sensitivity label shown elsewhere is presentation-only.</p>
+          @if (showRuleForm()) {
+            <form class="rule-form" (ngSubmit)="createRule()">
+              <label>Risk type code<input name="riskTypeCode" [(ngModel)]="ruleRiskType" required pattern="[A-Za-z][A-Za-z0-9_]*" placeholder="GAS_LEAK" /></label>
+              <label>Severity<select name="severityCode" [(ngModel)]="ruleSeverity"><option>Info</option><option>Warning</option><option>Critical</option></select></label>
+              <label>Variable type<input name="variableType" [(ngModel)]="ruleVariableType" required pattern="[A-Za-z][A-Za-z0-9_]*" placeholder="GAS_PPM" list="zone-variable-types" /></label>
+              <datalist id="zone-variable-types">@for (code of availableVariableTypes(); track code) {<option [value]="code"></option>}</datalist>
+              <label>Operator<select name="operator" [(ngModel)]="ruleOperator">@for (operator of operators; track operator) {<option [value]="operator">{{ operatorLabel(operator) }}</option>}</select></label>
+              <label>Threshold<input name="threshold" type="number" step="any" [(ngModel)]="ruleThreshold" required /></label>
+              <button type="submit" [disabled]="ruleBusy() || !ruleRiskType.trim() || !ruleVariableType.trim() || ruleThreshold === null">Create active global rule</button>
+            </form>
+          }
+          @if (rulesLoading()) {<p class="contract-note">Loading global rules…</p>}
+          @if (rulesError()) {<p class="contract-note">{{ rulesError() }} <button type="button" (click)="loadRules()">Retry</button></p>}
+          <div class="rule-list">
+            @for (rule of rules(); track rule.ruleId) {
+              <article [class.inactive]="rule.status === 'INACTIVE'">
+                <div><b>{{ rule.riskTypeCode }}</b><small>{{ rule.ruleId }}</small></div>
+                <span>{{ rule.severityCode }}</span>
+                <div><b>{{ rule.condition.variableType }}</b><small>{{ operatorLabel(rule.condition.operator) }} {{ rule.condition.threshold }}</small></div>
+                <em>{{ appliesToZone(rule) ? 'Variable present in this zone' : 'Global · variable not present here' }}</em>
+                <button type="button" [disabled]="ruleBusy()" (click)="toggleRule(rule)">{{ rule.status === 'ACTIVE' ? 'Deactivate' : 'Activate' }}</button>
+              </article>
+            } @empty {
+              @if (!rulesLoading() && !rulesError()) {<p class="contract-note">No global detection rules are configured.</p>}
             }
           </div>
-          <button type="submit" [disabled]="form.invalid">
-            Save {{ activeSensitivity() }} configuration
-          </button>
-        </form>
+        </section>
       }
       @if (tab() === 'History') {
         <resq-response-activity [spaceId]="space()!.id" />
@@ -441,11 +428,12 @@ export class SpaceDetailPage implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
   private readonly service = inject(SpaceService);
-  private readonly alertService = inject(AlertService);
+  private readonly alertWorkspace = inject(AlertWorkspaceFacade);
+  private readonly riskGateway = inject<RiskDetectionGateway>(RISK_DETECTION_GATEWAY);
   readonly store = inject(BuildingStoreService);
   private readonly snack = inject(MatSnackBar);
   readonly response = inject(SensorResponseService);
-  readonly alertItems = signal<AlertListItem[]>([]);
+  readonly alertItems = this.alertWorkspace.rows;
   readonly space = computed(() =>
     this.store.spaces().find((space) => space.id === this.route.snapshot.paramMap.get('spaceId')),
   );
@@ -454,6 +442,32 @@ export class SpaceDetailPage implements OnInit {
   readonly thresholdProfiles = signal<Partial<Record<SensitivityLevel, SpaceThresholds>>>({});
   readonly metrics = ['Temperature', 'Smoke', 'Gas', 'Humidity', 'Motion'] as const;
   readonly simulationDeviceId = signal('');
+  readonly rules = signal<DetectionRuleRecord[]>([]);
+  readonly rulesLoading = signal(false);
+  readonly rulesError = signal('');
+  readonly ruleBusy = signal(false);
+  readonly showRuleForm = signal(false);
+  readonly operators: ComparisonOperator[] = [
+    'GREATER_THAN',
+    'GREATER_THAN_OR_EQUAL',
+    'LESS_THAN',
+    'LESS_THAN_OR_EQUAL',
+    'EQUAL',
+  ];
+  ruleRiskType = 'GAS_LEAK';
+  ruleSeverity = 'Warning';
+  ruleVariableType = '';
+  ruleOperator: ComparisonOperator = 'GREATER_THAN_OR_EQUAL';
+  ruleThreshold: number | null = null;
+  readonly availableVariableTypes = computed(() =>
+    [
+      ...new Set(
+        (this.space()?.devices ?? []).flatMap((device) =>
+          device.capabilities.map((capability) => capability.code),
+        ),
+      ),
+    ].sort(),
+  );
   sensors() {
     return (
       this.space()?.devices.filter((device) =>
@@ -508,10 +522,14 @@ export class SpaceDetailPage implements OnInit {
   );
 
   ngOnInit(): void {
+    // Per-zone sensitivity/threshold read and write endpoints are not implemented.
+    // Disable the entire form instead of showing fictitious editable settings.
+    this.form.disable({ emitEvent: false });
     const found = this.store
       .spaces()
       .find((space) => space.id === this.route.snapshot.paramMap.get('spaceId'));
-    this.alertService.getRecentAlerts('all').subscribe((items) => this.alertItems.set(items));
+    this.alertWorkspace.loadAlerts().subscribe();
+    this.loadRules();
     if (!found) return;
 
     const profiles: Partial<Record<SensitivityLevel, SpaceThresholds>> = {};
@@ -521,6 +539,103 @@ export class SpaceDetailPage implements OnInit {
     this.thresholdProfiles.set(profiles);
     this.activeSensitivity.set(found.sensitivity);
     this.patchConfiguration(found.sensitivity, profiles[found.sensitivity]!);
+  }
+
+  loadRules(): void {
+    this.rulesLoading.set(true);
+    this.rulesError.set('');
+    this.riskGateway.getDetectionRules().subscribe({
+      next: (rules) => {
+        this.rules.set(rules);
+        this.rulesLoading.set(false);
+        if (!this.ruleVariableType) this.ruleVariableType = this.availableVariableTypes()[0] ?? '';
+      },
+      error: (error: { message?: string }) => {
+        this.rulesLoading.set(false);
+        this.rulesError.set(error.message ?? 'Global rules could not be loaded.');
+      },
+    });
+  }
+
+  createRule(): void {
+    const riskTypeCode = this.ruleRiskType.trim().toUpperCase();
+    const variableType = this.ruleVariableType.trim().toUpperCase();
+    if (
+      !riskTypeCode ||
+      !variableType ||
+      this.ruleThreshold === null ||
+      !Number.isFinite(this.ruleThreshold)
+    ) return;
+    const duplicateScope = this.rules().filter(
+      (rule) =>
+        rule.status === 'ACTIVE' &&
+        rule.riskTypeCode === riskTypeCode &&
+        rule.severityCode.toUpperCase() === this.ruleSeverity.toUpperCase() &&
+        rule.condition.variableType === variableType,
+    );
+    if (
+      duplicateScope.length &&
+      !window.confirm(
+        `There are already ${duplicateScope.length} active global rule(s) for this risk, severity and variable. Create another active rule anyway?`,
+      )
+    ) return;
+    if (
+      !window.confirm(
+        `Create an ACTIVE organization-wide rule for ${variableType}? This will not be limited to ${this.space()?.name ?? 'this zone'}.`,
+      )
+    ) return;
+    this.ruleBusy.set(true);
+    this.riskGateway
+      .configureDetectionRule({
+        riskTypeCode,
+        severityCode: this.ruleSeverity,
+        variableType,
+        operator: this.ruleOperator,
+        threshold: this.ruleThreshold,
+      })
+      .subscribe({
+        next: () => {
+          this.ruleBusy.set(false);
+          this.showRuleForm.set(false);
+          this.snack.open('Global detection rule created and activated.', 'Close', { duration: 3000 });
+          this.loadRules();
+        },
+        error: (error: { message?: string }) => {
+          this.ruleBusy.set(false);
+          this.snack.open(error.message ?? 'Rule could not be created.', 'Close', { duration: 3500 });
+        },
+      });
+  }
+
+  toggleRule(rule: DetectionRuleRecord): void {
+    const activate = rule.status !== 'ACTIVE';
+    if (!window.confirm(`${activate ? 'Activate' : 'Deactivate'} this organization-wide rule?`)) return;
+    this.ruleBusy.set(true);
+    this.riskGateway.changeDetectionRuleStatus(rule.ruleId, activate).subscribe({
+      next: () => {
+        this.ruleBusy.set(false);
+        this.snack.open(`Global rule ${activate ? 'activated' : 'deactivated'}.`, 'Close', { duration: 2500 });
+        this.loadRules();
+      },
+      error: (error: { message?: string }) => {
+        this.ruleBusy.set(false);
+        this.snack.open(error.message ?? 'Rule status could not be changed.', 'Close', { duration: 3500 });
+      },
+    });
+  }
+
+  appliesToZone(rule: DetectionRuleRecord): boolean {
+    return this.availableVariableTypes().includes(rule.condition.variableType);
+  }
+
+  operatorLabel(operator: ComparisonOperator): string {
+    return ({
+      GREATER_THAN: '>',
+      GREATER_THAN_OR_EQUAL: '≥',
+      LESS_THAN: '<',
+      LESS_THAN_OR_EQUAL: '≤',
+      EQUAL: '=',
+    } as const)[operator];
   }
 
   changeSensitivity(next: SensitivityLevel): void {

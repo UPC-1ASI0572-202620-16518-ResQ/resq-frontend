@@ -15,17 +15,11 @@ import {
   HttpUserGateway,
 } from './http-user.gateway';
 
-import {
-  MockUserGateway,
-} from './mock-user.gateway';
-
-export type UserDataSource =
-  | 'mock'
-  | 'http';
+export type UserDataSource = 'http';
 
 export function provideUserDataAccess(
   source:
-    UserDataSource = 'mock',
+    UserDataSource = 'http',
 ):
   EnvironmentProviders {
 
@@ -37,10 +31,7 @@ export function provideUserDataAccess(
       provide:
         USER_GATEWAY,
 
-      useClass:
-        source === 'http'
-          ? HttpUserGateway
-          : MockUserGateway,
+      useClass: HttpUserGateway,
     },
   ]);
 }

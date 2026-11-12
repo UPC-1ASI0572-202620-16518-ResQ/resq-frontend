@@ -3,10 +3,6 @@ import {
 } from '../../../core/api/pagination';
 
 import {
-  Building,
-} from '../../../core/models/resq.models';
-
-import {
   BuildingPageResourceDto,
   BuildingResourceDto,
   ZonePageResourceDto,
@@ -43,11 +39,14 @@ export function mapBuildingResourceDto(
       undefined,
 
     address: {
-      ...dto.address,
+      streetAddress: dto.address.streetAddress ?? '',
+      district: dto.address.district ?? '',
+      city: dto.address.city ?? '',
+      countryCode: dto.address.countryCode ?? '',
     },
 
     administrativeStatus:
-      dto.administrativeStatus,
+      normalizeLocationStatus(dto.administrativeStatus),
 
     zones:
       dto.zones.map(
@@ -97,7 +96,7 @@ export function mapZoneResourceDto(
       undefined,
 
     administrativeStatus:
-      dto.administrativeStatus,
+      normalizeLocationStatus(dto.administrativeStatus),
 
     availableForAssignment:
       dto.availableForAssignment,
@@ -170,144 +169,6 @@ export function mapZonePageResourceDto(
   };
 }
 
-/**
- * Temporary compatibility mapper for the current frontend mock.
- *
- * The legacy mock models:
- *
- * Building -> Floor -> Space
- *
- * while the Building Management bounded context models:
- *
- * Building -> Zone
- *
- * with floorLabel as descriptive information.
- *
- * This conversion exists only so MockBuildingGateway can expose
- * the same contract that the future backend adapter will expose.
- */
-export function mapLegacyBuildingToCatalog(
-  building:
-    Building,
-):
-  BuildingCatalogRecord {
-
-  const legacyDate =
-    new Date(
-      0,
-    );
-
-  const zones:
-    ZoneCatalogRecord[] =
-    building.floors.flatMap(
-      floor =>
-        floor.spaces.map(
-          space => ({
-
-            id:
-              space.id,
-
-            buildingId:
-              building.id,
-
-            zoneCode:
-              legacyZoneCode(
-                space.id,
-                space.roomNumber,
-              ),
-
-            name:
-              space.name,
-
-            floorLabel:
-              floor.name,
-
-            administrativeStatus:
-              'ACTIVE',
-
-            availableForAssignment:
-              true,
-
-            createdAt:
-              new Date(
-                legacyDate,
-              ),
-
-            updatedAt:
-              new Date(
-                legacyDate,
-              ),
-          }),
-        ),
-    );
-
-  return {
-    id:
-      building.id,
-
-    /*
-     * Temporary organization identifier used only
-     * by the current mock adapter.
-     *
-     * This value must later come from IAM /
-     * authenticated organization context.
-     */
-    organizationId:
-      'securitybear',
-
-    buildingCode:
-      normalizeCode(
-        building.id,
-      ),
-
-    name:
-      building.name,
-
-    description:
-      building.description,
-
-    /*
-     * The current legacy Building model stores the
-     * address as one string.
-     *
-     * We intentionally DO NOT invent district,
-     * city or country data.
-     */
-    address: {
-
-      streetAddress:
-        building.address,
-
-      district:
-        '',
-
-      city:
-        '',
-
-      countryCode:
-        '',
-    },
-
-    administrativeStatus:
-      'ACTIVE',
-
-    zones,
-
-    createdAt:
-      new Date(
-        legacyDate,
-      ),
-
-    updatedAt:
-      new Date(
-        legacyDate,
-      ),
-
-    version:
-      1,
-  };
-}
-
 export function withBuildingEtag(
   building:
     BuildingCatalogRecord,
@@ -339,73 +200,6 @@ export function buildingEtagForVersion(
   return `"${version}"`;
 }
 
-export function buildingVersionFromEtag(
-  etag: string,
-):
-  number
-  | undefined {
-
-  const normalized =
-    etag
-      .trim()
-      .replace(
-        /^W\//i,
-        '',
-      )
-      .replace(
-        /^"|"$/g,
-        '',
-      );
-
-  const version =
-    Number(
-      normalized,
-    );
-
-  return (
-    Number.isInteger(
-      version,
-    ) &&
-    version > 0
-  )
-    ? version
-    : undefined;
-}
-
-function legacyZoneCode(
-  spaceId: string,
-
-  roomNumber?: string,
-): string {
-
-  return normalizeCode(
-    roomNumber ||
-    spaceId,
-  );
-}
-
-function normalizeCode(
-  value: string,
-): string {
-
-  const normalized =
-    value
-      .trim()
-      .toUpperCase()
-      .replace(
-        /[^A-Z0-9_-]+/g,
-        '_',
-      );
-
-  return (
-    normalized.slice(
-      0,
-      64,
-    ) ||
-    'LOCATION'
-  );
-}
-
 function normalizeText(
   value?: string,
 ):
@@ -418,4 +212,8 @@ function normalizeText(
   return normalized
     ? normalized
     : undefined;
+}
+
+function normalizeLocationStatus(value: string): 'ACTIVE' | 'INACTIVE' {
+  return value.trim().toUpperCase() === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
 }

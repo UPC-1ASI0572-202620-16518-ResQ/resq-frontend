@@ -15,17 +15,11 @@ import {
   HttpConnectivityGateway,
 } from './http-connectivity.gateway';
 
-import {
-  MockConnectivityGateway,
-} from './mock-connectivity.gateway';
-
-export type ConnectivityDataSource =
-  'mock'
-  | 'http';
+export type ConnectivityDataSource = 'http';
 
 export function provideConnectivityDataAccess(
   source:
-    ConnectivityDataSource = 'mock',
+    ConnectivityDataSource = 'http',
 ):
   EnvironmentProviders {
 
@@ -37,10 +31,7 @@ export function provideConnectivityDataAccess(
       provide:
         CONNECTIVITY_GATEWAY,
 
-      useClass:
-        source === 'http'
-          ? HttpConnectivityGateway
-          : MockConnectivityGateway,
+      useClass: HttpConnectivityGateway,
     },
   ]);
 }

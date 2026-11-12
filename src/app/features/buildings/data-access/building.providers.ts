@@ -15,17 +15,11 @@ import {
   HttpBuildingGateway,
 } from './http-building.gateway';
 
-import {
-  MockBuildingGateway,
-} from './mock-building.gateway';
-
-export type BuildingDataSource =
-  | 'mock'
-  | 'http';
+export type BuildingDataSource = 'http';
 
 export function provideBuildingDataAccess(
   source:
-    BuildingDataSource = 'mock',
+    BuildingDataSource = 'http',
 ):
   EnvironmentProviders {
 
@@ -37,10 +31,7 @@ export function provideBuildingDataAccess(
       provide:
         BUILDING_GATEWAY,
 
-      useClass:
-        source === 'http'
-          ? HttpBuildingGateway
-          : MockBuildingGateway,
+      useClass: HttpBuildingGateway,
     },
   ]);
 }

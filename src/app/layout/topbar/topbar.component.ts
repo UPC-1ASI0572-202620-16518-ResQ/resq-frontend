@@ -4,12 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { SearchResult } from '../../core/models/resq.models';
-import { SearchService } from '../../core/services/data.services';
 import { LanguageService } from '../../core/services/language.service';
-import { RiskEventStoreService } from '../../core/services/risk-event-store.service';
-import { BuildingStoreService } from '../../core/services/building-store.service';
 import { AuthSessionFacade } from '../../features/auth/auth-session.facade';
 import { AuthorizationService } from '../../features/auth/authorization.service';
+import { AnalyticsWorkspaceFacade } from '../../features/analytics/analytics-workspace.facade';
 
 @Component({
   selector: 'resq-topbar',
@@ -63,7 +61,7 @@ import { AuthorizationService } from '../../features/auth/authorization.service'
             <div class="user-menu-header"><span>{{initials()}}</span><div><b>{{userName()}}</b><small>{{roleLabel()}}</small></div></div>
             <div class="user-menu-separator"></div>
             <a routerLink="/settings" (click)="userMenuOpen.set(false)"><mat-icon>settings</mat-icon><span>{{language.t('settings','Settings')}}</span></a>
-            <a class="sign-out" routerLink="/login"><mat-icon>logout</mat-icon><span>{{language.t('signOut','Sign out')}}</span></a>
+            <a class="sign-out" routerLink="/login" (click)="signOut()"><mat-icon>logout</mat-icon><span>{{language.t('signOut','Sign out')}}</span></a>
           </div>
         }
       </div>
@@ -72,9 +70,7 @@ import { AuthorizationService } from '../../features/auth/authorization.service'
   styleUrl: './topbar.component.scss',
 })
 export class TopbarComponent {
-  private readonly searchService = inject(SearchService);
-  private readonly events = inject(RiskEventStoreService);
-  private readonly buildings = inject(BuildingStoreService);
+  private readonly analytics = inject(AnalyticsWorkspaceFacade);
   private readonly session = inject(AuthSessionFacade);
   private readonly authorization = inject(AuthorizationService);
   readonly language = inject(LanguageService);
@@ -85,33 +81,33 @@ export class TopbarComponent {
   readonly userMenuOpen = signal(false);
   readonly roleLabel = this.authorization.roleLabel;
   readonly notificationItems = computed(() => [
-    ...this.events.alerts()
+    ...this.analytics.alerts()
       .filter((alert) => alert.status === 'ACTIVE')
       .map((alert) => ({
-        id: alert.alertId,
+        id: alert.id,
         kind: 'Alert' as const,
         eventLabel: 'WARNING ALERT',
-        title: `${alert.context.riskTypeCode === 'GAS_LEAK' ? 'Gas' : 'Fire'} warning`,
-        location: this.buildings.spaces().find((space) => space.id === alert.context.zoneId)?.name ?? 'Location unavailable',
+        title: alert.title,
+        location: alert.location.zoneName,
         status: 'Active',
-        route: `/alerts/${alert.alertId}`,
+        route: `/alerts/${alert.id}`,
         at: alert.generatedAt,
       })),
-    ...this.events.incidents()
-      .filter((incident) => incident.status === 'Open' || incident.status === 'InProgress')
-      .map((incident) => ({
-        id: incident.id,
+    ...this.analytics.incidents()
+      .filter((row) => row.incident.status === 'ACTIVE' || row.incident.status === 'IN_PROGRESS')
+      .map((row) => ({
+        id: row.incident.incidentId,
         kind: 'Incident' as const,
         eventLabel: 'CRITICAL INCIDENT',
-        title: incident.title,
-        location: this.buildings.spaces().find((space) => space.id === incident.spaceId)?.name ?? 'Location unavailable',
-        status: incident.status === 'Open' ? 'Active' : 'In Progress',
-        route: `/incidents/${incident.id}`,
-        at: incident.createdAt,
+        title: row.title,
+        location: row.location.zoneName,
+        status: row.incident.status === 'ACTIVE' ? 'Active' : 'In Progress',
+        route: `/incidents/${row.incident.incidentId}`,
+        at: row.incident.createdAt,
       })),
   ].sort((left, right) => right.at.getTime() - left.at.getTime()));
-  readonly userName = computed(() => this.session.fullName() || 'Sofia Ramirez');
-  readonly initials = computed(() => this.userName().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('').toUpperCase());
+  readonly userName = computed(() => this.session.fullName() || this.session.username());
+  readonly initials = computed(() => this.userName().split(/\s+/).slice(0, 2).map((part: string) => part.charAt(0)).join('').toUpperCase());
   query = '';
 
   @ViewChild('notificationWrap') private notificationWrap?: ElementRef<HTMLElement>;
@@ -125,9 +121,23 @@ export class TopbarComponent {
     if (!this.userWrap?.nativeElement.contains(target)) this.userMenuOpen.set(false);
   }
 
-  search(query: string): void { this.searchService.search(query).subscribe(items => this.results.set(items)); }
+  search(query: string): void {
+    const normalized = query.trim().toLowerCase();
+    if (normalized.length < 2) { this.results.set([]); return; }
+    const buildings: SearchResult[] = this.analytics.buildings()
+      .filter((item) => `${item.name} ${item.buildingCode}`.toLowerCase().includes(normalized))
+      .map((item) => ({ id: item.id, type: 'Building', title: item.name, subtitle: item.buildingCode, route: `/buildings/${item.id}` }));
+    const spaces: SearchResult[] = this.analytics.buildings().flatMap((building) => building.zones)
+      .filter((item) => `${item.name} ${item.zoneCode}`.toLowerCase().includes(normalized))
+      .map((item) => ({ id: item.id, type: 'Space', title: item.name, subtitle: item.zoneCode, route: `/spaces/${item.id}` }));
+    const devices: SearchResult[] = this.analytics.devices()
+      .filter((row) => `${row.catalog.name} ${row.catalog.deviceCode}`.toLowerCase().includes(normalized))
+      .map((row) => ({ id: row.catalog.id, type: 'Device', title: row.catalog.name, subtitle: row.catalog.deviceCode, route: `/devices/${row.catalog.id}` }));
+    this.results.set([...buildings, ...spaces, ...devices].slice(0, 10));
+  }
   groupedResults(): Array<{ type: string; items: SearchResult[] }> {
     return ['Space', 'Device', 'Building'].map(type => ({ type, items: this.results().filter(item => item.type === type) })).filter(group => group.items.length);
   }
   clearSearch(): void { this.query = ''; this.results.set([]); }
+  signOut(): void { this.session.signOut(); }
 }

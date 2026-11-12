@@ -25,11 +25,7 @@ import {
   mapHttpError,
 } from '../../../core/api/http-error.mapper';
 
-import {
-  UpdateContactInformationResourceDto,
-  UpdateUserPreferencesResourceDto,
-  UserProfileResourceDto,
-} from './user.dto';
+import { UpdateContactInformationResourceDto, UserProfileResourceDto } from './user.dto';
 
 import {
   UpdateContactInformationInput,
@@ -47,7 +43,7 @@ export class HttpUserGateway
   implements UserGateway {
 
   private readonly profilePath =
-    '/api/v1/users/me';
+    '/api/v1/profiles';
 
   constructor(
 
@@ -73,7 +69,7 @@ export class HttpUserGateway
       >(
         buildApiUrl(
           this.apiConfig,
-          this.profilePath,
+          `${this.profilePath}/me`,
         ),
       )
       .pipe(
@@ -136,7 +132,7 @@ export class HttpUserGateway
         buildApiUrl(
           this.apiConfig,
 
-          `${this.profilePath}/contact`,
+          `${this.profilePath}/contact-info`,
         ),
 
         body,
@@ -167,62 +163,12 @@ export class HttpUserGateway
       UserProfileRecord
     > {
 
-    const body:
-      UpdateUserPreferencesResourceDto = {
-
-      ...(input.language !==
-      undefined
-        ? {
-            language:
-              input.language,
-          }
-        : {}),
-
-      ...(input.timeZone !==
-      undefined
-        ? {
-            timeZone:
-              input.timeZone,
-          }
-        : {}),
-
-      ...(input.receiveSMSAlerts !==
-      undefined
-        ? {
-            receiveSMSAlerts:
-              input
-                .receiveSMSAlerts,
-          }
-        : {}),
-    };
-
-    return this.http
-      .patch<
-        UserProfileResourceDto
-      >(
-        buildApiUrl(
-          this.apiConfig,
-
-          `${this.profilePath}/preferences`,
-        ),
-
-        body,
-      )
-      .pipe(
-
-        map(
-          mapUserProfileResourceDto,
-        ),
-
-        catchError(
-          error =>
-            throwError(
-              () =>
-                mapHttpError(
-                  error,
-                ),
-            ),
-        ),
-      );
+    void input;
+    return throwError(() => ({
+      status: 501,
+      code: 'UNSUPPORTED_OPERATION',
+      message: 'The backend does not expose persisted user preferences.',
+      fieldErrors: [],
+    }));
   }
 }

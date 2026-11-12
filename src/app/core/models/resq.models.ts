@@ -19,11 +19,11 @@ export type SensorType = 'Temperature' | 'Smoke' | 'Gas' | 'Humidity' | 'Motion'
 export type ActuatorType = 'HVAC' | 'AudibleAlarm' | 'VisualSignal' | 'Servomotor';
 export type DisplayType = 'OLED';
 export type DeviceType = SensorType | ActuatorType | DisplayType;
-export type DeviceStatus = 'Online' | 'Warning' | 'Critical' | 'Offline';
+export type DeviceStatus = 'Online' | 'Warning' | 'Critical' | 'Offline' | 'Unknown';
 export type SensorMetric = SensorType;
 export type DeviceAdministrativeStatus = 'INACTIVE' | 'ACTIVE' | 'RETIRED';
-export type DeviceConnectivityStatus = 'ONLINE' | 'OFFLINE';
-export type DeviceHealthStatus = 'NORMAL' | 'WARNING' | 'CRITICAL';
+export type DeviceConnectivityStatus = 'ONLINE' | 'OFFLINE' | 'UNKNOWN';
+export type DeviceHealthStatus = 'NORMAL' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
 export type CapabilityKind = 'MEASUREMENT' | 'ACTUATION';
 /** Semantic category used to keep sensing, response and local display separate. */
 export type DeviceCapabilityCategory = 'SENSOR' | 'ACTUATOR' | 'DISPLAY';
@@ -254,7 +254,7 @@ export interface DeviceAssignment {
 }
 export interface DevicePowerInfo {
   source: string;
-  status: 'POWERED' | 'ON_BATTERY' | 'UNPOWERED';
+  status: 'POWERED' | 'ON_BATTERY' | 'UNPOWERED' | 'UNKNOWN';
   batteryPercentage?: number;
 }
 export interface DeviceHardwareComponent {

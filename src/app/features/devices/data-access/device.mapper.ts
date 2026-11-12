@@ -3,10 +3,6 @@ import {
 } from '../../../core/api/pagination';
 
 import {
-  Device,
-} from '../../../core/models/resq.models';
-
-import {
   DevicePageResourceDto,
   DeviceResourceDto,
 } from './device.dto';
@@ -82,7 +78,7 @@ export function mapDeviceResourceDto(
         : undefined,
 
     administrativeStatus:
-      dto.administrativeStatus,
+      normalizeCode(dto.administrativeStatus) as DeviceCatalogRecord['administrativeStatus'],
 
     capabilities:
       dto.capabilities.map(
@@ -95,7 +91,7 @@ export function mapDeviceResourceDto(
             capability.code,
 
           kind:
-            capability.kind,
+            normalizeCode(capability.kind) as DeviceCatalogCapability['kind'],
 
           unit:
             capability.unit ??
@@ -144,84 +140,6 @@ export function mapDevicePageResourceDto(
   };
 }
 
-export function mapMockDeviceToCatalog(
-  device: Device,
-): DeviceCatalogRecord {
-
-  return {
-    externalReference: device.externalReferenceDetails,
-    id:
-      device.id,
-
-    organizationId:
-      device.organizationId,
-
-    deviceCode:
-      device.deviceCode,
-
-    name:
-      device.name,
-
-    description:
-      device.description ||
-      undefined,
-
-    specifications: {
-
-      manufacturer:
-        optionalText(
-          device.specifications
-            .manufacturer,
-        ),
-
-      model:
-        optionalText(
-          device.specifications
-            .model,
-        ),
-
-      serialNumber:
-        optionalText(
-          device.specifications
-            .serialNumber,
-        ),
-    },
-
-    assignment: {
-
-      buildingId:
-        device.assignment
-          .buildingId,
-
-      zoneId:
-        device.assignment
-          .zoneId ||
-        undefined,
-    },
-
-    administrativeStatus:
-      device.administrativeStatus,
-
-    capabilities:
-      device.capabilities.map(
-        mapMockCapability,
-      ),
-
-    createdAt:
-      new Date(
-        device.createdAt,
-      ),
-
-    updatedAt:
-      new Date(
-        device.updatedAt,
-      ),
-
-    version:
-      device.version,
-  };
-}
-
 export function withEtag(
   device:
     DeviceCatalogRecord,
@@ -252,78 +170,6 @@ export function etagForVersion(
   return `"${version}"`;
 }
 
-export function versionFromEtag(
-  etag: string,
-):
-  number
-  | undefined {
-
-  const normalized =
-    etag
-      .trim()
-      .replace(
-        /^W\//i,
-        '',
-      )
-      .replace(
-        /^"|"$/g,
-        '',
-      );
-
-  const version =
-    Number(
-      normalized,
-    );
-
-  return (
-    Number.isInteger(
-      version,
-    ) &&
-    version > 0
-  )
-    ? version
-    : undefined;
-}
-
-function mapMockCapability(
-  capability:
-    Device['capabilities'][number],
-):
-  DeviceCatalogCapability {
-
-  return {
-    category: capability.category,
-    state: capability.state,
-    id:
-      capability.id,
-
-    code:
-      capability.code,
-
-    kind:
-      capability.kind,
-
-    unit:
-      capability.unit,
-  };
-}
-
-function optionalText(
-  value:
-    string
-    | undefined,
-):
-  string
-  | undefined {
-
-  const normalized =
-    value?.trim();
-
-  return normalized
-    ? normalized
-    : undefined;
-}
-
 function normalizeEtag(
   value?:
     string
@@ -338,4 +184,11 @@ function normalizeEtag(
   return normalized
     ? normalized
     : undefined;
+}
+
+function normalizeCode(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toUpperCase();
 }

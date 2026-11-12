@@ -123,9 +123,11 @@ export interface ResponseExecutionResourceDto {
 
   organizationId: string;
 
+  alertId: string;
+
   riskDetectionId: string;
 
-  policyId: string;
+  policyId?: string;
 
   action:
     ResponseActionSnapshotResourceDto;

@@ -11,9 +11,7 @@ import {
   MonitoringFacade,
 } from './monitoring.facade';
 
-import {
-  MockMonitoringGateway,
-} from './mock-monitoring.gateway';
+import { HttpMonitoringGateway } from './http-monitoring.gateway';
 
 export function provideMonitoringDataAccess():
   EnvironmentProviders {
@@ -26,8 +24,7 @@ export function provideMonitoringDataAccess():
       provide:
         MONITORING_GATEWAY,
 
-      useClass:
-        MockMonitoringGateway,
+      useClass: HttpMonitoringGateway,
     },
   ]);
 }

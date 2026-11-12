@@ -1,7 +1,8 @@
 export interface AuthenticationResultResourceDto {
-  identityId: string;
-
-  sessionToken: string;
+  id: number;
+  username: string;
+  token: string;
+  role: string;
 }
 
 export interface AssignRoleResourceDto {

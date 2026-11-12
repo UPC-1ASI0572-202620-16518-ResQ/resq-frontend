@@ -1,6 +1,15 @@
 :host {
   display: block;
 }
+.local-plan-notice {
+  margin: 0;
+  padding: 9px 20px;
+  border-block: 1px solid #d8e5dc;
+  background: #f5faf6;
+  color: #345640;
+  font-size: 12px;
+  font-weight: 700;
+}
 .editor-page {
   display: grid;
   gap: 12px;

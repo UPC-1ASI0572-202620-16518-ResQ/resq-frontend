@@ -245,6 +245,11 @@ export class IncidentFacade {
     );
   }
 
+  closeIncident(): Observable<IncidentRecord> {
+    const incident = this.requireSelected();
+    return this.mutate(this.gateway.closeIncident(incident.incidentId));
+  }
+
   canAssign(
     incident:
       IncidentRecord,
@@ -258,7 +263,14 @@ export class IncidentFacade {
       IncidentRecord,
   ): boolean {
 
-    return this.authorization.canManageIncidents() && incident.status === 'IN_PROGRESS';
+    return (
+      this.authorization.canManageIncidents() &&
+      (incident.status === 'ACTIVE' || incident.status === 'IN_PROGRESS')
+    );
+  }
+
+  canClose(incident: IncidentRecord): boolean {
+    return this.authorization.canManageIncidents() && incident.status === 'RESOLVED';
   }
 
   isReadOnly(

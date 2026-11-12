@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   computed,
+  inject,
   signal,
 } from '@angular/core';
 
@@ -26,17 +27,14 @@ import {
   IamGateway,
   RoleAssignmentRecord,
 } from './iam.gateway';
+import { AuthSessionStore } from '../auth-session.store';
 
 @Injectable()
 export class IamFacade {
 
-  private readonly sessionState =
-    signal<
-      AuthenticationSessionRecord
-      | undefined
-    >(
-      undefined,
-    );
+  private readonly sessionStore = inject(AuthSessionStore);
+
+  private readonly sessionState = this.sessionStore.session;
 
   private readonly loadingState =
     signal(
@@ -57,8 +55,7 @@ export class IamFacade {
     );
 
   readonly session =
-    this.sessionState
-      .asReadonly();
+    this.sessionState;
 
   readonly authenticated =
     computed(
@@ -70,9 +67,10 @@ export class IamFacade {
   readonly identityId =
     computed(
       () =>
-        this.sessionState()
-          ?.identityId,
+        this.sessionState()?.userId.toString(),
     );
+
+  readonly role = computed(() => this.sessionState()?.role);
 
   readonly loading =
     this.loadingState
@@ -119,10 +117,9 @@ export class IamFacade {
       .pipe(
 
         tap(
-          session =>
-            this.sessionState.set(
-              session,
-            ),
+          session => {
+            this.sessionStore.write(session);
+          },
         ),
 
         catchError(
@@ -195,9 +192,7 @@ export class IamFacade {
   clearSession():
     void {
 
-    this.sessionState.set(
-      undefined,
-    );
+    this.sessionStore.clear();
 
     this.errorState.set(
       undefined,

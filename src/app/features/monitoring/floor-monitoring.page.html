@@ -29,7 +29,7 @@
           label="Monitored Spaces"
         /><resq-kpi-card
           icon="sensors"
-          [value]="buildingDevices().length"
+          [value]="buildingConnectedDevices()"
           label="Connected Devices"
           tone="green"
         /><resq-kpi-card
@@ -53,6 +53,7 @@
             ><button aria-label="Fit" (click)="fit()"><mat-icon>fit_screen</mat-icon></button>
           </div>
         </div>
+        <p class="local-plan-notice">Plano guardado en este navegador; no sincronizado con el servidor.</p>
         @if (!floor()!.planConfigured) {
           <div class="plan-empty">
             <mat-icon>map</mat-icon>
@@ -384,18 +385,15 @@
               </div>
             </div>
             <section class="risk-demo">
-              <h4>Gas Threshold Demo</h4>
+              <h4>Telemetry evaluation</h4>
               <p>
                 Configured limits: Warning {{ space.thresholds.Gas?.warning ?? '—' }} ppm · Critical
                 {{ space.thresholds.Gas?.critical ?? '—' }} ppm.
               </p>
               <div>
-                <button type="button" (click)="simulateGas(150)">150 · Normal</button
-                ><button type="button" (click)="simulateGas(240)">240 · Warning</button
-                ><button type="button" (click)="simulateGas(250)">250 · Same Alert</button
-                ><button type="button" (click)="simulateGas(340)">340 · Critical</button
-                ><button type="button" (click)="simulateGas(380)">380 · Same Incident</button
-                ><button type="button" (click)="simulateGas(180)">180 · Safe</button>
+                <button type="button" disabled>Normal · unavailable</button
+                ><button type="button" disabled>Warning · unavailable</button
+                ><button type="button" disabled>Critical · unavailable</button>
               </div>
               @if (lastSimulation()) {
                 <strong>{{ lastSimulation() }}</strong>

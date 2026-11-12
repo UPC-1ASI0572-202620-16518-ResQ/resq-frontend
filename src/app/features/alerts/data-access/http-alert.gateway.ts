@@ -1,16 +1,21 @@
-import {
-  Injectable,
-} from '@angular/core';
-
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Inject, Injectable } from '@angular/core';
 import {
   Observable,
+  catchError,
+  forkJoin,
+  map,
+  of,
+  switchMap,
   throwError,
 } from 'rxjs';
-
+import { API_CONFIG, ApiConfig, buildApiUrl } from '../../../core/api/api.config';
+import { mapHttpError } from '../../../core/api/http-error.mapper';
 import {
-  ApiError,
-} from '../../../core/api/api-error';
-
+  AlertResourceDto,
+  DecideResponseAuthorizationResourceDto,
+  ResponseExecutionResourceDto,
+} from './alert.dto';
 import {
   AlertQueryFilters,
   AlertRecord,
@@ -22,184 +27,146 @@ import {
   ResponsePolicyRecord,
   UpdateResponsePolicyInput,
 } from './alert.gateway';
+import {
+  mapAlertResourceDto,
+  mapResponseExecutionResourceDto,
+} from './alert.mapper';
 
-/**
- * HTTP adapter placeholder for Alert & Response Management.
- *
- * IMPORTANT:
- *
- * The current Project Report describes the REST resources
- * for AlertController, ResponseExecutionController and
- * ResponsePolicyController as conceptual examples.
- *
- * Unlike Device Management and Building Management, the
- * final request/response resources are not specified with
- * enough precision to safely activate this adapter yet.
- *
- * When backend publishes its final OpenAPI/Swagger contract:
- *
- * 1. confirm endpoint paths;
- * 2. confirm JSON resource shapes;
- * 3. complete the mappings in alert.dto.ts / alert.mapper.ts;
- * 4. replace each placeholder below with HttpClient calls;
- * 5. only then enable this adapter through the provider.
- */
 @Injectable()
-export class HttpAlertGateway
-  implements AlertResponseGateway {
+export class HttpAlertGateway implements AlertResponseGateway {
+  private readonly alertsPath = '/api/v1/alerts';
 
-  getAlerts(
-    _filters:
-      AlertQueryFilters,
-  ):
-    Observable<
-      AlertRecord[]
-    > {
+  constructor(
+    private readonly http: HttpClient,
+    @Inject(API_CONFIG) private readonly apiConfig: ApiConfig,
+  ) {}
 
-    return this.notFinalized(
-      'getAlerts',
+  getAlerts(filters: AlertQueryFilters): Observable<AlertRecord[]> {
+    let params = new HttpParams();
+    if (filters.buildingId) params = params.set('buildingId', filters.buildingId);
+    if (filters.zoneId) params = params.set('zoneId', filters.zoneId);
+    if (filters.riskTypeCode) params = params.set('riskTypeCode', filters.riskTypeCode);
+    if (filters.from) params = params.set('from', filters.from.toISOString());
+    if (filters.to) params = params.set('to', filters.to.toISOString());
+
+    return this.http
+      .get<AlertResourceDto[]>(buildApiUrl(this.apiConfig, this.alertsPath), { params })
+      .pipe(
+        map((items) => items.map(mapAlertResourceDto)),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
+  }
+
+  getAlertById(alertId: string): Observable<AlertRecord | undefined> {
+    return this.http
+      .get<AlertResourceDto>(buildApiUrl(this.apiConfig, `${this.alertsPath}/${alertId}`))
+      .pipe(
+        map(mapAlertResourceDto),
+        catchError((error) => {
+          const mapped = mapHttpError(error);
+          return mapped.status === 404 ? of(undefined) : throwError(() => mapped);
+        }),
+      );
+  }
+
+  getResponseExecutions(filters: ResponseExecutionQueryFilters): Observable<ResponseExecutionRecord[]> {
+    if (filters.alertId) {
+      return this.getAlertExecutions(filters.alertId).pipe(
+        map((items) => items.filter((item) =>
+          (!filters.status || item.status === filters.status) &&
+          (!filters.from || item.requestedAt >= filters.from) &&
+          (!filters.to || item.requestedAt <= filters.to),
+        )),
+      );
+    }
+    return this.getAlerts({}).pipe(
+      switchMap((alerts) => {
+        const relevant = filters.riskDetectionId
+          ? alerts.filter((alert) => alert.context.riskDetectionId === filters.riskDetectionId)
+          : alerts;
+        if (!relevant.length) return of([]);
+        return forkJoin(relevant.map((alert) => this.getAlertExecutions(alert.alertId))).pipe(
+          map((groups) => groups.flat()),
+        );
+      }),
+      map((items) =>
+        items.filter((item) =>
+          (!filters.status || item.status === filters.status) &&
+          (!filters.from || item.requestedAt >= filters.from) &&
+          (!filters.to || item.requestedAt <= filters.to),
+        ),
+      ),
     );
   }
 
-  getAlertById(
-    _alertId: string,
-  ):
-    Observable<
-      AlertRecord
-      | undefined
-    > {
-
-    return this.notFinalized(
-      'getAlertById',
-    );
-  }
-
-  getResponseExecutions(
-    _filters:
-      ResponseExecutionQueryFilters,
-  ):
-    Observable<
-      ResponseExecutionRecord[]
-    > {
-
-    return this.notFinalized(
-      'getResponseExecutions',
-    );
-  }
-
-  getResponseExecutionById(
-    _responseExecutionId:
-      string,
-  ):
-    Observable<
-      ResponseExecutionRecord
-      | undefined
-    > {
-
-    return this.notFinalized(
-      'getResponseExecutionById',
-    );
+  getResponseExecutionById(id: string): Observable<ResponseExecutionRecord | undefined> {
+    return this.getResponseExecutions({}).pipe(map((items) => items.find((item) => item.responseExecutionId === id)));
   }
 
   decideResponseAuthorization(
-    _responseExecutionId:
-      string,
-
-    _decision:
-      AuthorizationDecision,
-  ):
-    Observable<
-      ResponseExecutionRecord
-    > {
-
-    return this.notFinalized(
-      'decideResponseAuthorization',
+    responseExecutionId: string,
+    decision: AuthorizationDecision,
+  ): Observable<ResponseExecutionRecord> {
+    return this.getResponseExecutionById(responseExecutionId).pipe(
+      switchMap((execution) => {
+        if (!execution?.alertId) {
+          return throwError(() => ({
+            status: 404,
+            code: 'NOT_FOUND',
+            message: 'Response execution not found.',
+            fieldErrors: [],
+          }));
+        }
+        const body: DecideResponseAuthorizationResourceDto = { decision };
+        return this.http.put<ResponseExecutionResourceDto>(
+          buildApiUrl(
+            this.apiConfig,
+            `${this.alertsPath}/${execution.alertId}/response-executions/${responseExecutionId}/authorization`,
+          ),
+          body,
+        );
+      }),
+      map(mapResponseExecutionResourceDto),
+      catchError((error) => throwError(() => mapHttpError(error))),
     );
   }
 
-  getResponsePolicy(
-    _policyId:
-      string,
-  ):
-    Observable<
-      ResponsePolicyRecord
-      | undefined
-    > {
-
-    return this.notFinalized(
-      'getResponsePolicy',
-    );
+  getResponsePolicy(_policyId: string): Observable<ResponsePolicyRecord | undefined> {
+    return this.unsupported('Response policies are not exposed by the backend.');
   }
 
-  configureResponsePolicy(
-    _input:
-      ConfigureResponsePolicyInput,
-  ):
-    Observable<
-      ResponsePolicyRecord
-    > {
-
-    return this.notFinalized(
-      'configureResponsePolicy',
-    );
+  configureResponsePolicy(_input: ConfigureResponsePolicyInput): Observable<ResponsePolicyRecord> {
+    return this.unsupported('Response policy configuration is not exposed by the backend.');
   }
 
   updateResponsePolicy(
-    _policyId:
-      string,
-
-    _input:
-      UpdateResponsePolicyInput,
-  ):
-    Observable<
-      ResponsePolicyRecord
-    > {
-
-    return this.notFinalized(
-      'updateResponsePolicy',
-    );
+    _policyId: string,
+    _input: UpdateResponsePolicyInput,
+  ): Observable<ResponsePolicyRecord> {
+    return this.unsupported('Response policy updates are not exposed by the backend.');
   }
 
-  changeResponsePolicyStatus(
-    _policyId:
-      string,
-
-    _active:
-      boolean,
-  ):
-    Observable<
-      ResponsePolicyRecord
-    > {
-
-    return this.notFinalized(
-      'changeResponsePolicyStatus',
-    );
+  changeResponsePolicyStatus(_policyId: string, _active: boolean): Observable<ResponsePolicyRecord> {
+    return this.unsupported('Response policy status changes are not exposed by the backend.');
   }
 
-  private notFinalized<T>(
-    operation: string,
-  ):
-    Observable<T> {
+  private getAlertExecutions(alertId: string): Observable<ResponseExecutionRecord[]> {
+    return this.http
+      .get<ResponseExecutionResourceDto[]>(
+        buildApiUrl(this.apiConfig, `${this.alertsPath}/${alertId}/response-executions`),
+      )
+      .pipe(
+        map((items) => items.map(mapResponseExecutionResourceDto)),
+        catchError((error) => throwError(() => mapHttpError(error))),
+      );
+  }
 
-    const error:
-      ApiError = {
-
-      status:
-        0,
-
-      code:
-        'ALERT_RESPONSE_HTTP_CONTRACT_NOT_FINALIZED',
-
-      message:
-        `Alert & Response HTTP operation "${operation}" cannot be enabled until the backend contract is finalized.`,
-
-      fieldErrors:
-        [],
-    };
-
-    return throwError(
-      () =>
-        error,
-    );
+  private unsupported<T>(message: string): Observable<T> {
+    return throwError(() => ({
+      status: 501,
+      code: 'UNSUPPORTED_OPERATION',
+      message,
+      fieldErrors: [],
+    }));
   }
 }

@@ -17,7 +17,7 @@ export type IncidentRiskLevelDto =
   | 'CRITICAL';
 
 export interface IncidentResourceDto {
-  incidentId: string;
+  id: string;
 
   zoneId: string;
 
@@ -74,4 +74,8 @@ export interface AssignIncidentResourceDto {
 
 export interface ResolveIncidentResourceDto {
   resolutionNotes: string;
+}
+
+export interface UpdateIncidentStatusResourceDto {
+  status: 'Closed';
 }

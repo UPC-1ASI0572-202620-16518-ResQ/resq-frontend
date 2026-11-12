@@ -1,35 +1,13 @@
-export interface ContactInformationResourceDto {
-  email: string;
-
-  phoneNumber: string;
-}
-
-export interface UserPreferencesResourceDto {
-  language: string;
-
-  timeZone: string;
-
-  receiveSMSAlerts: boolean;
-}
-
 export interface UserProfileResourceDto {
-  userId: string;
-
-  firstName: string;
-
-  lastName: string;
-
-  contactInformation:
-    ContactInformationResourceDto;
-
-  preferences:
-    UserPreferencesResourceDto;
+  id: number;
+  fullName: string;
+  email: string;
+  phoneNumber: string;
 }
 
 export interface UpdateContactInformationResourceDto {
-  email: string;
-
-  phoneNumber: string;
+  email: string | null;
+  phoneNumber: string | null;
 }
 
 export interface UpdateUserPreferencesResourceDto {

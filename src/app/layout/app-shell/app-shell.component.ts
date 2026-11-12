@@ -23,6 +23,10 @@ import {
   TopbarComponent,
 } from '../topbar/topbar.component';
 import { TranslatePageDirective } from '../../shared/directives/translate-page.directive';
+import { AnalyticsWorkspaceFacade } from '../../features/analytics/analytics-workspace.facade';
+import { BuildingStoreService } from '../../core/services/building-store.service';
+import { mapCatalogBuildingToPresentation } from '../../features/buildings/building-legacy.mapper';
+import { FloorPlanLocalStorageService } from '../../core/services/floor-plan-local-storage.service';
 
 @Component({
   selector:
@@ -162,6 +166,10 @@ export class AppShellComponent
       AuthSessionFacade,
     );
 
+  private readonly analytics = inject(AnalyticsWorkspaceFacade);
+  private readonly buildingProjection = inject(BuildingStoreService);
+  private readonly localPlans = inject(FloorPlanLocalStorageService);
+
   readonly menuOpen =
     signal(
       false,
@@ -170,16 +178,7 @@ export class AppShellComponent
   ngOnInit():
     void {
 
-    /*
-     * When navigation reaches the application
-     * shell directly, try to restore the user
-     * presentation state.
-     *
-     * With the current mock this resolves locally.
-     * With the future backend this can work with
-     * whichever session mechanism IAM ultimately
-     * defines.
-     */
+    /* Restore the authenticated user's presentation profile. */
     this.session
       .ensureProfileLoaded()
       .subscribe({
@@ -197,6 +196,22 @@ export class AppShellComponent
              */
           },
       });
+
+    this.analytics.load().subscribe({
+      next: () => {
+        this.buildingProjection.replaceBuildings(
+          this.analytics.buildings().map((building) =>
+            mapCatalogBuildingToPresentation(building, this.analytics.alerts()),
+          ),
+        );
+        for (const building of this.buildingProjection.buildings()) {
+          for (const floor of building.floors) {
+            this.localPlans.restoreToStore(this.buildingProjection, building.id, floor.id);
+          }
+        }
+      },
+      error: () => undefined,
+    });
   }
 
   @HostListener(

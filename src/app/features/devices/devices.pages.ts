@@ -7,8 +7,6 @@ import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { DeviceConfigurationComponent } from '../../shared/ui/device-configuration.component';
-import { BuildingStoreService } from '../../core/services/building-store.service';
 import { ResponseActivityComponent } from '../../shared/ui/response-activity.component';
 import { DeviceAdministrativeStatus } from '../../core/models/resq.models';
 import { EmptyStateComponent, KpiCardComponent, LineChartComponent, LoadingStateComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
@@ -23,7 +21,7 @@ import { DeviceWorkspaceFacade, DeviceWorkspaceRow } from './device-workspace.fa
   imports: [CommonModule, FormsModule, MatIconModule, MatPaginatorModule, MatSortModule, MatTableModule, KpiCardComponent, LoadingStateComponent, EmptyStateComponent, StatusBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="page-actions"><div><b>Device Management</b><span>Devices are created and positioned directly from each Floor Plan Editor.</span></div></div>
+    <div class="page-actions"><div><b>Device Management</b><span>Register devices with the backend. Floor-plan positioning is not yet supported.</span></div><button type="button" (click)="toggleRegistration()" [disabled]="workspace.loading() || registeringSaving()">{{registering() ? 'Close form' : '+ Add Device'}}</button></div>
 
     <section class="kpis" aria-label="Device fleet summary">
       <resq-kpi-card icon="sensors" [value]="workspace.summary().total" label="Total Devices" />
@@ -31,6 +29,25 @@ import { DeviceWorkspaceFacade, DeviceWorkspaceRow } from './device-workspace.fa
       <resq-kpi-card icon="warning_amber" [value]="workspace.summary().warningDegraded" label="Weak Signal" tone="amber" />
       <resq-kpi-card icon="sensors_off" [value]="workspace.summary().offline" label="Offline / Timeout" />
     </section>
+
+    @if (registering()) {
+      <section class="editor-card" aria-label="Register device">
+        <header><div><h3>Register Device</h3><p>Save a device in ResQ using the deployed API. At least one capability is required.</p></div></header>
+        <div class="editor-grid">
+          <label>Device code *<input [(ngModel)]="newDevice.deviceCode" maxlength="64" placeholder="TEMP-COMAS-001" /></label>
+          <label>Device name *<input [(ngModel)]="newDevice.name" maxlength="120" placeholder="Sensor Temperatura Comas" /></label>
+          <label>Building *<select [(ngModel)]="newDevice.buildingId" (ngModelChange)="newDevice.zoneId = ''"><option value="">Select building</option>@for(building of workspace.buildings();track building.id){<option [value]="building.id" [disabled]="building.administrativeStatus !== 'ACTIVE'">{{building.name}}</option>}</select></label>
+          <label>Zone (optional)<select [(ngModel)]="newDevice.zoneId" [disabled]="!newDevice.buildingId"><option value="">No zone</option>@for(zone of registrationZones();track zone.id){<option [value]="zone.id">{{zone.name}}{{zone.floorLabel ? ' · ' + zone.floorLabel : ''}}</option>}</select></label>
+          <label>Manufacturer<input [(ngModel)]="newDevice.manufacturer" maxlength="100" placeholder="Espressif" /></label>
+          <label>Model<input [(ngModel)]="newDevice.model" maxlength="100" placeholder="ESP32" /></label>
+          <label>Serial number<input [(ngModel)]="newDevice.serialNumber" maxlength="100" /></label>
+          <label class="wide">Description<textarea [(ngModel)]="newDevice.description" maxlength="500" rows="2"></textarea></label>
+          <label class="wide">Capabilities *<textarea [(ngModel)]="newDevice.capabilitiesText" rows="3" placeholder="TEMPERATURE|MEASUREMENT|°C"></textarea><small>One per line: CODE | MEASUREMENT or ACTUATION | optional unit. Actuation cannot have a unit.</small></label>
+        </div>
+        @if (registrationError()) { <p class="form-error" role="alert">{{registrationError()}}</p> }
+        <footer><button type="button" class="secondary" (click)="toggleRegistration()" [disabled]="registeringSaving()">Cancel</button><button type="button" (click)="saveRegistration()" [disabled]="registeringSaving()">{{registeringSaving() ? 'Registering...' : 'Register Device'}}</button></footer>
+      </section>
+    }
 
     @if (workspace.loading()) {
       <resq-loading-state message="Loading devices..." />
@@ -72,6 +89,88 @@ import { DeviceWorkspaceFacade, DeviceWorkspaceRow } from './device-workspace.fa
 export class DevicesPage implements OnInit {
   readonly workspace = inject(DeviceWorkspaceFacade);
   private readonly router = inject(Router);
+  private readonly snack = inject(MatSnackBar);
+  readonly registering = signal(false);
+  readonly registeringSaving = signal(false);
+  readonly registrationError = signal('');
+  newDevice = this.blankDevice();
+
+  toggleRegistration(): void {
+    if (this.registeringSaving()) return;
+    this.registering.update(value => !value);
+    this.registrationError.set('');
+  }
+
+  registrationZones(): ZoneCatalogRecord[] {
+    return this.workspace.buildings()
+      .find(building => building.id === this.newDevice.buildingId)?.zones
+      .filter(zone => zone.availableForAssignment) ?? [];
+  }
+
+  saveRegistration(): void {
+    if (this.registeringSaving()) return;
+    this.registrationError.set('');
+    const code = this.newDevice.deviceCode.trim().toUpperCase();
+    const name = this.newDevice.name.trim();
+    const building = this.workspace.buildings().find(item => item.id === this.newDevice.buildingId);
+    if (!/^[A-Z0-9_-]{1,64}$/.test(code)) {
+      this.registrationError.set('Device code must contain 1–64 letters, numbers, hyphens or underscores.');
+      return;
+    }
+    if (!name || name.length > 120) {
+      this.registrationError.set('Device name is required (up to 120 characters).');
+      return;
+    }
+    if (!building || building.administrativeStatus !== 'ACTIVE') {
+      this.registrationError.set('Select an active building.');
+      return;
+    }
+    if (this.newDevice.zoneId && !this.registrationZones().some(zone => zone.id === this.newDevice.zoneId)) {
+      this.registrationError.set('Choose a zone available for assignment.');
+      return;
+    }
+    const entries = this.newDevice.capabilitiesText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const capabilities = parseCapabilities(this.newDevice.capabilitiesText);
+    if (!entries.length || capabilities.length !== entries.length ||
+        capabilities.some(item => item.kind === 'ACTUATION' && item.unit) ||
+        new Set(capabilities.map(item => item.code)).size !== capabilities.length) {
+      this.registrationError.set('Enter valid, non-duplicated capabilities: CODE|MEASUREMENT|unit or CODE|ACTUATION.');
+      return;
+    }
+    this.registeringSaving.set(true);
+    this.workspace.registerDevice({
+      deviceCode: code,
+      name,
+      description: this.newDevice.description.trim() || undefined,
+      specifications: {
+        manufacturer: this.newDevice.manufacturer.trim() || undefined,
+        model: this.newDevice.model.trim() || undefined,
+        serialNumber: this.newDevice.serialNumber.trim() || undefined,
+      },
+      assignment: { buildingId: building.id, zoneId: this.newDevice.zoneId || undefined },
+      capabilities,
+    }).subscribe({
+      next: () => {
+        this.registeringSaving.set(false);
+        this.registering.set(false);
+        this.newDevice = this.blankDevice();
+        this.snack.open('Device registered in the backend.', 'Close', { duration: 3000 });
+        this.workspace.loadFleet().subscribe({
+          next: () => { this.configureSorting(); this.applyFilters(); },
+          error: () => this.snack.open('Device saved, but the list could not be refreshed.', 'Close', { duration: 5000 }),
+        });
+      },
+      error: (error: { message?: string }) => {
+        this.registeringSaving.set(false);
+        this.registrationError.set(error?.message ?? 'Could not register device.');
+      },
+    });
+  }
+
+  private blankDevice() {
+    return { deviceCode: '', name: '', buildingId: '', zoneId: '', manufacturer: '',
+      model: '', serialNumber: '', description: '', capabilitiesText: '' };
+  }
   @ViewChild(MatSort) set matSort(sort: MatSort | undefined){if(sort)this.dataSource.sort=sort;}
   @ViewChild(MatPaginator) set matPaginator(paginator: MatPaginator | undefined){if(paginator)this.dataSource.paginator=paginator;}
   readonly displayedColumns=['device','code','model','location','capabilities','administrative','connectivity','reading','signal','lastSeen'];
@@ -91,30 +190,26 @@ export class DevicesPage implements OnInit {
 }
 
 @Component({
-  selector:'resq-device-detail',standalone:true,imports:[CommonModule,FormsModule,RouterLink,MatIconModule,EmptyStateComponent,LineChartComponent,LoadingStateComponent,StatusBadgeComponent,DeviceConfigurationComponent,ResponseActivityComponent],changeDetection:ChangeDetectionStrategy.OnPush,
+  selector:'resq-device-detail',standalone:true,imports:[CommonModule,FormsModule,RouterLink,MatIconModule,EmptyStateComponent,LineChartComponent,LoadingStateComponent,StatusBadgeComponent,ResponseActivityComponent],changeDetection:ChangeDetectionStrategy.OnPush,
   template:`
     @if(workspace.loading()){<resq-loading-state message="Loading device..." />}@else if(workspace.error()){<resq-empty-state title="Device could not be loaded" [message]="workspace.error()!.message" />}@else if(workspace.detail();as current){
       <header class="detail-head"><div><a routerLink="/devices">← Devices</a><div class="device-title"><span class="device-mark">◉</span><div><div class="title-line"><h2>{{current.catalog.name}}</h2><code>{{current.catalog.deviceCode}}</code></div><div class="badges"><resq-status-badge [status]="current.catalog.administrativeStatus" /><resq-status-badge [status]="current.connection?.status||'UNKNOWN'" /><resq-status-badge [status]="current.monitoring?.availability||'UNKNOWN'" /></div><p>{{current.catalog.description||'No description provided.'}}</p></div></div></div><div class="detail-actions"><button type="button" (click)="openEditor('details')" [disabled]="!workspace.canEditDetails(current.catalog)">Edit details</button>@if(workspace.canChangeAssignment(current.catalog)){<button type="button" (click)="openEditor('assignment')">Assignment</button>}@if(workspace.canChangeCapabilities(current.catalog)){<button type="button" (click)="openEditor('capabilities')">Capabilities</button>}</div></header>
       <div class="lifecycle-actions">@if(workspace.canActivate(current.catalog)){<button type="button" (click)="changeStatus('ACTIVE')">Activate</button>}@if(workspace.canDeactivate(current.catalog)){<button type="button" (click)="changeStatus('INACTIVE')">Deactivate</button>}@if(workspace.canRetire(current.catalog)){<button type="button" class="danger" (click)="changeStatus('RETIRED')">Retire</button>}@if(current.catalog.administrativeStatus==='RETIRED'){<span>Retired devices are read-only.</span>}</div>
-      @if(editor()){<section class="editor-card detail-editor"><header><div><h3>{{editorTitle()}}</h3><p>Backend domain rules are also enforced by the mock adapter.</p></div><button type="button" class="close" (click)="editor.set(null)">×</button></header>@if(editor()==='details'){<div class="editor-grid"><label>Name<input [(ngModel)]="detailForm.name" /></label><label>Description<input [(ngModel)]="detailForm.description" /></label><label>Manufacturer<input [(ngModel)]="detailForm.manufacturer" /></label><label>Model<input [(ngModel)]="detailForm.model" /></label><label>Serial number<input [(ngModel)]="detailForm.serialNumber" /></label></div>}@if(editor()==='assignment'){<div class="editor-grid"><label>Building<select [(ngModel)]="detailForm.buildingId" (ngModelChange)="detailForm.zoneId=''">@for(building of workspace.buildings();track building.id){<option [value]="building.id">{{building.name}}</option>}</select></label><label>Zone<select [(ngModel)]="detailForm.zoneId"><option value="">No zone</option>@for(zone of zonesFor(detailForm.buildingId);track zone.id){<option [value]="zone.id">{{zone.name}}{{zone.floorLabel?' · '+zone.floorLabel:''}}</option>}</select></label></div>}@if(editor()==='capabilities'){<div class="editor-grid"><label class="wide">Capabilities<textarea [(ngModel)]="detailForm.capabilitiesText" rows="5"></textarea><small>One per line: code | MEASUREMENT/ACTUATION | optional unit</small></label></div>}@if(formError()){<p class="form-error">{{formError()}}</p>}<footer><button type="button" class="secondary" (click)="editor.set(null)">Cancel</button><button type="button" (click)="saveEditor()" [disabled]="saving()">{{saving()?'Saving...':'Save changes'}}</button></footer></section>}
+      @if(editor()){<section class="editor-card detail-editor"><header><div><h3>{{editorTitle()}}</h3><p>Backend domain rules are validated by the API.</p></div><button type="button" class="close" (click)="editor.set(null)">×</button></header>@if(editor()==='details'){<div class="editor-grid"><label>Name<input [(ngModel)]="detailForm.name" /></label><label>Description<input [(ngModel)]="detailForm.description" /></label><label>Manufacturer<input [(ngModel)]="detailForm.manufacturer" /></label><label>Model<input [(ngModel)]="detailForm.model" /></label><label>Serial number<input [(ngModel)]="detailForm.serialNumber" /></label></div>}@if(editor()==='assignment'){<div class="editor-grid"><label>Building<select [(ngModel)]="detailForm.buildingId" (ngModelChange)="detailForm.zoneId=''">@for(building of workspace.buildings();track building.id){<option [value]="building.id">{{building.name}}</option>}</select></label><label>Zone<select [(ngModel)]="detailForm.zoneId"><option value="">No zone</option>@for(zone of zonesFor(detailForm.buildingId);track zone.id){<option [value]="zone.id">{{zone.name}}{{zone.floorLabel?' · '+zone.floorLabel:''}}</option>}</select></label></div>}@if(editor()==='capabilities'){<div class="editor-grid"><label class="wide">Capabilities<textarea [(ngModel)]="detailForm.capabilitiesText" rows="5"></textarea><small>One per line: code | MEASUREMENT/ACTUATION | optional unit</small></label></div>}@if(formError()){<p class="form-error">{{formError()}}</p>}<footer><button type="button" class="secondary" (click)="editor.set(null)">Cancel</button><button type="button" (click)="saveEditor()" [disabled]="saving()">{{saving()?'Saving...':'Save changes'}}</button></footer></section>}
       <section class="stats"><article><span>Current Reading</span><b>{{latestReading()}}</b><small>Latest monitoring measurement</small></article><article><span>Administrative</span><b>{{current.catalog.administrativeStatus}}</b><small>Device Management lifecycle</small></article><article><span>Signal Strength</span><b>{{current.connection?.signalStrength!==undefined?current.connection!.signalStrength+' dBm':'Unavailable'}}</b><small>{{connectionQuality(current.connection?.signalStrength)}} connection</small></article><article><span>Last Heartbeat</span><b>{{current.connection?relativeTime(current.connection.lastHeartbeatAt):'Unavailable'}}</b><small>Connectivity Management</small></article></section>
       <resq-response-activity [deviceId]="current.catalog.id"/>
-      @if(localDevice()){<details class="editor-card" open><summary>IoT configuration & simulation</summary><resq-device-configuration [deviceId]="current.catalog.id" [spaces]="domainStore.spaces()" (saved)="reload()"/></details>}
       <main class="detail-grid">
-        <article class="card chart-card"><div class="card-head"><div><h3>Reading History</h3><p>Monitoring measurements received for this physical device.</p></div></div>@if(current.measurements.length){<resq-line-chart [labels]="chartLabels()" [values]="chartValues()" [datasetLabel]="measurementName()" [unit]="current.measurements[0].measurementValue.unit" />}@else{<resq-empty-state title="No readings available" message="Telemetry has not been received for this device." />}</article>
+        <article class="card chart-card"><div class="card-head"><div><h3>Reading History</h3><p>Current readings returned by Monitoring; historical trends are not supported.</p></div></div>@if(current.measurements.length){<resq-line-chart [labels]="chartLabels()" [values]="chartValues()" [datasetLabel]="measurementName()" [unit]="current.measurements[0].measurementValue.unit" />}@else{<resq-empty-state title="No readings available" message="Telemetry has not been received for this device." />}</article>
         <aside class="card hardware-card"><div class="card-head"><div><h3>Hardware Reference</h3><p>Presentation reference, not part of the Device aggregate.</p></div></div>@if(isMvp(current.catalog)){<div class="hardware-image"><img src="/assets/devices/resq-mvp-node.webp" alt="ResQ MVP node hardware reference" /></div><h4>ResQ Safety Node MVP</h4><p class="hardware-summary">ESP32 DevKit V1 + MQ-2 + OLED SSD1306 + active buzzer + red/green status LEDs.</p>}@else{<div class="hardware-fallback"><span>▦</span><b>{{current.catalog.specifications.model||current.catalog.name}}</b><small>{{current.catalog.specifications.manufacturer||'Hardware image not provided'}}</small></div>}</aside>
         <article class="card capabilities-card"><div class="card-head"><div><h3>Device Capabilities</h3><p>{{current.capabilities.length}} capabilities registered in Device Management.</p></div></div><div class="capability-list">@for(capability of current.capabilities;track capability.id){<div><span class="capability-icon" [class.actuation]="capability.kind==='ACTUATION'">{{capability.kind==='MEASUREMENT'?'⌁':'⚡'}}</span><div><b>{{capability.label}}</b><small>{{capability.hardwareLabel}}{{capability.unit?' · '+capability.unit:''}}</small></div><em [class.actuation]="capability.kind==='ACTUATION'">{{capability.kind}}</em></div>}</div></article>
         <aside class="card info-card"><h3>Assigned Location</h3><div class="location"><span>▥</span><div><b>{{current.location.buildingName}}</b><small>{{current.location.floorLabel||'—'}} · {{current.location.zoneName||'No zone assigned'}}</small></div></div><h3>Device Catalog</h3><dl><dt>Device Code</dt><dd>{{current.catalog.deviceCode}}</dd><dt>Manufacturer</dt><dd>{{current.catalog.specifications.manufacturer||'—'}}</dd><dt>Model</dt><dd>{{current.catalog.specifications.model||'—'}}</dd><dt>Serial Number</dt><dd>{{current.catalog.specifications.serialNumber||'—'}}</dd><dt>Version</dt><dd>{{current.catalog.version}}</dd><dt>Created</dt><dd>{{dateLabel(current.catalog.createdAt)}}</dd><dt>Updated</dt><dd>{{dateLabel(current.catalog.updatedAt)}}</dd></dl></aside>
-        <article class="card alerts-card"><div class="card-head"><div><h3>Device Alerts</h3><p>Alerts whose Risk Detection evidence references this device.</p></div></div>@if(current.alerts.length){@for(alert of current.alerts.slice(0,6);track alert.id){<a [routerLink]="['/alerts',alert.id]"><span class="alert-icon">!</span><div><b>{{alert.riskTypeLabel}} detected</b><small>{{alert.id}} · {{alert.severity}} · {{relativeTime(alert.detectedAt)}}</small></div><resq-status-badge [status]="alert.severity" /><span>›</span></a>}}@else{<resq-empty-state title="No alerts for this device" message="No risk-detection evidence currently references this device." />}</article>
+        <article class="card alerts-card"><div class="card-head"><div><h3>Device Alerts</h3><p>Risk evidence or connectivity alerts associated with this device.</p></div></div>@if(current.alerts.length){@for(alert of current.alerts.slice(0,6);track alert.id){<a [routerLink]="['/alerts',alert.id]"><span class="alert-icon">!</span><div><b>{{alert.riskTypeLabel}} detected</b><small>{{alert.id}} · {{alert.severity}} · {{relativeTime(alert.detectedAt)}}</small></div><resq-status-badge [status]="alert.severity" /><span>›</span></a>}}@else{<resq-empty-state title="No alerts for this device" message="No related risk or connectivity alerts are available." />}</article>
         <aside class="side-stack"><article class="card connectivity-card"><h3>Connectivity</h3><dl><dt>Status</dt><dd><resq-status-badge [status]="current.connection?.status||'UNKNOWN'" /></dd><dt>Wi-Fi RSSI</dt><dd>{{current.connection?.signalStrength!==undefined?current.connection!.signalStrength+' dBm':'Unavailable'}}</dd><dt>Last Heartbeat</dt><dd>{{current.connection?relativeTime(current.connection.lastHeartbeatAt):'—'}}</dd><dt>Monitoring availability</dt><dd>{{current.monitoring?.availability||'UNKNOWN'}}</dd></dl></article></aside>
       </main>
     }@else{<div class="not-found"><span>◇</span><h2>Device Not Found</h2><p>The requested device does not exist or is unavailable.</p><a routerLink="/devices">Back to Devices</a></div>}
   `,styleUrls:['./device-detail.page.scss','./devices.readability.scss']
 })
 export class DeviceDetailPage implements OnInit{
-  readonly domainStore = inject(BuildingStoreService);
-  readonly localDevice = computed(() => this.domainStore.devices().find(device => device.id === this.route.snapshot.paramMap.get('deviceId')));
-
   private readonly route=inject(ActivatedRoute);private readonly snack=inject(MatSnackBar);readonly workspace=inject(DeviceWorkspaceFacade);readonly editor=signal<'details'|'assignment'|'capabilities'|null>(null);readonly saving=signal(false);readonly formError=signal('');
   detailForm={name:'',description:'',manufacturer:'',model:'',serialNumber:'',buildingId:'',zoneId:'',capabilitiesText:''};
   ngOnInit():void{this.reload();}
@@ -124,10 +219,10 @@ export class DeviceDetailPage implements OnInit{
   zonesFor(buildingId:string):ZoneCatalogRecord[]{return this.workspace.buildings().find(item=>item.id===buildingId)?.zones.filter(zone=>zone.availableForAssignment)??[];}
   saveEditor():void{const mode=this.editor();if(!mode)return;this.formError.set('');this.saving.set(true);let operation;if(mode==='details'){if(!this.detailForm.name.trim()){this.saving.set(false);this.formError.set('Name is required.');return;}operation=this.workspace.updateDetails({name:this.detailForm.name,description:this.detailForm.description||undefined,specifications:{manufacturer:this.detailForm.manufacturer||undefined,model:this.detailForm.model||undefined,serialNumber:this.detailForm.serialNumber||undefined}});}else if(mode==='assignment'){if(!this.detailForm.buildingId){this.saving.set(false);this.formError.set('Building is required.');return;}operation=this.workspace.changeAssignment({buildingId:this.detailForm.buildingId,zoneId:this.detailForm.zoneId||undefined});}else{const capabilities=parseCapabilities(this.detailForm.capabilitiesText);if(!capabilities.length){this.saving.set(false);this.formError.set('At least one valid capability is required.');return;}operation=this.workspace.replaceCapabilities({capabilities});}operation.subscribe({next:()=>{this.saving.set(false);this.editor.set(null);this.snack.open('Device updated.','Close',{duration:2200});this.reload();},error:(error:any)=>{this.saving.set(false);this.formError.set(error?.message??'Device could not be updated.');}});}
   changeStatus(status:DeviceAdministrativeStatus):void{this.saving.set(true);this.workspace.changeStatus({administrativeStatus:status}).subscribe({next:()=>{this.saving.set(false);this.snack.open(`Device status changed to ${status}.`,'Close',{duration:2200});this.reload();},error:(error:any)=>{this.saving.set(false);this.snack.open(error?.message??'Status could not be changed.','Close',{duration:3200});}});}
-  latestReading():string{const live=this.localDevice()?.readings.at(-1);if(live)return `${live.value} ${live.unit}`;const item=this.workspace.detail()?.measurements.at(-1);return item?`${item.measurementValue.value} ${item.measurementValue.unit}`:'No reading';}
+  latestReading():string{const item=this.workspace.detail()?.measurements.at(-1);return item?`${item.measurementValue.value} ${item.measurementValue.unit}`:'No reading';}
   measurementName():string{return this.workspace.detail()?.measurements.at(-1)?.variableType.replace(/[_-]+/g,' ')??'Measurement';}
-  chartLabels():string[]{const live=this.localDevice();if(live)return live.readings.map(item=>item.timestamp.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));return(this.workspace.detail()?.measurements??[]).map(item=>item.measuredAt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));}
-  chartValues():number[]{const live=this.localDevice();if(live)return live.readings.map(item=>item.value);return(this.workspace.detail()?.measurements??[]).map(item=>item.measurementValue.value);}
+  chartLabels():string[]{return(this.workspace.detail()?.measurements??[]).map(item=>item.measuredAt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));}
+  chartValues():number[]{return(this.workspace.detail()?.measurements??[]).map(item=>item.measurementValue.value);}
   relativeTime(date:Date):string{const minutes=Math.max(0,Math.round((Date.now()-date.getTime())/60000));return minutes<1?'Just now':minutes<60?`${minutes} min ago`:minutes<1440?`${Math.round(minutes/60)}h ago`:`${Math.round(minutes/1440)}d ago`;}
   connectionQuality(signal?:number):string{if(signal===undefined)return'Unavailable';if(signal>=-60)return'Good';if(signal>=-75)return'Fair';return'Weak';}
   dateLabel(date:Date):string{return date.toLocaleDateString([],{year:'numeric',month:'short',day:'numeric'});}

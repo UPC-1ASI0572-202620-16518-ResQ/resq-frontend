@@ -1,5 +1,5 @@
 import { Inject, Injectable, signal } from '@angular/core';
-import { Observable, forkJoin, map, of, switchMap, tap } from 'rxjs';
+import { Observable, forkJoin, map, of, switchMap, tap, throwError } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import {
   BUILDING_GATEWAY,
@@ -16,10 +16,11 @@ import {
 import {
   RISK_DETECTION_GATEWAY,
   DetectionEvidenceRecord,
+  DetectionRuleRecord,
+  RiskDetectionRecord,
   RiskDetectionGateway,
 } from '../risk-detection/data-access/risk-detection.gateway';
 import { capabilityLabel } from '../../shared/presentation/domain-labels';
-import { evaluateMeasurement } from '../../core/services/risk-evaluation.service';
 import { AlertFacade } from '../alerts/data-access/alert.facade';
 import {
   ALERT_RESPONSE_GATEWAY,
@@ -33,6 +34,16 @@ import {
   IncidentRecord,
   IncidentStatus,
 } from './data-access/incident.gateway';
+import {
+  MONITORING_GATEWAY,
+  MonitoringGateway,
+  MonitoringMeasurement,
+} from '../monitoring/data-access/monitoring.gateway';
+import {
+  CONNECTIVITY_GATEWAY,
+  ConnectivityGateway,
+  DeviceConnectionState,
+} from '../connectivity/data-access/connectivity.gateway';
 
 export interface IncidentWorkspaceLocation {
   buildingId?: string;
@@ -58,18 +69,29 @@ export interface IncidentWorkspaceEvidence {
   deviceName: string;
   deviceCode: string;
   metric: string;
+  variableType: string;
   value: number;
   unit?: string;
   warningThreshold?: number;
   criticalThreshold?: number;
   measuredAt: Date;
+  ruleId?: string;
+  operator?: string;
 }
 
 export interface IncidentWorkspaceDetail extends IncidentWorkspaceRow {
+  detection?: RiskDetectionRecord;
   evidence: IncidentWorkspaceEvidence[];
   currentEvidence?: IncidentWorkspaceEvidence;
-  currentCondition: 'Normal' | 'Warning' | 'Critical' | 'Unknown';
+  currentConnection?: DeviceConnectionState;
+  currentCondition: 'Normal' | 'Warning' | 'Critical' | 'Offline' | 'Timeout' | 'Unknown';
   responseExecutions: ResponseExecutionRecord[];
+  suggestedAlerts: Array<{
+    alertId: string;
+    riskDetectionId: string;
+    severity: string;
+    generatedAt: Date;
+  }>;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -89,6 +111,8 @@ export class IncidentWorkspaceFacade {
     @Inject(BUILDING_GATEWAY) private readonly buildings: BuildingGateway,
     @Inject(DEVICE_GATEWAY) private readonly devices: DeviceGateway,
     @Inject(RISK_DETECTION_GATEWAY) private readonly risk: RiskDetectionGateway,
+    @Inject(MONITORING_GATEWAY) private readonly monitoring: MonitoringGateway,
+    @Inject(CONNECTIVITY_GATEWAY) private readonly connectivity: ConnectivityGateway,
     @Inject(ALERT_RESPONSE_GATEWAY) private readonly responses: AlertResponseGateway,
     private readonly alertFacade: AlertFacade,
     private readonly user: UserFacade,
@@ -132,34 +156,64 @@ export class IncidentWorkspaceFacade {
       switchMap(({ incident, buildings, devices }) => {
         if (!incident) return of(undefined);
         const row = this.toRow(incident, buildings.items);
-        if (!incident.riskDetectionId) {
-          return of({
-            ...row,
-            evidence: [],
-            currentCondition: 'Unknown' as const,
-            responseExecutions: [],
-          });
-        }
         return forkJoin({
-          detection: this.risk.getRiskDetectionEvidence(incident.riskDetectionId),
-          executions: this.responses.getResponseExecutions({
-            riskDetectionId: incident.riskDetectionId,
-          }),
+          detection: incident.riskDetectionId
+            ? this.risk.getRiskDetectionEvidence(incident.riskDetectionId)
+            : of(undefined),
+          executions: incident.riskDetectionId
+            ? this.responses.getResponseExecutions({ riskDetectionId: incident.riskDetectionId })
+            : of([]),
+          rules: this.risk.getDetectionRules(),
+          candidateAlerts: incident.riskDetectionId
+            ? of([])
+            : this.responses.getAlerts({ zoneId: incident.zoneId, riskTypeCode: incident.type }),
         }).pipe(
-          map(({ detection, executions }) => {
+          switchMap(({ detection, executions, rules, candidateAlerts }) => {
+            const suggestedAlerts = candidateAlerts
+              .sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime())
+              .slice(0, 3)
+              .map((alert) => ({
+                alertId: alert.alertId,
+                riskDetectionId: alert.context.riskDetectionId,
+                severity: alert.context.severityCode,
+                generatedAt: alert.generatedAt,
+              }));
             const detectedEvidence = incident.detectedEvidence
               ? [this.mapIncidentEvidence(incident.detectedEvidence, devices.items)]
-              : this.mapEvidence(detection?.evidence ?? [], devices.items);
-            const currentEvidence = incident.currentEvidence
-              ? this.mapIncidentEvidence(incident.currentEvidence, devices.items)
-              : detectedEvidence.at(-1);
-            return {
-              ...row,
-              evidence: detectedEvidence,
-              currentEvidence,
-              currentCondition: classifyEvidence(currentEvidence),
-              responseExecutions: executions,
-            };
+              : this.mapEvidence(detection?.evidence ?? [], devices.items, rules, detection);
+            const source = detectedEvidence.at(-1);
+            if (!source) {
+              return of({
+                ...row,
+                detection,
+                evidence: detectedEvidence,
+                currentCondition: 'Unknown' as const,
+                responseExecutions: executions,
+                suggestedAlerts,
+              });
+            }
+
+            return forkJoin({
+              measurements: this.monitoring.getCurrentMeasurements({ deviceId: source.deviceId }),
+              connection: this.connectivity.getDeviceConnectionStatus(source.deviceId),
+            }).pipe(
+              map(({ measurements, connection }) => {
+                const measurement = newestMatchingMeasurement(measurements, source.variableType);
+                const currentEvidence = measurement
+                  ? this.mapCurrentMeasurement(measurement, devices.items, rules)
+                  : undefined;
+                return {
+                  ...row,
+                  detection,
+                  evidence: detectedEvidence,
+                  currentEvidence,
+                  currentConnection: connection,
+                  currentCondition: classifyCurrentCondition(measurement, connection, rules),
+                  responseExecutions: executions,
+                  suggestedAlerts,
+                } satisfies IncidentWorkspaceDetail;
+              }),
+            );
           }),
         );
       }),
@@ -177,18 +231,12 @@ export class IncidentWorkspaceFacade {
   }
 
   assignToCurrentUser(): Observable<IncidentRecord> {
-    const profile = this.user.profile();
-    const profile$ = profile ? of(profile) : this.user.loadMyProfile();
-
-    return profile$.pipe(
-      switchMap((current) => {
-        if (!current) {
-          throw new Error('A user profile is required to assign the incident.');
-        }
-        return this.incidents.assignIncident(current.userId);
-      }),
-      tap((incident) => this.refreshCurrent(incident)),
-    );
+    return throwError(() => ({
+      status: 501,
+      code: 'ATTENDANT_ID_UNAVAILABLE',
+      message: 'Incident assignment requires a GUID attendant id, but IAM profiles expose integer user ids.',
+      fieldErrors: [],
+    }));
   }
 
   resolve(resolutionNotes: string): Observable<IncidentRecord> {
@@ -197,27 +245,25 @@ export class IncidentWorkspaceFacade {
     );
   }
 
+  close(): Observable<IncidentRecord> {
+    return this.incidents.closeIncident().pipe(tap((incident) => this.refreshCurrent(incident)));
+  }
+
   canAssign(row: IncidentWorkspaceRow): boolean {
-    return this.incidents.canAssign(row.incident);
+    void row;
+    return false;
   }
 
   canResolve(row: IncidentWorkspaceRow): boolean {
-    const detail = this.detailState();
-    return (
-      this.incidents.canResolve(row.incident) &&
-      row.incident.assignedTo === this.user.profile()?.userId &&
-      detail?.currentCondition === 'Normal'
-    );
+    return this.incidents.canResolve(row.incident);
+  }
+
+  canClose(row: IncidentWorkspaceRow): boolean {
+    return this.incidents.canClose(row.incident);
   }
 
   canAuthorize(execution: ResponseExecutionRecord): boolean {
-    const detail = this.detailState();
-    return Boolean(
-      detail &&
-      detail.incident.status === 'IN_PROGRESS' &&
-      detail.incident.assignedTo === this.user.profile()?.userId &&
-      this.alertFacade.canDecideAuthorization(execution),
-    );
+    return this.alertFacade.canDecideAuthorization(execution);
   }
 
   actorLabel(userId?: string): string {
@@ -294,20 +340,27 @@ export class IncidentWorkspaceFacade {
   private mapEvidence(
     evidence: DetectionEvidenceRecord[],
     devices: DeviceCatalogRecord[],
+    rules: DetectionRuleRecord[],
+    detection?: RiskDetectionRecord,
   ): IncidentWorkspaceEvidence[] {
     return evidence.map((item) => {
       const device = devices.find((candidate) => candidate.id === item.deviceId);
       const capability = device?.capabilities.find((candidate) => candidate.code === item.variableType);
+      const appliedRule = rules.find((rule) => rule.ruleId === detection?.ruleId);
+      const thresholds = thresholdsFor(item.variableType, rules);
       return {
         deviceId: item.deviceId,
         deviceName: device?.name ?? item.deviceId,
         deviceCode: device?.deviceCode ?? item.deviceId,
         metric: item.metric ?? capabilityLabel(item.variableType),
+        variableType: item.variableType,
         value: item.value,
         unit: item.unit ?? capability?.unit,
-        warningThreshold: item.warningThreshold,
-        criticalThreshold: item.criticalThreshold,
+        warningThreshold: item.warningThreshold ?? thresholds.warning,
+        criticalThreshold: item.criticalThreshold ?? thresholds.critical,
         measuredAt: item.measuredAt,
+        ruleId: appliedRule?.ruleId,
+        operator: appliedRule?.condition.operator,
       };
     });
   }
@@ -322,6 +375,7 @@ export class IncidentWorkspaceFacade {
       deviceName: device?.name ?? item.deviceId,
       deviceCode: device?.deviceCode ?? item.deviceId,
       metric: item.metric,
+      variableType: item.metric,
       value: item.value,
       unit: item.unit,
       warningThreshold: item.warningThreshold,
@@ -329,22 +383,88 @@ export class IncidentWorkspaceFacade {
       measuredAt: item.measuredAt,
     };
   }
+
+  private mapCurrentMeasurement(
+    item: MonitoringMeasurement,
+    devices: DeviceCatalogRecord[],
+    rules: DetectionRuleRecord[],
+  ): IncidentWorkspaceEvidence {
+    const device = devices.find((candidate) => candidate.id === item.deviceId);
+    const thresholds = thresholdsFor(item.variableType, rules);
+    return {
+      deviceId: item.deviceId,
+      deviceName: device?.name ?? item.deviceId,
+      deviceCode: device?.deviceCode ?? item.deviceId,
+      metric: capabilityLabel(item.variableType),
+      variableType: item.variableType,
+      value: item.measurementValue.value,
+      unit: item.measurementValue.unit,
+      warningThreshold: thresholds.warning,
+      criticalThreshold: thresholds.critical,
+      measuredAt: item.measuredAt,
+    };
+  }
 }
 
-function classifyEvidence(
-  evidence?: IncidentWorkspaceEvidence,
-): 'Normal' | 'Warning' | 'Critical' | 'Unknown' {
-  if (
-    !evidence ||
-    evidence.warningThreshold === undefined ||
-    evidence.criticalThreshold === undefined
-  ) {
-    return 'Unknown';
+function newestMatchingMeasurement(
+  measurements: MonitoringMeasurement[],
+  variableType: string,
+): MonitoringMeasurement | undefined {
+  return measurements
+    .filter((item) => item.variableType.toUpperCase() === variableType.toUpperCase())
+    .sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())
+    .at(0);
+}
+
+function classifyCurrentCondition(
+  measurement: MonitoringMeasurement | undefined,
+  connection: DeviceConnectionState | undefined,
+  rules: DetectionRuleRecord[],
+): IncidentWorkspaceDetail['currentCondition'] {
+  if (!connection) return 'Unknown';
+  if (connection.status === 'OFFLINE') return 'Offline';
+  if (connection.status === 'TIMEOUT') return 'Timeout';
+  if (!measurement) return 'Unknown';
+  const applicable = rules.filter(
+    (rule) =>
+      rule.status === 'ACTIVE' &&
+      rule.condition.variableType.toUpperCase() === measurement.variableType.toUpperCase(),
+  );
+  if (!applicable.length) return 'Unknown';
+  const matches = applicable.filter((rule) =>
+    matchesRule(measurement.measurementValue.value, rule),
+  );
+  if (matches.some((rule) => rule.severityCode.toUpperCase() === 'CRITICAL')) return 'Critical';
+  if (matches.some((rule) => rule.severityCode.toUpperCase() === 'WARNING')) return 'Warning';
+  return 'Normal';
+}
+
+function matchesRule(value: number, rule: DetectionRuleRecord): boolean {
+  const threshold = rule.condition.threshold;
+  switch (rule.condition.operator) {
+    case 'GREATER_THAN': return value > threshold;
+    case 'GREATER_THAN_OR_EQUAL': return value >= threshold;
+    case 'LESS_THAN': return value < threshold;
+    case 'LESS_THAN_OR_EQUAL': return value <= threshold;
+    case 'EQUAL': return value === threshold;
   }
-  return evaluateMeasurement(evidence.value, {
-    warning: evidence.warningThreshold,
-    critical: evidence.criticalThreshold,
-  });
+}
+
+function thresholdsFor(
+  variableType: string,
+  rules: DetectionRuleRecord[],
+): { warning?: number; critical?: number } {
+  const applicable = rules.filter(
+    (rule) =>
+      rule.status === 'ACTIVE' &&
+      rule.condition.variableType.toUpperCase() === variableType.toUpperCase() &&
+      (rule.condition.operator === 'GREATER_THAN' ||
+        rule.condition.operator === 'GREATER_THAN_OR_EQUAL'),
+  );
+  return {
+    warning: applicable.find((rule) => rule.severityCode.toUpperCase() === 'WARNING')?.condition.threshold,
+    critical: applicable.find((rule) => rule.severityCode.toUpperCase() === 'CRITICAL')?.condition.threshold,
+  };
 }
 
 function locateIncident(

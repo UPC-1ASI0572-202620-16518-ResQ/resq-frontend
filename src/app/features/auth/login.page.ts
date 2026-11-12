@@ -109,11 +109,11 @@ import { TranslatePageDirective } from '../../shared/directives/translate-page.d
           </p>
 
           <label>
-            Email address
+            Username
 
             <input
-              type="email"
-              formControlName="email"
+              type="text"
+              formControlName="username"
               autocomplete="username"
             />
           </label>
@@ -155,22 +155,6 @@ import { TranslatePageDirective } from '../../shared/directives/translate-page.d
                 : 'Sign in'
             }}
           </button>
-
-          <div class="demo">
-
-            <b>
-              Demo credentials
-            </b>
-
-            <span>
-              admin@resq.io
-            </span>
-
-            <span>
-              password123
-            </span>
-
-          </div>
 
           <small class="copyright">
             © 2026 ResQ ·
@@ -214,17 +198,13 @@ export class LoginPage {
       .nonNullable
       .group({
 
-        email: [
-          'admin@resq.io',
-
-          [
-            Validators.required,
-            Validators.email,
-          ],
+        username: [
+          '',
+          Validators.required,
         ],
 
         password: [
-          'password123',
+          '',
 
           Validators.required,
         ],
@@ -248,14 +228,14 @@ export class LoginPage {
         .markAllAsTouched();
 
       this.formError.set(
-        'Enter a valid email address and password.',
+        'Enter your username and password.',
       );
 
       return;
     }
 
     const {
-      email,
+      username,
       password,
     } =
       this.form
@@ -263,7 +243,7 @@ export class LoginPage {
 
     this.session
       .signIn(
-        email,
+        username,
         password,
       )
       .subscribe({

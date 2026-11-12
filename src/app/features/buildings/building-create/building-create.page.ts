@@ -3,8 +3,9 @@ import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } fr
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { Building, Floor } from '../../../core/models/resq.models';
-import { BuildingStoreService } from '../../../core/services/building-store.service';
+import { Building } from '../../../core/models/resq.models';
+import { BuildingFacade } from '../data-access/building.facade';
+import { mapCatalogBuildingToPresentation } from '../building-legacy.mapper';
 
 type WizardStep = 1 | 2 | 3;
 type FloorFormGroup = FormGroup<{
@@ -25,7 +26,7 @@ export class BuildingCreatePage implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly snackBar = inject(MatSnackBar);
-  private readonly buildingStore = inject(BuildingStoreService);
+  private readonly buildings = inject(BuildingFacade);
   private originalBuilding?: Building;
 
   readonly isEditMode = signal(false);
@@ -46,19 +47,23 @@ export class BuildingCreatePage implements OnInit {
   ngOnInit(): void {
     const buildingId = this.route.snapshot.paramMap.get('buildingId');
     if (!buildingId) return;
-    const building = this.buildingStore.getBuilding(buildingId);
-    if (!building) { void this.router.navigate(['/buildings']); return; }
-    this.originalBuilding = building;
-    this.isEditMode.set(true);
-    this.buildingForm.setValue({
-      name: building.name,
-      address: building.address,
-      description: building.description ?? '',
-      numberOfFloors: building.floors.length,
-    });
-    this.imagePreview.set(building.imageUrl);
-    [...building.floors].sort((a, b) => a.level - b.level).forEach(floor => {
-      this.floorsForm.push(this.createFloorForm(floor.level, floor.name, floor.id));
+    this.buildings.loadBuilding(buildingId).subscribe({
+      next: (result) => {
+        if (!result) { void this.router.navigate(['/buildings']); return; }
+        const building = mapCatalogBuildingToPresentation(result.building);
+        this.originalBuilding = building;
+        this.isEditMode.set(true);
+        this.buildingForm.setValue({
+          name: building.name,
+          address: building.address,
+          description: building.description ?? '',
+          numberOfFloors: Math.max(1, building.floors.length),
+        });
+        [...building.floors].sort((a, b) => a.level - b.level).forEach((floor) => {
+          this.floorsForm.push(this.createFloorForm(floor.level, floor.name, floor.id));
+        });
+      },
+      error: () => void this.router.navigate(['/buildings']),
     });
   }
 
@@ -157,51 +162,51 @@ export class BuildingCreatePage implements OnInit {
     if (this.buildingForm.invalid) { this.buildingForm.markAllAsTouched(); this.currentStep.set(1); return; }
     if (this.floorsForm.invalid) { this.floorsForm.markAllAsTouched(); this.currentStep.set(2); return; }
 
-    const buildingName = this.buildingForm.controls.name.value.trim();
-    const buildingId = this.originalBuilding?.id ?? this.createUniqueBuildingId(buildingName);
-    const floors: Floor[] = this.floorControls.map(control => {
-      const level = control.controls.level.value;
-      const floorId = control.controls.id.value || `${buildingId}-f${level}`;
-      const existing = this.originalBuilding?.floors.find(floor => floor.id === floorId);
-      return {
-        ...(existing ?? {}),
-        id: floorId,
-        buildingId,
-        name: control.controls.name.value.trim(),
-        level,
-        spaces: existing?.spaces ?? [],
-        status: existing?.status ?? 'Normal',
-        planElements: existing?.planElements ?? [],
-        planImageUrl: existing?.planImageUrl,
-        planConfigured: existing?.planConfigured ?? false,
-      };
+    const name = this.buildingForm.controls.name.value.trim();
+    const address = parseAddress(this.buildingForm.controls.address.value);
+    if (!address) {
+      this.currentStep.set(1);
+      this.snackBar.open('Enter address as: street, district, city, country code.', 'Close', { duration: 3500 });
+      return;
+    }
+    const description = this.buildingForm.controls.description.value.trim() || undefined;
+    const operation = this.isEditMode()
+      ? this.buildings.updateBuildingDetails({ name, description, address })
+      : this.buildings.registerBuilding({
+          buildingCode: `BLDG_${this.slugify(name).replace(/-/g, '_').toUpperCase()}_${Date.now().toString(36).toUpperCase()}`.slice(0, 64),
+          name,
+          description,
+          address,
+        });
+    operation.subscribe({
+      next: (result) => {
+        const floorMessage = this.floorControls.length
+          ? ' Floor-plan persistence is unavailable in the backend.'
+          : '';
+        this.snackBar.open(
+          `${this.isEditMode() ? 'Building updated successfully.' : 'Building created successfully.'}${floorMessage}`,
+          'Close',
+          { duration: 4000, horizontalPosition: 'right', verticalPosition: 'top' },
+        );
+        void this.router.navigate(['/buildings', result.building.id]);
+      },
+      error: (error: { message?: string }) => this.snackBar.open(error.message ?? 'Building could not be saved.', 'Close', { duration: 3500 }),
     });
-    const building: Building = {
-      id: buildingId,
-      name: buildingName,
-      address: this.buildingForm.controls.address.value.trim(),
-      description: this.buildingForm.controls.description.value.trim() || undefined,
-      imageUrl: this.imagePreview(),
-      floors,
-      status: this.originalBuilding?.status ?? 'Normal',
-    };
-    if (this.isEditMode()) this.buildingStore.updateBuilding(building);
-    else this.buildingStore.createBuilding(building);
-    this.snackBar.open(this.isEditMode() ? 'Building updated successfully' : 'Building created successfully', 'Close', {
-      duration: 3000, horizontalPosition: 'right', verticalPosition: 'top',
-    });
-    void this.router.navigate(['/buildings', building.id]);
-  }
-
-  private createUniqueBuildingId(name: string): string {
-    const base = this.slugify(name) || 'building';
-    if (!this.buildingStore.getBuilding(base)) return base;
-    let suffix = 2;
-    while (this.buildingStore.getBuilding(`${base}-${suffix}`)) suffix++;
-    return `${base}-${suffix}`;
   }
 
   private slugify(value: string): string {
     return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
+}
+
+function parseAddress(value: string): { streetAddress: string; district: string; city: string; countryCode: string } | undefined {
+  const parts = value.split(',').map((part) => part.trim());
+  if (parts.length < 4) return undefined;
+  const countryCode = parts.pop()!.toUpperCase();
+  const city = parts.pop()!;
+  const district = parts.pop()!;
+  const streetAddress = parts.join(', ');
+  return streetAddress && district && city && /^[A-Z]{2}$/.test(countryCode)
+    ? { streetAddress, district, city, countryCode }
+    : undefined;
 }

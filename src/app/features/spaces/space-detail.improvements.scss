@@ -184,6 +184,92 @@
   grid-column: 1 / -1;
 }
 
+.rules-config {
+  display: block;
+}
+
+.rules-config .config-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.rules-config button {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #176b3a;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rules-config button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.rule-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #d8e5dc;
+  border-radius: 10px;
+  background: #f7faf8;
+}
+
+.rule-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rule-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.rule-list article {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.2fr) 90px minmax(170px, 1fr) minmax(170px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border: 1px solid #d8e5dc;
+  border-radius: 10px;
+}
+
+.rule-list article.inactive {
+  opacity: .65;
+  background: #f4f5f4;
+}
+
+.rule-list div,
+.rule-list small {
+  display: block;
+  min-width: 0;
+}
+
+.rule-list small {
+  overflow: hidden;
+  color: #66756b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.rule-list em {
+  color: #52645a;
+  font-size: 12px;
+  font-style: normal;
+}
+
 .config-intro p,
 .config > label {
   font-size: 13px;
@@ -266,6 +352,11 @@
   .overview-grid,
   .config {
     grid-template-columns: 1fr;
+  }
+
+  .rule-form,
+  .rule-list article {
+    grid-template-columns: 1fr 1fr;
   }
 }
 
