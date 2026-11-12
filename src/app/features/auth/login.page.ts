@@ -156,6 +156,8 @@ import { TranslatePageDirective } from '../../shared/directives/translate-page.d
             }}
           </button>
 
+          <a href="/prototype" style="display:block;margin:16px 0;text-align:center;color:#145c92;font-weight:700;text-decoration:underline">Ver prototipo IoT en vivo (sin iniciar sesión)</a>
+
           <small class="copyright">
             © 2026 ResQ ·
             Secure building intelligence
