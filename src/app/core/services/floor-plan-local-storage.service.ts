@@ -10,14 +10,20 @@ import { BuildingStoreService } from './building-store.service';
 const STORAGE_PREFIX = 'resq.floor-plan.v1';
 const MAX_SERIALIZED_BYTES = 4 * 1024 * 1024;
 
-interface StoredFloorPlan {
+export interface StoredFloorPlan {
   version: 1;
   buildingId: string;
   floorLabel: string;
   updatedAt: string;
   image?: string;
   elements: FloorPlanElement[];
-  spaces: Array<{ spaceId: string; polygon: FloorPlanPoint[] }>;
+  spaces: Array<{
+    spaceId: string;
+    polygon: FloorPlanPoint[];
+    type?: Space['type'];
+    sensitivity?: Space['sensitivity'];
+    thresholds?: Space['thresholds'];
+  }>;
   devices: Array<{ deviceId: string; spaceId: string; position: FloorPlanPosition }>;
 }
 
@@ -35,7 +41,19 @@ export class FloorPlanLocalStorageService {
     elements: FloorPlanElement[],
     spaces: Space[],
   ): FloorPlanSaveResult {
-    const state: StoredFloorPlan = {
+    const state = this.capture(buildingId, floorLabel, image, elements, spaces);
+
+    return this.saveState(state);
+  }
+
+  capture(
+    buildingId: string,
+    floorLabel: string,
+    image: string | undefined,
+    elements: FloorPlanElement[],
+    spaces: Space[],
+  ): StoredFloorPlan {
+    return {
       version: 1,
       buildingId,
       floorLabel,
@@ -45,6 +63,9 @@ export class FloorPlanLocalStorageService {
       spaces: spaces.map((space) => ({
         spaceId: space.id,
         polygon: structuredClone(space.polygon),
+        type: space.type,
+        sensitivity: space.sensitivity,
+        thresholds: structuredClone(space.thresholds),
       })),
       devices: spaces.flatMap((space) =>
         space.devices
@@ -56,7 +77,9 @@ export class FloorPlanLocalStorageService {
           })),
       ),
     };
+  }
 
+  saveState(state: StoredFloorPlan): FloorPlanSaveResult {
     try {
       const serialized = JSON.stringify(state);
       if (new Blob([serialized]).size > MAX_SERIALIZED_BYTES) {
@@ -65,10 +88,10 @@ export class FloorPlanLocalStorageService {
           message: 'The local plan is too large. Use a smaller background image (about 2 MB or less).',
         };
       }
-      localStorage.setItem(this.key(buildingId, floorLabel), serialized);
+      localStorage.setItem(this.key(state.buildingId, state.floorLabel), serialized);
       return {
         ok: true,
-        message: 'Plan saved in this browser; it is not synchronized with the server.',
+        message: 'Plan cached in this browser.',
       };
     } catch {
       return {
@@ -88,15 +111,38 @@ export class FloorPlanLocalStorageService {
     const state = this.load(buildingId, floor.name);
     if (!state) return false;
 
+    return this.restoreStateToStore(store, buildingId, floorId, state);
+  }
+
+  restoreStateToStore(
+    store: BuildingStoreService,
+    buildingId: string,
+    floorId: string,
+    state: StoredFloorPlan,
+  ): boolean {
+    const floor = store.getFloor(buildingId, floorId);
+    if (!floor || state.buildingId !== buildingId || state.floorLabel !== floor.name) return false;
+
     const spacesById = new Map(floor.spaces.map((space) => [space.id, space]));
-    const polygonBySpace = new Map(state.spaces.map((space) => [space.spaceId, space.polygon]));
+    const layoutBySpace = new Map(state.spaces.map((space) => [space.spaceId, space]));
     const spaces = floor.spaces.map((space) => ({
       ...space,
-      polygon: structuredClone(polygonBySpace.get(space.id) ?? space.polygon),
+      polygon: structuredClone(layoutBySpace.get(space.id)?.polygon ?? space.polygon),
+      type: layoutBySpace.get(space.id)?.type ?? space.type,
+      sensitivity: layoutBySpace.get(space.id)?.sensitivity ?? space.sensitivity,
+      thresholds: structuredClone(layoutBySpace.get(space.id)?.thresholds ?? space.thresholds),
+      configurationPersisted: Boolean(
+        layoutBySpace.get(space.id)?.type && layoutBySpace.get(space.id)?.sensitivity),
     }));
-    const elements = state.elements.filter(
-      (element) => element.type !== 'Space' || (!!element.spaceId && spacesById.has(element.spaceId)),
-    );
+    const elements = state.elements
+      .filter((element) =>
+        Boolean(element.id) &&
+        Number.isFinite(element.x) && Number.isFinite(element.y) &&
+        Number.isFinite(element.width) && Number.isFinite(element.height) &&
+        element.width >= 0 && element.height >= 0)
+      .map((element) => element.type === 'Space' && (!element.spaceId || !spacesById.has(element.spaceId))
+        ? { ...element, spaceId: undefined, label: element.label || 'Unmonitored area' }
+        : element);
     store.updateFloor(buildingId, {
       ...floor,
       spaces,
@@ -116,7 +162,7 @@ export class FloorPlanLocalStorageService {
     return true;
   }
 
-  private load(buildingId: string, floorLabel: string): StoredFloorPlan | undefined {
+  load(buildingId: string, floorLabel: string): StoredFloorPlan | undefined {
     try {
       const raw = localStorage.getItem(this.key(buildingId, floorLabel));
       if (!raw) return undefined;

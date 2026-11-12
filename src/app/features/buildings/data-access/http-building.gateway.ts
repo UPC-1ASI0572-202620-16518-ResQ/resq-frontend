@@ -40,6 +40,7 @@ import {
   ChangeBuildingAdministrativeStatusResourceDto,
   ChangeZoneAdministrativeStatusResourceDto,
   RegisterBuildingResourceDto,
+  SaveFloorResourceDto,
   UpdateBuildingDetailsResourceDto,
   UpdateZoneResourceDto,
   ZonePageResourceDto,
@@ -458,6 +459,38 @@ export class HttpBuildingGateway
       );
   }
 
+  addFloor(
+    buildingId: string,
+    resource: SaveFloorResourceDto,
+    etag: string,
+  ): Observable<VersionedBuildingCatalogRecord> {
+    return this.postVersioned(`${this.buildingsPath}/${buildingId}/floors`, resource, etag);
+  }
+
+  updateFloor(
+    buildingId: string,
+    floorId: string,
+    resource: SaveFloorResourceDto,
+    etag: string,
+  ): Observable<VersionedBuildingCatalogRecord> {
+    return this.put(`${this.buildingsPath}/${buildingId}/floors/${floorId}`, resource, etag);
+  }
+
+  deleteFloor(
+    buildingId: string,
+    floorId: string,
+    etag: string,
+  ): Observable<VersionedBuildingCatalogRecord> {
+    const headers = new HttpHeaders({ 'If-Match': etag });
+    return this.http.delete<BuildingResourceDto>(
+      buildApiUrl(this.apiConfig, `${this.buildingsPath}/${buildingId}/floors/${floorId}`),
+      { headers, observe: 'response' },
+    ).pipe(
+      map(response => this.mapVersionedResponse(response)),
+      catchError(error => throwError(() => mapHttpError(error))),
+    );
+  }
+
   updateZone(
     buildingId: string,
 
@@ -560,6 +593,17 @@ export class HttpBuildingGateway
             ),
         ),
       );
+  }
+
+  private postVersioned<TBody>(path: string, body: TBody, etag: string): Observable<VersionedBuildingCatalogRecord> {
+    const headers = new HttpHeaders({ 'If-Match': etag });
+    return this.http.post<BuildingResourceDto>(buildApiUrl(this.apiConfig, path), body, {
+      headers,
+      observe: 'response',
+    }).pipe(
+      map(response => this.mapVersionedResponse(response)),
+      catchError(error => throwError(() => mapHttpError(error))),
+    );
   }
 
   private mapVersionedResponse(

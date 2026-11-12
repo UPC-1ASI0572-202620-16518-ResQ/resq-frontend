@@ -44,7 +44,14 @@ export class BuildingStoreService {
   }
 
   replaceDevices(devices: Device[]): void {
-    this.devicesState.set(structuredClone(devices));
+    const current = new Map(this.devicesState().map(device => [device.id, device]));
+    this.devicesState.set(structuredClone(devices.map(device => {
+      const prior = current.get(device.id);
+      const sameAssignment = prior?.spaceId === device.spaceId;
+      return sameAssignment && prior?.floorPlanPosition && !device.floorPlanPosition
+        ? { ...device, floorPlanPosition: prior.floorPlanPosition }
+        : device;
+    })));
   }
 
   private attachDevicesToSpaces(buildings: Building[], devices: Device[]): Building[] {
@@ -60,6 +67,10 @@ export class BuildingStoreService {
           const sensors = assigned.filter((device) =>
             device.capabilities.some((cap) => capabilityCategory(cap) === 'SENSOR'),
           );
+          const hasCurrentReading = sensors.some(device => {
+            const measuredAt = device.readings.at(-1)?.timestamp.getTime();
+            return measuredAt !== undefined && Date.now() - measuredAt <= 15 * 60 * 1000;
+          });
           const statuses: RiskStatus[] = sensors.map((device) =>
             device.connectivityStatus === 'OFFLINE'
               ? 'Offline'
@@ -79,11 +90,22 @@ export class BuildingStoreService {
               // Keep warning/critical risk computed from real alert responses.
               return riskRank[space.status] > riskRank[deviceStatus] ? space.status : deviceStatus;
             })(),
+            hasLiveData: hasCurrentReading,
           };
         });
-        return { ...floor, spaces, status: highest(spaces.map((space) => space.status)) };
+        return {
+          ...floor,
+          spaces,
+          status: highest(spaces.map((space) => space.status)),
+          hasLiveData: spaces.some(space => space.hasLiveData),
+        };
       });
-      return { ...building, floors, status: highest(floors.map((floor) => floor.status)) };
+      return {
+        ...building,
+        floors,
+        status: highest(floors.map((floor) => floor.status)),
+        hasLiveData: floors.some(floor => floor.hasLiveData),
+      };
     });
   }
 

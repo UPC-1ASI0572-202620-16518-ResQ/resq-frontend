@@ -42,6 +42,10 @@ import { ChartConfiguration } from 'chart.js';
         color: #067647;
         background: #ecfdf3;
       }
+      .status-nodata {
+        color: #475467;
+        background: #f2f4f7;
+      }
       .status-warning,
       .status-moving,
       .status-acknowledged,

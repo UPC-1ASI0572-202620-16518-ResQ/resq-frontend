@@ -12,17 +12,31 @@ export function mapCatalogBuildingToPresentation(
     groups.set(label, [...(groups.get(label) ?? []), zone]);
   }
 
-  const floors: Floor[] = [...groups.entries()].map(([label, zones], index) => {
+  const persistedFloors = building.floors.length
+    ? [...building.floors].sort((a, b) => a.level - b.level)
+    : [...groups.keys()].map((label, index) => ({
+        id: `${building.id}:legacy-floor:${label}`,
+        buildingId: building.id,
+        label,
+        level: index + 1,
+        createdAt: building.createdAt,
+        updatedAt: building.updatedAt,
+      }));
+
+  const floors: Floor[] = persistedFloors.map((persisted) => {
+    const label = persisted.label;
+    const zones = groups.get(label) ?? [];
     const spaces = zones.map((zone) => mapZone(zone, alerts));
     return {
-      id: `${building.id}:floor:${label}`,
+      id: persisted.id,
       buildingId: building.id,
       name: label,
-      level: index + 1,
-      spaces,
+      level: persisted.level,
+      spaces: spaces.map(space => ({ ...space, floorId: persisted.id })),
       status: highest(spaces.map((space) => space.status)),
       planElements: [],
       planConfigured: false,
+      hasLiveData: spaces.some(space => space.hasLiveData),
     };
   });
 
@@ -38,6 +52,7 @@ export function mapCatalogBuildingToPresentation(
     description: building.description,
     floors,
     status: highest(floors.map((floor) => floor.status)),
+    hasLiveData: floors.some(floor => floor.hasLiveData),
   };
 }
 
@@ -50,12 +65,14 @@ function mapZone(zone: ZoneCatalogRecord, alerts: AlertWorkspaceRow[]): Space {
       : 'Normal';
   return {
     id: zone.id,
-    floorId: `${zone.buildingId}:floor:${zone.floorLabel?.trim() || 'Zones'}`,
+    floorId: '',
     buildingId: zone.buildingId,
     name: zone.name,
     roomNumber: zone.zoneCode,
     type: 'Other',
     sensitivity: 'Normal',
+    configurationPersisted: false,
+    hasLiveData: false,
     status,
     thresholds: {},
     polygon: [],

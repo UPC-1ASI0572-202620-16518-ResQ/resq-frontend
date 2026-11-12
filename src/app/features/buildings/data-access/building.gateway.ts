@@ -16,6 +16,7 @@ import {
   ChangeBuildingAdministrativeStatusResourceDto,
   ChangeZoneAdministrativeStatusResourceDto,
   RegisterBuildingResourceDto,
+  SaveFloorResourceDto,
   UpdateBuildingDetailsResourceDto,
   UpdateZoneResourceDto,
 } from './building.dto';
@@ -60,6 +61,15 @@ export interface ZoneCatalogRecord {
     Date;
 }
 
+export interface FloorCatalogRecord {
+  id: string;
+  buildingId: string;
+  label: string;
+  level: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface BuildingCatalogRecord {
   id: string;
 
@@ -79,6 +89,9 @@ export interface BuildingCatalogRecord {
 
   zones:
     ZoneCatalogRecord[];
+
+  floors:
+    FloorCatalogRecord[];
 
   createdAt:
     Date;
@@ -198,6 +211,25 @@ export interface BuildingGateway {
     Observable<
       VersionedBuildingCatalogRecord
     >;
+
+  addFloor(
+    buildingId: string,
+    resource: SaveFloorResourceDto,
+    etag: string,
+  ): Observable<VersionedBuildingCatalogRecord>;
+
+  updateFloor(
+    buildingId: string,
+    floorId: string,
+    resource: SaveFloorResourceDto,
+    etag: string,
+  ): Observable<VersionedBuildingCatalogRecord>;
+
+  deleteFloor(
+    buildingId: string,
+    floorId: string,
+    etag: string,
+  ): Observable<VersionedBuildingCatalogRecord>;
 
   updateZone(
     buildingId: string,

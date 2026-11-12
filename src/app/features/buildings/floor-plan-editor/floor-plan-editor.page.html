@@ -23,7 +23,7 @@
         </button>
       </div>
     </header>
-    <p class="local-plan-notice">Plano guardado en este navegador; no sincronizado con el servidor.</p>
+    <p class="local-plan-notice" [class.synced]="planSyncStatus() === 'SYNCED' && !hasUnsavedChanges()" [class.error]="planSyncStatus() === 'ERROR'">{{ planSyncMessage() }}</p>
 
     <nav class="toolbar" aria-label="Floor plan tools">
       @for (tool of tools; track tool.name) {
@@ -137,7 +137,7 @@
           }
         }
         @if (leftPanel() === 'devices') {
-          <button type="button" class="add-plan-device" (click)="openDeviceManager()" title="Register a real device in Device Management, then return here to place it">
+          <button type="button" class="add-plan-device" (click)="openDeviceManager()" title="Select or register a real device and place it">
             <mat-icon>add</mat-icon>Add device
           </button>
           <nav class="device-category-tabs">
@@ -379,42 +379,40 @@
                 {{ areaRoomFor(area) || 'Unconfigured' }}
               </text>
             </g>
-            @if (areaSpace(area); as space) {
-              @for (device of devicesForSpace(space); track device.id; let deviceIndex = $index) {
-                @if (devicePosition(devicesForSpace(space), deviceIndex); as marker) {
-                  <g
-                    [attr.class]="
-                      'device-marker ' +
-                      deviceStatus(device) +
-                      ' ' +
-                      deviceCategoryFor(device).toLowerCase() +
-                      (selection()?.kind === 'device' && selection()?.id === device.id
-                        ? ' selected'
-                        : '')
-                    "
-                    [attr.transform]="'translate(' + marker.x + ' ' + marker.y + ')'"
-                    tabindex="0"
-                    role="button"
-                    [attr.aria-label]="deviceLabel(device)"
-                    (keydown.enter)="selectDevice(device.id)"
-                    (pointerdown)="beginDeviceDrag($event, device.id)"
-                  >
-                    @if (deviceCategoryFor(device) === 'ACTUATOR') {
-                      <rect x="-12" y="-12" width="24" height="24" rx="5" />
-                    } @else if (deviceCategoryFor(device) === 'DISPLAY') {
-                      <polygon points="0,-14 14,0 0,14 -14,0" />
-                    } @else {
-                      <circle r="12" />
-                    }
-                    <text y="4">{{ deviceLetter(device) }}</text>
-                    <title>
-                      {{ deviceLabel(device) }} · {{ device.name }} · {{ device.code }} ·
-                      {{ device.type }} · {{ device.status }} · {{ space.name }}
-                      {{ space.roomNumber || '' }}
-                    </title>
-                  </g>
+          }
+
+          <!-- Every registered device is rendered once using its visual position,
+               even if it sits over an unlinked room, corridor or restroom. -->
+          @for (device of floorDevices(); track device.id; let deviceIndex = $index) {
+            @if (devicePosition(floorDevices(), deviceIndex); as marker) {
+              <g
+                [attr.class]="
+                  'device-marker ' +
+                  deviceStatus(device) +
+                  ' ' +
+                  deviceCategoryFor(device).toLowerCase() +
+                  (selection()?.kind === 'device' && selection()?.id === device.id ? ' selected' : '')
+                "
+                [attr.transform]="'translate(' + marker.x + ' ' + marker.y + ')'"
+                tabindex="0"
+                role="button"
+                [attr.aria-label]="deviceLabel(device)"
+                (keydown.enter)="selectDevice(device.id)"
+                (pointerdown)="beginDeviceDrag($event, device.id)"
+              >
+                @if (deviceCategoryFor(device) === 'ACTUATOR') {
+                  <rect x="-12" y="-12" width="24" height="24" rx="5" />
+                } @else if (deviceCategoryFor(device) === 'DISPLAY') {
+                  <polygon points="0,-14 14,0 0,14 -14,0" />
+                } @else {
+                  <circle r="12" />
                 }
-              }
+                <text y="4">{{ deviceLetter(device) }}</text>
+                <title>
+                  {{ deviceLabel(device) }} · {{ device.name }} · {{ device.code }} ·
+                  {{ device.type }} · {{ device.status }} · {{ assignedSpaceLabel(device) }}
+                </title>
+              </g>
             }
           }
 
@@ -496,7 +494,7 @@
               </button>
             </header>
             @if (selectedDevice() || selectedTool() === 'Device') {
-              <section class="area-properties"><p>Select a registered device and place it inside its assigned zone. Coordinates are stored only in this browser.</p></section>
+              <section class="area-properties"><p>Selecciona un dispositivo y haz clic en cualquier parte del plano: área sin configurar, pasadizo o baño. Puedes arrastrarlo después. Su zona administrativa no cambia y la posición se sincroniza al guardar.</p></section>
             } @else if (selectedArea(); as area) {
               <section class="area-properties">
                 <h3>Area information</h3>
@@ -533,7 +531,7 @@
                     [ngModel]="linkedSpaceId()"
                     (ngModelChange)="linkedSpaceId.set($event); hasUnsavedChanges.set(true)"
                   >
-                    <option value="">Create as New Space</option>
+                    <option value="">Create a real monitored zone</option>
                     @for (space of spaces(); track space.id) {
                       <option [value]="space.id">
                         {{ space.name }} {{ space.roomNumber || '' }}
@@ -636,10 +634,102 @@
         <p>{{ conflictSpaceName(conflict) }} is already assigned to another area.</p>
         <div>
           <button type="button" (click)="resolveConflict('cancel')">Cancel</button
-          ><button type="button" (click)="resolveConflict('new')">Create as New Space</button
+          ><button type="button" (click)="resolveConflict('new')">Create real zone</button
           ><button type="button" class="primary" (click)="resolveConflict('replace')">
             Replace Assignment
           </button>
+        </div>
+      </section>
+    </div>
+  }
+  @if (deviceDialogOpen()) {
+    <div class="editor-dialog-backdrop">
+      <section class="editor-dialog device-registration-dialog" role="dialog" aria-modal="true" aria-labelledby="device-dialog-title">
+        <h2 id="device-dialog-title"><mat-icon>sensors</mat-icon> {{ deviceDialogMode() === 'new' ? 'Registrar' : 'Seleccionar' }} dispositivo</h2>
+        <p class="device-dialog-hint">Registra o selecciona un dispositivo real. Cualquier zona activa del piso es válida, incluso si está en advertencia o crítico.</p>
+
+        <div class="device-kind-tabs" aria-label="Tipo de dispositivo">
+          <button type="button" [class.active]="deviceCategory() === 'SENSOR'" (click)="selectRegistrationCategory('SENSOR')" [disabled]="deviceDialogBusy()">Sensor</button>
+          <button type="button" [class.active]="deviceCategory() === 'ACTUATOR'" (click)="selectRegistrationCategory('ACTUATOR')" [disabled]="deviceDialogBusy()">Actuador</button>
+          <button type="button" [class.active]="deviceCategory() === 'DISPLAY'" (click)="selectRegistrationCategory('DISPLAY')" [disabled]="deviceDialogBusy()">Display / OLED</button>
+        </div>
+        <div class="device-modal-tabs" aria-label="Origen del dispositivo">
+          <button type="button" [class.active]="deviceDialogMode() === 'new'" (click)="deviceDialogMode.set('new'); deviceFormError.set('')" [disabled]="deviceDialogBusy()">Registrar nuevo</button>
+          <button type="button" [class.active]="deviceDialogMode() === 'existing'" (click)="deviceDialogMode.set('existing'); deviceFormError.set('')" [disabled]="deviceDialogBusy()">Usar existente</button>
+        </div>
+
+        <div class="device-form-fields">
+          <label class="device-form-field">
+            <span>Zona real del piso <strong>*</strong></span>
+            <select [ngModel]="creationSpaceId()" (ngModelChange)="creationSpaceId.set($event); existingDeviceId = ''; deviceFormError.set('')" [disabled]="deviceDialogBusy()">
+              <option value="">Selecciona una zona</option>
+              @for (zone of registrationZones(); track zone.id) {
+                <option [value]="zone.id">{{ zone.name }}{{ zone.roomNumber ? ' · ' + zone.roomNumber : '' }}</option>
+              }
+            </select>
+          </label>
+          @if (!registrationZones().length) {
+            <p class="device-form-help">Este piso no tiene zonas reales. Primero crea una zona desde la sección Áreas.</p>
+          } @else {
+            <p class="device-form-help">La zona administrativa no limita dónde dibujar el icono. Tras registrar, colócalo en cualquier lugar del plano y guarda.</p>
+          }
+          @if (deviceDialogMode() === 'existing') {
+            <label class="device-form-field">
+              <span>Dispositivo registrado <strong>*</strong></span>
+              <select [(ngModel)]="existingDeviceId" [disabled]="deviceDialogBusy()">
+                <option value="">Selecciona un dispositivo compatible</option>
+                @for (row of existingDeviceCandidates(); track row.catalog.id) {
+                  <option [value]="row.catalog.id">{{ row.catalog.name }} · {{ row.catalog.deviceCode }}</option>
+                }
+              </select>
+            </label>
+            @if (!existingDeviceCandidates().length) {
+              <p class="device-form-help">No hay dispositivos registrados de esta categoría para la zona seleccionada.</p>
+            }
+          } @else {
+            <label class="device-form-field">
+              <span>Nombre del dispositivo <strong>*</strong></span>
+              <input [(ngModel)]="newDeviceName" [disabled]="deviceDialogBusy()" placeholder="Ej. Sensor de gas A" autocomplete="off" />
+            </label>
+            <label class="device-form-field">
+              <span>Código del dispositivo <strong>*</strong></span>
+              <input [(ngModel)]="newDeviceCode" [disabled]="deviceDialogBusy()" placeholder="Ej. GAS_SENSOR_A" autocomplete="off" />
+              <small>Solo letras ASCII, números, guiones y guiones bajos; sin espacios.</small>
+            </label>
+            @if (deviceCategory() === 'SENSOR') {
+              <label class="device-form-field">
+                <span>Variable de medición <strong>*</strong></span>
+                <select [ngModel]="newDeviceVariable" (ngModelChange)="updateSensorVariable($event)" [disabled]="deviceDialogBusy()">
+                  @for (variable of sensorVariables; track variable.code) {
+                    <option [value]="variable.code">{{ variable.label }} · {{ variable.code }}</option>
+                  }
+                </select>
+              </label>
+              <label class="device-form-field">
+                <span>Unidad de medición <strong>*</strong></span>
+                <input [(ngModel)]="newDeviceUnit" [disabled]="deviceDialogBusy()" placeholder="Ej. ppm" />
+              </label>
+            } @else if (deviceCategory() === 'ACTUATOR') {
+              <label class="device-form-field">
+                <span>Capacidad de actuación <strong>*</strong></span>
+                <select [(ngModel)]="newDeviceVariable" [disabled]="deviceDialogBusy()">
+                  @for (capability of actuatorCapabilities; track capability.code) {
+                    <option [value]="capability.code">{{ capability.label }}</option>
+                  }
+                </select>
+              </label>
+              <p class="device-form-help">Registrar una capacidad no implica que el hardware haya ejecutado alguna acción.</p>
+            } @else {
+              <p class="device-form-help">El display OLED usará <code>LOCAL_STATUS_DISPLAY</code> como capacidad <code>ACTUATION</code>, clasificada visualmente como display.</p>
+            }
+          }
+          @if (deviceFormError()) {
+            <p class="device-form-error" role="alert">{{ deviceFormError() }}</p>
+          }
+        </div>
+        <div class="device-modal-actions">
+          <button type="button" (click)="deviceDialogOpen.set(false)" [disabled]="deviceDialogBusy()">Cancelar</button>
+          <button type="button" class="primary" (click)="saveDeviceDialog()" [disabled]="deviceDialogBusy() || !registrationZones().length">{{ deviceDialogBusy() ? 'Guardando…' : deviceDialogMode() === 'new' ? 'Registrar dispositivo' : 'Agregar al plano' }}</button>
         </div>
       </section>
     </div>

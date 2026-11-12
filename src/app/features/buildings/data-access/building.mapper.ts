@@ -5,12 +5,14 @@ import {
 import {
   BuildingPageResourceDto,
   BuildingResourceDto,
+  FloorResourceDto,
   ZonePageResourceDto,
   ZoneResourceDto,
 } from './building.dto';
 
 import {
   BuildingCatalogRecord,
+  FloorCatalogRecord,
   VersionedBuildingCatalogRecord,
   ZoneCatalogRecord,
 } from './building.gateway';
@@ -53,6 +55,9 @@ export function mapBuildingResourceDto(
         mapZoneResourceDto,
       ),
 
+    floors:
+      (dto.floors ?? []).map(mapFloorResourceDto),
+
     createdAt:
       new Date(
         dto.createdAt,
@@ -65,6 +70,17 @@ export function mapBuildingResourceDto(
 
     version:
       dto.version,
+  };
+}
+
+export function mapFloorResourceDto(dto: FloorResourceDto): FloorCatalogRecord {
+  return {
+    id: dto.id,
+    buildingId: dto.buildingId,
+    label: dto.label,
+    level: dto.level,
+    createdAt: new Date(dto.createdAt),
+    updatedAt: new Date(dto.updatedAt),
   };
 }
 

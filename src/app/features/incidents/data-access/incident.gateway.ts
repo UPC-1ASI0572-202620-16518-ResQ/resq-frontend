@@ -44,6 +44,7 @@ export interface IncidentRecord {
 
   /** Originating CRITICAL Risk Detection. Optional only for HTTP compatibility. */
   riskDetectionId?: string;
+  alertId?: string;
 
   /** TODO(OpenAPI): optional compatibility evidence until the backend schema is published. */
   detectedEvidence?: IncidentEvidenceRecord;
@@ -72,11 +73,19 @@ export interface IncidentRecord {
 
   assignedTo?: string;
 
+  assignedUserId?: number;
+
   assignedAt?: Date;
 
   safeAt?: Date;
 
   resolvedBy?: string;
+
+  closedAt?: Date;
+  closedBy?: string;
+  safetyVerified: boolean;
+  humanActions: IncidentHumanActionRecord[];
+  safetyVerifications: IncidentSafetyVerificationRecord[];
 
   createdAt:
     Date;
@@ -84,6 +93,27 @@ export interface IncidentRecord {
   resolvedAt?: Date;
 
   resolutionNotes?: string;
+}
+
+export interface IncidentHumanActionRecord {
+  id: string;
+  userId: number;
+  actionCode: string;
+  notes?: string;
+  performedAt: Date;
+}
+
+export interface IncidentSafetyVerificationRecord {
+  id: string;
+  verifiedByUserId: number;
+  safe: boolean;
+  reason: string;
+  deviceId?: string;
+  measurementId?: string;
+  measuredValue?: number;
+  measuredAt?: Date;
+  ruleSnapshot?: string;
+  verifiedAt: Date;
 }
 
 export interface IncidentQueryFilters {
@@ -131,6 +161,16 @@ export interface IncidentGateway {
     Observable<
       IncidentRecord
     >;
+
+  assignCurrentUser(incidentId: string): Observable<IncidentRecord>;
+
+  verifySafe(incidentId: string): Observable<IncidentSafetyVerificationRecord>;
+
+  recordHumanAction(
+    incidentId: string,
+    actionCode: string,
+    notes?: string,
+  ): Observable<IncidentHumanActionRecord>;
 
   resolveIncident(
     incidentId: string,

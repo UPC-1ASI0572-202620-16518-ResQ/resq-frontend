@@ -27,10 +27,12 @@ export class AuthorizationService {
     };
   });
 
-  /** The current API protects these endpoints with authentication only; IAM exposes no admin role. */
+  /** IAM exposes Citizen and Volunteer; operational actions are Volunteer-only. */
   readonly isAdministrator = computed(() => false);
-  readonly canManageIncidents = computed(() => Boolean(this.principal().identityId));
-  readonly canAuthorizeCriticalResponses = computed(() => Boolean(this.principal().identityId));
+  readonly canManageIncidents = computed(() =>
+    Boolean(this.principal().identityId) && this.principal().role === 'VOLUNTEER');
+  readonly canAuthorizeCriticalResponses = computed(() =>
+    Boolean(this.principal().identityId) && this.principal().role === 'VOLUNTEER');
   readonly roleLabel = computed(() =>
     this.principal().role === 'VOLUNTEER' ? 'Volunteer' : 'Citizen',
   );
@@ -49,7 +51,7 @@ export class AuthorizationService {
       throw authorizationError(
         403,
         'INCIDENT_MANAGEMENT_FORBIDDEN',
-        'An authenticated session is required to manage incidents.',
+        'The Volunteer role is required to manage incidents.',
       );
     }
     return principal;
@@ -61,7 +63,7 @@ export class AuthorizationService {
       throw authorizationError(
         403,
         'CRITICAL_RESPONSE_FORBIDDEN',
-        'An authenticated session is required to authorize critical responses.',
+        'The Volunteer role is required to authorize critical responses.',
       );
     }
     return principal;

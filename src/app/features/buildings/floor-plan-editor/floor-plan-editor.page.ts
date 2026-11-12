@@ -14,6 +14,7 @@ import {
 import { A11yModule } from '@angular/cdk/a11y';
 import {
   capabilityCategory,
+  capabilityDefinition,
   defaultThresholds,
   deviceDefinition,
 } from '../../../core/models/device-domain';
@@ -38,8 +39,14 @@ import {
 } from '../../../core/models/resq.models';
 import { BuildingStoreService } from '../../../core/services/building-store.service';
 import { FloorPlanLocalStorageService } from '../../../core/services/floor-plan-local-storage.service';
+import { FloorPlanRemoteService } from '../../../core/services/floor-plan-remote.service';
+import { FloorPlanHydrationService } from '../../../core/services/floor-plan-hydration.service';
 import { SensorResponseService } from '../../../core/services/sensor-response.service';
 import { visualDevicePosition } from '../../../shared/utils/floor-plan-device.utils';
+import { visualPlacementForAssignedZone, isPointInsideVisualArea } from '../../../shared/utils/floor-plan-placement.utils';
+import { DeviceWorkspaceFacade } from '../../devices/device-workspace.facade';
+import { BuildingFacade } from '../data-access/building.facade';
+import { switchMap } from 'rxjs';
 
 type EditorTool =
   'Select' | 'Area' | 'Hallway' | 'Wall' | 'Door' | 'Stairs' | 'Restroom' | 'Device' | 'Pan';
@@ -90,8 +97,12 @@ export class FloorPlanEditorPage implements OnInit {
   private readonly router = inject(Router);
   private readonly store = inject(BuildingStoreService);
   private readonly localPlans = inject(FloorPlanLocalStorageService);
+  private readonly remotePlans = inject(FloorPlanRemoteService);
+  private readonly planHydration = inject(FloorPlanHydrationService);
   private readonly snackBar = inject(MatSnackBar);
   readonly response = inject(SensorResponseService);
+  private readonly deviceWorkspace = inject(DeviceWorkspaceFacade);
+  private readonly buildingWorkspace = inject(BuildingFacade);
 
   readonly building = signal<Building | undefined>(undefined);
   readonly floor = signal<Floor | undefined>(undefined);
@@ -113,11 +124,51 @@ export class FloorPlanEditorPage implements OnInit {
   readonly assignmentConflict = signal<AssignmentConflict | undefined>(undefined);
   readonly deleteCandidate = signal<FloorPlanElement | undefined>(undefined);
   readonly hasUnsavedChanges = signal(false);
+  readonly planSyncStatus = signal<'LOADING' | 'SYNCING' | 'SYNCED' | 'LOCAL_ONLY' | 'EMPTY' | 'ERROR'>('LOADING');
+  readonly planSyncMessage = computed(() => {
+    if (this.hasUnsavedChanges()) return 'Changes pending synchronization.';
+    switch (this.planSyncStatus()) {
+      case 'SYNCED': return 'Floor plan synchronized with the server.';
+      case 'LOCAL_ONLY': return 'Floor plan available only in this browser; save again to synchronize it.';
+      case 'ERROR': return 'The remote version could not be verified; current data was not replaced.';
+      case 'EMPTY': return 'This floor does not have a saved plan yet.';
+      case 'SYNCING': return 'Synchronizing floor plan with the server…';
+      default: return 'Checking the remote floor plan…';
+    }
+  });
   readonly pendingFloorId = signal<string | undefined>(undefined);
   readonly leftPanel = signal<'areas' | 'devices'>('areas');
   readonly deviceCategory = signal<'SENSOR' | 'ACTUATOR' | 'DISPLAY'>('SENSOR');
   readonly propertiesOpen = signal(false);
   readonly creationSpaceId = signal('');
+  readonly deviceDialogOpen = signal(false);
+  readonly deviceDialogMode = signal<'existing' | 'new'>('existing');
+  readonly deviceDialogBusy = signal(false);
+  readonly deviceFormError = signal('');
+  /** Only persisted zones for the current floor; risk status is never an assignment filter. */
+  readonly registrationZones = computed(() => this.spaces().filter(space =>
+    space.buildingId === this.building()?.id &&
+    space.floorId === this.floor()?.id &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(space.id),
+  ));
+  readonly sensorVariables = [
+    { code: 'TEMPERATURE', label: 'Temperatura (°C)' },
+    { code: 'GAS_PPM', label: 'Gas (ppm)' },
+    { code: 'SMOKE_PPM', label: 'Humo (ppm)' },
+    { code: 'HUMIDITY', label: 'Humedad (%)' },
+    { code: 'MOTION', label: 'Movimiento (eventos)' },
+  ];
+  readonly actuatorCapabilities = [
+    { code: 'AUDIBLE_ALARM', label: 'Alarma sonora' },
+    { code: 'VISUAL_STATUS_SIGNALING', label: 'Señalización visual / LED' },
+    { code: 'ENVIRONMENTAL_VENTILATION', label: 'Ventilación / HVAC' },
+    { code: 'MECHANICAL_SERVO', label: 'Servomotor' },
+  ];
+  existingDeviceId = '';
+  newDeviceName = '';
+  newDeviceCode = '';
+  newDeviceVariable = 'TEMPERATURE';
+  newDeviceUnit = 'C';
 
   readonly areaName = signal('');
   readonly areaRoomNumber = signal('');
@@ -188,6 +239,20 @@ export class FloorPlanEditorPage implements OnInit {
         .map((capability) => ({ device, capability })),
     ),
   );
+  readonly existingDeviceCandidates = computed(() => {
+    const building = this.building();
+    const floor = this.floor();
+    if (!building || !floor) return [];
+    const realZoneIds = new Set(this.spaces().map(space => space.id));
+    const selectedZoneId = this.creationSpaceId();
+    return this.deviceWorkspace.rows().filter(row =>
+      row.catalog.assignment.buildingId === building.id &&
+      !!row.catalog.assignment.zoneId &&
+      realZoneIds.has(row.catalog.assignment.zoneId) &&
+      (!selectedZoneId || row.catalog.assignment.zoneId === selectedZoneId) &&
+      (row.location.floorId === floor.id || row.location.floorLabel === floor.name) &&
+      row.capabilities.some(capability => capabilityCategory(capability) === this.deviceCategory()));
+  });
   readonly selectedDevice = computed(() => {
     const selected = this.selection();
     return selected?.kind === 'device'
@@ -243,14 +308,158 @@ export class FloorPlanEditorPage implements OnInit {
           .filter((device) => device.assignment.spaceId === space.id)
           .map((device) => {
             const prior = space.devices.find((old) => old.id === device.id);
-            return { ...device, floorPlanPosition: prior?.floorPlanPosition };
+            return { ...device, floorPlanPosition: prior?.floorPlanPosition ?? device.floorPlanPosition };
           }),
       }))));
     });
   }
 
+  selectRegistrationCategory(category: DeviceCapabilityCategory): void {
+    this.deviceCategory.set(category);
+    this.existingDeviceId = '';
+    this.deviceFormError.set('');
+    if (category === 'DISPLAY') {
+      this.newDeviceVariable = 'LOCAL_STATUS_DISPLAY';
+      this.newDeviceUnit = '';
+    } else if (category === 'ACTUATOR') {
+      this.newDeviceVariable = 'AUDIBLE_ALARM';
+      this.newDeviceUnit = '';
+    } else {
+      this.newDeviceVariable = 'TEMPERATURE';
+      this.newDeviceUnit = 'C';
+    }
+  }
+
+  updateSensorVariable(value: string): void {
+    this.newDeviceVariable = value;
+    const units: Record<string, string> = {
+      TEMPERATURE: 'C', GAS_PPM: 'ppm', SMOKE_PPM: 'ppm',
+      HUMIDITY: '%', MOTION: 'events',
+    };
+    this.newDeviceUnit = units[value] ?? this.newDeviceUnit;
+    this.deviceFormError.set('');
+  }
+
   openDeviceManager(): void {
-    void this.router.navigate(['/devices']);
+    const zones = this.registrationZones();
+    const selected = this.selectedArea()?.spaceId;
+    this.creationSpaceId.set(zones.some(zone => zone.id === selected) ? selected! : zones[0]?.id ?? '');
+    this.deviceDialogMode.set('new');
+    this.deviceDialogOpen.set(true);
+    this.deviceFormError.set('');
+    this.existingDeviceId = '';
+    this.selectRegistrationCategory(this.deviceCategory());
+    this.deviceWorkspace.loadFleet().subscribe({
+      error: () => this.deviceFormError.set('No se pudo cargar el catálogo de dispositivos existentes.'),
+    });
+  }
+
+  saveDeviceDialog(): void {
+    if (this.deviceDialogBusy()) return;
+    this.deviceFormError.set('');
+    const zoneId = this.creationSpaceId();
+    const building = this.building();
+    // An area can be unlinked, but a registered device must reference a real zone.
+    // Do not filter these zones by Normal/Warning/Critical monitoring status.
+    if (!building || !this.registrationZones().some(zone => zone.id === zoneId)) {
+      this.deviceFormError.set('Selecciona cualquier zona real de este piso. Si aún no existe, créala en Áreas.');
+      return;
+    }
+    if (this.deviceDialogMode() === 'existing') {
+      const candidate = this.existingDeviceCandidates().find(row => row.catalog.id === this.existingDeviceId);
+      if (!candidate || candidate.catalog.assignment.zoneId !== zoneId) {
+        this.deviceFormError.set('Selecciona un dispositivo existente de la zona elegida y de la categoría correcta.');
+        return;
+      }
+      this.placeDeviceInitial(candidate.catalog.id);
+      this.deviceDialogOpen.set(false);
+      return;
+    }
+
+    const category = this.deviceCategory();
+    const name = this.newDeviceName.trim();
+    const code = this.newDeviceCode.trim();
+    const variable = this.newDeviceVariable.trim().toUpperCase();
+    const capabilityCode = category === 'DISPLAY' ? 'LOCAL_STATUS_DISPLAY' : variable;
+    const unit = this.newDeviceUnit.trim();
+    if (!name) { this.deviceFormError.set('Ingresa el nombre del dispositivo.'); return; }
+    if (!/^[A-Za-z0-9_-]+$/.test(code)) {
+      this.deviceFormError.set('El código solo admite letras ASCII, números, guiones y guiones bajos. Ejemplo: GAS_SENSOR_A.');
+      return;
+    }
+    if (!/^[A-Z][A-Z0-9_]*$/.test(capabilityCode)) {
+      this.deviceFormError.set('Selecciona un código de capacidad válido.');
+      return;
+    }
+    if (category === 'SENSOR' && !unit) {
+      this.deviceFormError.set('Indica la unidad de la medición.');
+      return;
+    }
+    if (category === 'ACTUATOR' && !this.actuatorCapabilities.some(item => item.code === capabilityCode)) {
+      this.deviceFormError.set('Selecciona una capacidad de actuación válida.');
+      return;
+    }
+
+    this.deviceDialogBusy.set(true);
+    this.deviceWorkspace.registerDevice({
+      deviceCode: code,
+      name,
+      specifications: {},
+      assignment: { buildingId: building.id, zoneId },
+      capabilities: [{
+        code: capabilityCode,
+        kind: category === 'SENSOR' ? 'MEASUREMENT' : 'ACTUATION',
+        unit: category === 'SENSOR' ? unit : undefined,
+      }],
+    }).subscribe({
+      next: (registered) => this.deviceWorkspace.loadFleet().subscribe({
+        next: (rows) => {
+          this.deviceDialogBusy.set(false);
+          const createdId = registered.device.id;
+          if (rows.some(row => row.catalog.id === createdId)) {
+            this.placeDeviceInitial(createdId);
+            this.deviceDialogOpen.set(false);
+            this.newDeviceName = '';
+            this.newDeviceCode = '';
+          } else {
+            this.deviceFormError.set('Registrado en el servidor, pero no se pudo actualizar la lista. Recarga antes de intentar otra vez.');
+          }
+        },
+        error: () => {
+          this.deviceDialogBusy.set(false);
+          this.deviceFormError.set('Dispositivo registrado; no se pudo actualizar la lista. Recarga antes de volver a registrarlo.');
+        },
+      }),
+      error: (error: { message?: string }) => {
+        this.deviceDialogBusy.set(false);
+        this.deviceFormError.set(error.message ?? 'No se pudo registrar el dispositivo.');
+      },
+    });
+  }
+
+  private placeDeviceInitial(deviceId: string): void {
+    const device = this.store.devices().find((item) => item.id === deviceId);
+    const zone = this.registrationZones().find((item) => item.id === device?.spaceId);
+    if (!device || !zone) {
+      this.snackBar.open('Dispositivo sin zona en este piso. Comprueba su asignación en Dispositivos.', 'Cerrar', { duration: 4500 });
+      return;
+    }
+    // The projection effect may not have run yet after loadFleet(). Attach it immediately.
+    this.spaces.update(spaces => spaces.map(space => space.id === zone.id
+      ? { ...space, devices: [...space.devices.filter(item => item.id !== deviceId), device] }
+      : space));
+    const area = this.areas().find((item) => item.spaceId === zone.id);
+    if (area) {
+      const point = { x: area.x + area.width / 2, y: area.y + area.height / 2 };
+      this.moveDeviceLocally(device.id, zone.id, point);
+      this.store.updateDevicePosition(this.building()!.id, this.floor()!.id, zone.id, device.id, point);
+      this.hasUnsavedChanges.set(true);
+      this.snackBar.open('Dispositivo registrado. Guarda el plano para sincronizar su posición.', 'Cerrar', { duration: 4000 });
+    } else {
+      this.snackBar.open('Dispositivo registrado. Haz clic en un área, pasadizo, baño o cualquier punto del plano para colocarlo.', 'Cerrar', { duration: 6000 });
+    }
+    this.leftPanel.set('devices');
+    this.selectDevice(device.id);
   }
 
   ngOnInit(): void {
@@ -262,8 +471,17 @@ export class FloorPlanEditorPage implements OnInit {
   private loadFloor(buildingId: string, floorId: string): void {
     const restoreKey = `${buildingId}:${floorId}`;
     if (!this.restoredFloorKeys.has(restoreKey)) {
-      this.localPlans.restoreToStore(this.store, buildingId, floorId);
       this.restoredFloorKeys.add(restoreKey);
+      this.planSyncStatus.set('LOADING');
+      this.planHydration.hydrate(this.store, buildingId, floorId).subscribe(result => {
+        if (result.error && result.source === 'EMPTY') {
+          this.planSyncStatus.set('ERROR');
+          this.snackBar.open(result.error.message || 'The server plan could not be loaded.', 'Close', { duration: 4500 });
+        } else {
+          this.planSyncStatus.set(result.source === 'REMOTE' ? 'SYNCED' : result.source === 'EMPTY' ? 'EMPTY' : 'LOCAL_ONLY');
+        }
+        if (!this.hasUnsavedChanges()) this.loadFloor(buildingId, floorId);
+      });
     }
     const building = this.store.getBuilding(buildingId);
     const floor = this.store.getFloor(buildingId, floorId);
@@ -404,7 +622,9 @@ export class FloorPlanEditorPage implements OnInit {
       })),
     );
     this.leftPanel.set('devices');
-    this.deviceCategory.set(deviceDefinition(device.type).category);
+    this.deviceCategory.set(device.capabilities.length
+      ? capabilityCategory(device.capabilities[0])
+      : deviceDefinition(device.type).category);
     this.selectDevice(device.id);
   }
   deviceRemoved(id: string): void {
@@ -622,12 +842,10 @@ export class FloorPlanEditorPage implements OnInit {
     const other = this.areas().find((item) => item.id === conflict.otherAreaId);
     const target = this.spaces().find((space) => space.id === conflict.targetSpaceId);
     if (other && target) {
-      const replacement = this.newSpaceForArea(other, `${target.name} Area`);
-      this.spaces.update((spaces) => [...spaces, replacement]);
       this.elements.update((elements) =>
         elements.map((item) =>
           item.id === other.id
-            ? { ...item, spaceId: replacement.id, label: replacement.name }
+            ? { ...item, spaceId: undefined, label: `${target.name} (sin zona monitoreada)` }
             : item,
         ),
       );
@@ -653,7 +871,9 @@ export class FloorPlanEditorPage implements OnInit {
                 polygon: [],
                 devices: space.devices.map((device) => ({
                   ...device,
-                  floorPlanPosition: undefined,
+                  // Removing an area must not erase devices positioned in a hallway or bathroom.
+                  floorPlanPosition: isPointInsideVisualArea(device.floorPlanPosition, area)
+                    ? undefined : device.floorPlanPosition,
                 })),
               }
             : space,
@@ -668,8 +888,10 @@ export class FloorPlanEditorPage implements OnInit {
     if (!area) return;
     this.checkpoint();
     this.elements.update((elements) => elements.filter((item) => item.id !== area.id));
-    if (area.spaceId)
-      this.spaces.update((spaces) => spaces.filter((space) => space.id !== area.spaceId));
+    if (area.spaceId) {
+      this.spaces.update((spaces) => spaces.map(space =>
+        space.id === area.spaceId ? { ...space, polygon: [] } : space));
+    }
     this.deleteCandidate.set(undefined);
     this.selection.set(undefined);
   }
@@ -771,13 +993,9 @@ export class FloorPlanEditorPage implements OnInit {
       ...space,
       devices: this.devicesForSpace(space),
     }));
-    const result = this.localPlans.save(
-      building.id,
-      floor.name,
-      this.planImageUrl(),
-      this.elements(),
-      spaces,
-    );
+    const state = this.localPlans.capture(
+      building.id, floor.name, this.planImageUrl(), this.elements(), spaces);
+    const result = this.localPlans.saveState(state);
     if (result.ok) {
       this.store.updateFloor(building.id, {
         ...floor,
@@ -804,15 +1022,35 @@ export class FloorPlanEditorPage implements OnInit {
         }
       }
       this.hasUnsavedChanges.set(false);
-      const pending = this.pendingFloorId();
-      this.pendingFloorId.set(undefined);
-      if (pending) this.navigateToFloor(pending);
+      this.planSyncStatus.set('SYNCING');
+      this.remotePlans.save(state).subscribe({
+        next: () => {
+          this.planSyncStatus.set('SYNCED');
+          this.finishSaveNavigation();
+          this.snackBar.open('Plan synchronized with the server.', 'Close', {
+            duration: 3000, horizontalPosition: 'right', verticalPosition: 'top',
+          });
+        },
+        error: () => {
+          this.planSyncStatus.set('ERROR');
+          this.finishSaveNavigation();
+          this.snackBar.open('Server sync failed; the plan remains saved in this browser.', 'Close', {
+            duration: 5000, horizontalPosition: 'right', verticalPosition: 'top',
+          });
+        },
+      });
     }
-    this.snackBar.open(result.message, 'Close', {
-      duration: result.ok ? 3500 : 5000,
+    if (!result.ok) this.snackBar.open(result.message, 'Close', {
+      duration: 5000,
       horizontalPosition: 'right',
       verticalPosition: 'top',
     });
+  }
+
+  private finishSaveNavigation(): void {
+    const pending = this.pendingFloorId();
+    this.pendingFloorId.set(undefined);
+    if (pending) this.navigateToFloor(pending);
   }
 
   areaSpace(area: FloorPlanElement): Space | undefined {
@@ -889,7 +1127,7 @@ export class FloorPlanEditorPage implements OnInit {
     const rect = this.draft();
     if (!rect || rect.width < 10 || rect.height < 10) return;
     const tool = this.selectedTool();
-    if (tool === 'Area' || tool === 'Hallway' || tool === 'Stairs' || tool === 'Restroom') {
+    if (tool === 'Area') {
       if (this.overlapsAnotherArea(rect)) {
         this.showOverlapWarning();
         return;
@@ -904,42 +1142,17 @@ export class FloorPlanEditorPage implements OnInit {
               space.id === targetId && !this.areas().some((area) => area.spaceId === targetId),
           )
         : undefined;
-      const spatialType: SpaceType =
-        tool === 'Hallway'
-          ? 'Hallway'
-          : tool === 'Stairs'
-            ? 'Stairs'
-            : tool === 'Restroom'
-              ? 'Restroom'
-              : 'Other';
-      const defaultName =
-        tool === 'Hallway'
-          ? 'Hallway'
-          : tool === 'Stairs'
-            ? 'Stairs'
-            : tool === 'Restroom'
-              ? 'Restroom'
-              : `Area ${number}`;
-      const space = target
-        ? { ...target, polygon: this.rectPolygon(rect) }
-        : {
-            ...this.createPlaceholderSpace(number, rect),
-            name: defaultName,
-            type: spatialType,
-            sensitivity:
-              tool === 'Hallway' || tool === 'Stairs' ? ('Low' as const) : ('Normal' as const),
-            thresholds: this.thresholdsFor(spatialType),
-          };
-      if (target)
+      if (target) {
+        const space = { ...target, polygon: this.rectPolygon(rect) };
         this.spaces.update((spaces) =>
           spaces.map((item) => (item.id === target.id ? space : item)),
         );
-      else this.spaces.update((spaces) => [...spaces, space]);
+      }
       const area: FloorPlanElement = {
         id: areaId,
         type: 'Space',
-        spaceId: space.id,
-        label: space.name,
+        spaceId: target?.id,
+        label: target?.name ?? `Area ${number}`,
         ...rect,
       };
       this.elements.update((elements) => [...elements, area]);
@@ -964,12 +1177,63 @@ export class FloorPlanEditorPage implements OnInit {
   }
 
   private applyArea(area: FloorPlanElement, targetSpaceId?: string, forceNew = false): void {
-    this.checkpoint();
-    let target =
-      !forceNew && targetSpaceId
-        ? this.spaces().find((space) => space.id === targetSpaceId)
-        : undefined;
-    if (!target) target = this.newSpaceForArea(area, this.areaName().trim());
+    const target = !forceNew && targetSpaceId
+      ? this.spaces().find((space) => space.id === targetSpaceId)
+      : undefined;
+    const building = this.building();
+    const floor = this.floor();
+    if (!building || !floor) return;
+    const operation = this.buildingWorkspace.loadBuilding(building.id).pipe(
+      switchMap(() => target
+        ? this.buildingWorkspace.updateZone(target.id, {
+            name: this.areaName().trim(),
+            description: target.roomNumber ? `Room ${target.roomNumber}` : undefined,
+            floorLabel: floor.name,
+          })
+        : this.buildingWorkspace.addZone({
+            zoneCode: this.zoneCode(this.areaRoomNumber().trim() || this.areaName()),
+            name: this.areaName().trim(),
+            description: this.areaRoomNumber().trim() ? `Room ${this.areaRoomNumber().trim()}` : undefined,
+            floorLabel: floor.name,
+          })),
+    );
+    operation.subscribe({
+      next: result => {
+        const persisted = target
+          ? result.building.zones.find(zone => zone.id === target.id)
+          : [...result.building.zones].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+              .find(zone => zone.name === this.areaName().trim() && zone.floorLabel === floor.name);
+        if (!persisted) {
+          this.snackBar.open('The zone was saved but could not be associated with the visual area. Reload and try again.', 'Close', { duration: 5000 });
+          return;
+        }
+        this.checkpoint();
+        const realSpace: Space = target
+          ? target
+          : {
+              id: persisted.id,
+              buildingId: persisted.buildingId,
+              floorId: floor.id,
+              name: persisted.name,
+              roomNumber: persisted.zoneCode,
+              type: this.areaType(),
+              sensitivity: this.areaSensitivity(),
+              configurationPersisted: false,
+              status: 'Normal',
+              hasLiveData: false,
+              thresholds: this.thresholdsFor(this.areaType()),
+              polygon: [],
+              devices: [],
+            };
+        this.attachAreaToSpace(area, realSpace);
+      },
+      error: (error: { message?: string; status?: number }) => this.snackBar.open(
+        error.status === 409 ? 'The building changed. Reload and retry the zone operation.' : error.message ?? 'The zone could not be saved.',
+        'Close', { duration: 5000 }),
+    });
+  }
+
+  private attachAreaToSpace(area: FloorPlanElement, target: Space): void {
     const previousId = area.spaceId;
     const updatedSpace: Space = {
       ...target,
@@ -978,6 +1242,7 @@ export class FloorPlanEditorPage implements OnInit {
       type: this.areaType(),
       sensitivity: this.areaSensitivity(),
       thresholds: target.thresholds ?? this.thresholdsFor(this.areaType()),
+      configurationPersisted: true,
       polygon: this.rectPolygon(area),
     };
     this.spaces.update((spaces) => {
@@ -990,39 +1255,10 @@ export class FloorPlanEditorPage implements OnInit {
     this.replaceElement({ ...area, spaceId: updatedSpace.id, label: updatedSpace.name });
     this.linkedSpaceId.set(updatedSpace.id);
   }
-  private createPlaceholderSpace(
-    number: number,
-    rect: { x: number; y: number; width: number; height: number },
-  ): Space {
-    const floor = this.floor()!;
-    return {
-      id: this.uniqueId(`${floor.id}-space`),
-      buildingId: floor.buildingId,
-      floorId: floor.id,
-      name: `Area ${number}`,
-      type: 'Other',
-      sensitivity: 'Normal',
-      status: 'Normal',
-      thresholds: this.thresholdsFor('Other'),
-      polygon: this.rectPolygon(rect),
-      devices: [],
-    };
-  }
-  private newSpaceForArea(area: FloorPlanElement, name: string): Space {
-    const floor = this.floor()!;
-    return {
-      id: this.uniqueId(`${floor.id}-space`),
-      buildingId: floor.buildingId,
-      floorId: floor.id,
-      name: name || area.label || 'Area',
-      roomNumber: this.areaRoomNumber().trim() || undefined,
-      type: this.areaType(),
-      sensitivity: this.areaSensitivity(),
-      status: 'Normal',
-      thresholds: this.thresholdsFor(this.areaType()),
-      polygon: this.rectPolygon(area),
-      devices: [],
-    };
+  private zoneCode(value: string): string {
+    const base = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 42) || 'ZONE';
+    return `${base}_${Date.now().toString(36).toUpperCase()}`.slice(0, 64);
   }
   private loadAreaProperties(area: FloorPlanElement): void {
     const space = this.areaSpace(area);
@@ -1066,7 +1302,8 @@ export class FloorPlanEditorPage implements OnInit {
         const source = originalSpace?.id === space.id ? originalSpace : space;
         const devices = source.devices.map((device) => {
           const position = device.floorPlanPosition;
-          if (!position) return device;
+          // Devices placed elsewhere on the floor are not attached to this visual room.
+          if (!position || !isPointInsideVisualArea(position, previous)) return device;
           const relativeX = previous.width > 0 ? (position.x - previous.x) / previous.width : 0.5;
           const relativeY = previous.height > 0 ? (position.y - previous.y) / previous.height : 0.5;
           const safeX = Math.min(0.98, Math.max(0.02, relativeX));
@@ -1090,58 +1327,43 @@ export class FloorPlanEditorPage implements OnInit {
   }
   private placeSelectedDevice(point: FloorPlanPoint): void {
     const device = this.selectedDevice();
-    const target = this.spaceAt(point);
-    if (!device || !target) {
-      this.snackBar.open('Device must be placed inside a monitored space.', 'Close', {
-        duration: 2800,
+    const placement = visualPlacementForAssignedZone(device, point, this.spaces());
+    if (!placement) {
+      this.snackBar.open('Selecciona un dispositivo con zona real y una posición dentro del plano.', 'Cerrar', {
+        duration: 3500,
       });
       return;
     }
-    if (target.id !== device.spaceId) {
-      this.snackBar.open('Visual placement cannot reassign a device. Use Device Management to change its zone first.', 'Close', { duration: 4200 });
-      return;
-    }
+    // Physical coordinates are independent of the zone's drawn polygon and risk state.
+    // This does NOT change the device's persisted zone assignment in Device Management.
     this.checkpoint();
-    this.moveDeviceLocally(device.id, target.id, point);
+    this.moveDeviceLocally(device!.id, placement.zoneId, placement.position);
     const building = this.building();
     const floor = this.floor();
-    if (building && floor) this.store.updateDevicePosition(building.id, floor.id, target.id, device.id, point);
+    if (building && floor) this.store.updateDevicePosition(building.id, floor.id, placement.zoneId, device!.id, placement.position);
     this.selectedTool.set('Select');
+    this.snackBar.open('Dispositivo ubicado. Guarda el plano para sincronizar la posición.', 'Cerrar', { duration: 3500 });
   }
 
   private finishDeviceDrag(drag: DragState): void {
     const original = drag.originalDevice;
     if (!original) return;
-    const target = this.spaceAt(drag.current);
-    if (!target) {
+    const placement = visualPlacementForAssignedZone(original, drag.current, this.spaces());
+    if (!placement) {
       this.moveDeviceLocally(original.id, original.spaceId, original.floorPlanPosition);
       this.undoStack.pop();
       this.hasUnsavedChanges.set(drag.dirtyBefore ?? false);
       this.updateHistoryState();
-      this.snackBar.open('Device must be placed inside a monitored space.', 'Close', {
-        duration: 2800,
+      this.snackBar.open('Suelta el dispositivo dentro del lienzo del piso.', 'Cerrar', {
+        duration: 3500,
       });
       return;
     }
-    if (target.id !== original.spaceId) {
-      this.moveDeviceLocally(original.id, original.spaceId, original.floorPlanPosition);
-      this.undoStack.pop();
-      this.hasUnsavedChanges.set(drag.dirtyBefore ?? false);
-      this.updateHistoryState();
-      this.snackBar.open('Visual placement cannot reassign a device. Reassign it in Device Management first.', 'Close', { duration: 4200 });
-      return;
-    }
-    this.moveDeviceLocally(original.id, target.id, drag.current);
+    this.moveDeviceLocally(original.id, placement.zoneId, placement.position);
     const building = this.building();
     const floor = this.floor();
-    if (building && floor) this.store.updateDevicePosition(building.id, floor.id, target.id, original.id, drag.current);
+    if (building && floor) this.store.updateDevicePosition(building.id, floor.id, placement.zoneId, original.id, placement.position);
     this.selectDevice(original.id, false);
-  }
-
-  private spaceAt(point: FloorPlanPoint): Space | undefined {
-    return this.spaces().find(
-      (space) => space.polygon.length >= 3 && this.pointInPolygon(point, space.polygon),
-    );
   }
 
   private moveDeviceLocally(
@@ -1151,7 +1373,8 @@ export class FloorPlanEditorPage implements OnInit {
   ): void {
     const current = this.floorDevices().find((device) => device.id === deviceId);
     if (!current) return;
-    const updated = { ...current, spaceId: targetSpaceId, floorPlanPosition: position };
+    // targetSpaceId is the device's real zone ID; visual placement never reassigns it.
+    const updated = { ...current, floorPlanPosition: position };
     this.spaces.update((spaces) =>
       spaces.map((space) => ({
         ...space,

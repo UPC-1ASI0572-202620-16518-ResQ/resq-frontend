@@ -36,6 +36,15 @@ export interface ZoneResourceDto {
     string;
 }
 
+export interface FloorResourceDto {
+  id: string;
+  buildingId: string;
+  label: string;
+  level: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BuildingResourceDto {
   id: string;
 
@@ -57,6 +66,9 @@ export interface BuildingResourceDto {
 
   zones:
     ZoneResourceDto[];
+
+  floors:
+    FloorResourceDto[];
 
   createdAt:
     string;
@@ -112,6 +124,13 @@ export interface RegisterBuildingResourceDto {
 
   address:
     BuildingAddressResourceDto;
+
+  floors: SaveFloorResourceDto[];
+}
+
+export interface SaveFloorResourceDto {
+  label: string;
+  level: number;
 }
 
 export interface UpdateBuildingDetailsResourceDto {

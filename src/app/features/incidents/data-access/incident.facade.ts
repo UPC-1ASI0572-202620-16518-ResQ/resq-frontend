@@ -28,6 +28,8 @@ import {
   IncidentGateway,
   IncidentQueryFilters,
   IncidentRecord,
+  IncidentHumanActionRecord,
+  IncidentSafetyVerificationRecord,
 } from './incident.gateway';
 import { AuthorizationService } from '../../auth/authorization.service';
 
@@ -226,6 +228,31 @@ export class IncidentFacade {
     );
   }
 
+  assignCurrentUser(): Observable<IncidentRecord> {
+    const incident = this.requireSelected();
+    return this.mutate(this.gateway.assignCurrentUser(incident.incidentId));
+  }
+
+  verifySafe(): Observable<IncidentSafetyVerificationRecord> {
+    const incident = this.requireSelected();
+    this.savingState.set(true);
+    this.errorState.set(undefined);
+    return this.gateway.verifySafe(incident.incidentId).pipe(
+      catchError((error) => this.fail(error)),
+      finalize(() => this.savingState.set(false)),
+    );
+  }
+
+  recordHumanAction(actionCode: string, notes?: string): Observable<IncidentHumanActionRecord> {
+    const incident = this.requireSelected();
+    this.savingState.set(true);
+    this.errorState.set(undefined);
+    return this.gateway.recordHumanAction(incident.incidentId, actionCode, notes).pipe(
+      catchError((error) => this.fail(error)),
+      finalize(() => this.savingState.set(false)),
+    );
+  }
+
   resolveIncident(
     resolutionNotes: string,
   ):
@@ -265,7 +292,9 @@ export class IncidentFacade {
 
     return (
       this.authorization.canManageIncidents() &&
-      (incident.status === 'ACTIVE' || incident.status === 'IN_PROGRESS')
+      incident.status === 'IN_PROGRESS' &&
+      Boolean(incident.assignedUserId) &&
+      (incident.level !== 'CRITICAL' || incident.safetyVerified)
     );
   }
 

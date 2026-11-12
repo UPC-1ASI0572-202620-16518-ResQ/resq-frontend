@@ -28,6 +28,7 @@ import {
   ChangeBuildingAdministrativeStatusResourceDto,
   ChangeZoneAdministrativeStatusResourceDto,
   RegisterBuildingResourceDto,
+  SaveFloorResourceDto,
   UpdateBuildingDetailsResourceDto,
   UpdateZoneResourceDto,
 } from './building.dto';
@@ -450,6 +451,21 @@ export class BuildingFacade {
           selected.etag,
         ),
     );
+  }
+
+  addFloor(resource: SaveFloorResourceDto): Observable<VersionedBuildingCatalogRecord> {
+    const selected = this.requireSelected();
+    return this.mutate(this.gateway.addFloor(selected.building.id, resource, selected.etag));
+  }
+
+  updateFloor(floorId: string, resource: SaveFloorResourceDto): Observable<VersionedBuildingCatalogRecord> {
+    const selected = this.requireSelected();
+    return this.mutate(this.gateway.updateFloor(selected.building.id, floorId, resource, selected.etag));
+  }
+
+  deleteFloor(floorId: string): Observable<VersionedBuildingCatalogRecord> {
+    const selected = this.requireSelected();
+    return this.mutate(this.gateway.deleteFloor(selected.building.id, floorId, selected.etag));
   }
 
   updateZone(

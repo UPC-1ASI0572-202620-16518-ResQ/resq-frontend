@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -156,6 +156,12 @@ export class IncidentsPage implements OnInit {
         @if (workspace.canResolve(row)) {
           <button type="button" (click)="showResolve.set(true)" [disabled]="busy()">Resolve incident</button>
         }
+        @if (row.incident.status === 'IN_PROGRESS' && !row.incident.safetyVerified) {
+          <button type="button" class="secondary" (click)="verifySafe()" [disabled]="busy()">Verify safe</button>
+        }
+        @if (row.incident.status === 'IN_PROGRESS') {
+          <button type="button" class="secondary" (click)="showAction.set(true)" [disabled]="busy()">Record action</button>
+        }
         @if (workspace.canClose(row)) {
           <button type="button" (click)="closeIncident()" [disabled]="busy()">Close incident</button>
         }
@@ -164,8 +170,16 @@ export class IncidentsPage implements OnInit {
         }
       </div>
 
-      @if (row.currentCondition !== 'Normal') {
-        <p class="contract-note">Current safety is not verified ({{ row.currentCondition }}). This is an operator warning; the backend resolve contract validates notes and incident state, not IoT safety.</p>
+      @if (!row.incident.safetyVerified) {
+        <p class="contract-note">Safety is not verified by the server. Critical incidents cannot be resolved until verify-safe succeeds using fresh measurement, connectivity and the linked rule.</p>
+      }
+
+      @if (showAction()) {
+        <section class="resolve-box">
+          <label>Action code<input [(ngModel)]="actionCode" placeholder="EVACUATION_STARTED" /></label>
+          <label>Operational notes<textarea [(ngModel)]="actionNotes" rows="3" placeholder="What was done and what was observed?"></textarea></label>
+          <div><button type="button" class="secondary" (click)="showAction.set(false)">Cancel</button><button type="button" (click)="recordAction()" [disabled]="!actionCode.trim() || busy()">Save action</button></div>
+        </section>
       }
 
       @if (showResolve()) {
@@ -242,7 +256,7 @@ export class IncidentsPage implements OnInit {
               @if (execution.authorization) {
                 <section><small>{{ execution.authorization.decision === 'APPROVED' ? 'Authorized by' : 'Rejected by' }}</small><b>{{ workspace.actorLabel(execution.authorization.decidedByUserId) }}</b></section>
                 <section><small>{{ execution.authorization.decision === 'APPROVED' ? 'Decision time' : 'Rejected at' }}</small><b>{{ execution.authorization.decidedAt.toLocaleString() }}</b></section>
-              } @else {<section><small>Actor</small><b>Administrator pending</b></section>}
+              } @else {<section><small>Actor</small><b>Volunteer authorization pending</b></section>}
               @if (execution.executionRequestedAt) {<section><small>Execution requested</small><b>{{ execution.executionRequestedAt.toLocaleString() }}</b></section>}
               @if (execution.result) {<section><small>Result</small><b>{{ execution.result.resultCode }} · {{ execution.result.message || 'Completed' }}</b></section><section><small>Completed at</small><b>{{ execution.result.completedAt.toLocaleString() }}</b></section>}
               @if (workspace.canAuthorize(execution)) {
@@ -264,10 +278,11 @@ export class IncidentsPage implements OnInit {
             <div class="done"><i>✓</i><section><b>Incident created</b><small>{{ row.incident.createdAt.toLocaleString() }}</small><p>Risk Detection created this Incident independently after the critical threshold was reached.</p></section></div>
             <div [class.done]="row.incident.assignedTo"><i>{{ row.incident.assignedTo ? '✓' : '2' }}</i><section><b>Assignment</b><small>{{ row.incident.assignedTo ? 'Recorded; timestamp unavailable' : 'Pending' }}</small><p>{{ row.assigneeLabel }}</p></section></div>
             @for (execution of row.responseExecutions; track execution.responseExecutionId) {
-              <div [class.done]="execution.authorization"><i>{{ execution.authorization ? '✓' : '3' }}</i><section><b>{{ actionLabel(execution.action.actionCode) }}</b><small>{{ execution.authorization?.decidedAt?.toLocaleString() || 'Authorization pending' }}</small><p>{{ execution.authorization ? execution.authorization.decision + ' by ' + workspace.actorLabel(execution.authorization.decidedByUserId) : 'Administrator decision required.' }}</p></section></div>
+              <div [class.done]="execution.authorization"><i>{{ execution.authorization ? '✓' : '3' }}</i><section><b>{{ actionLabel(execution.action.actionCode) }}</b><small>{{ execution.authorization?.decidedAt?.toLocaleString() || 'Authorization pending' }}</small><p>{{ execution.authorization ? execution.authorization.decision + ' by ' + workspace.actorLabel(execution.authorization.decidedByUserId) : 'Volunteer decision required.' }}</p></section></div>
               @if (execution.result) {<div class="done"><i>✓</i><section><b>Action result</b><small>{{ execution.result.completedAt.toLocaleString() }}</small><p>{{ execution.result.message || execution.result.resultCode }}</p></section></div>}
             }
-            <div [class.done]="row.currentCondition === 'Normal'"><i>{{ row.currentCondition === 'Normal' ? '✓' : '4' }}</i><section><b>Current condition check</b><small>{{ row.currentEvidence?.measuredAt?.toLocaleString() || 'Not verified' }}</small><p>{{ row.currentCondition === 'Normal' ? 'Current Monitoring and Connectivity data classify the condition as Normal; this check is not persisted by Incident Management.' : 'No persisted safe-condition verification is available.' }}</p></section></div>
+            @for (action of row.incident.humanActions; track action.id) {<div class="done"><i>✓</i><section><b>{{ actionLabel(action.actionCode) }}</b><small>{{ action.performedAt.toLocaleString() }}</small><p>{{ action.notes || 'Human action recorded.' }}</p></section></div>}
+            <div [class.done]="row.incident.safetyVerified"><i>{{ row.incident.safetyVerified ? '✓' : '4' }}</i><section><b>Server safety verification</b><small>{{ row.incident.safeAt?.toLocaleString() || 'Not verified' }}</small><p>{{ row.incident.safetyVerified ? 'Fresh evidence, connectivity and linked rule verified by the backend.' : 'No successful persisted safety verification is available.' }}</p></section></div>
             <div [class.done]="row.incident.status === 'RESOLVED' || row.incident.status === 'CLOSED'"><i>{{ row.incident.resolvedAt ? '✓' : '5' }}</i><section><b>Resolution</b><small>{{ row.incident.resolvedAt?.toLocaleString() || 'Pending' }}</small><p>{{ row.incident.resolutionNotes || 'Resolution notes have not been registered yet.' }}</p></section></div>
             <div [class.done]="row.incident.status === 'CLOSED'"><i>{{ row.incident.status === 'CLOSED' ? '✓' : '6' }}</i><section><b>Closure</b><small>{{ row.incident.status === 'CLOSED' ? 'Closed' : 'Pending' }}</small><p>Closure is available only after resolution.</p></section></div>
           </div>
@@ -291,7 +306,7 @@ export class IncidentsPage implements OnInit {
             <dt>Resolved</dt><dd>{{ row.incident.resolvedAt?.toLocaleString() || '—' }}</dd>
             <dt>Resolved by</dt><dd>{{ row.incident.resolvedBy ? workspace.actorLabel(row.incident.resolvedBy) : '—' }}</dd>
           </dl>
-          <p class="contract-note">Assignment remains unavailable because IAM profile ids are integers while Incident Management requires an attendant GUID. Resolution and post-resolution closure are supported.</p>
+          <p class="contract-note">Assignment, actions, safety verification, resolution and closure are persisted with the authenticated user identity.</p>
         </aside>
       </div>
     } @else {
@@ -300,18 +315,29 @@ export class IncidentsPage implements OnInit {
   `,
   styleUrls: ['./incident-detail.page.scss', './incidents.readability.scss'],
 })
-export class IncidentDetailPage implements OnInit {
+export class IncidentDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly snack = inject(MatSnackBar);
   readonly workspace = inject(IncidentWorkspaceFacade);
   readonly busy = signal(false);
   readonly showResolve = signal(false);
+  readonly showAction = signal(false);
   resolutionNotes = '';
+  actionCode = '';
+  actionNotes = '';
   private incidentId = '';
+  private refreshTimer?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void {
     this.incidentId = this.route.snapshot.paramMap.get('incidentId') ?? '';
     this.reload();
+    this.refreshTimer = setInterval(() => {
+      if (!this.busy() && !this.showResolve() && !this.showAction()) this.reload();
+    }, 15_000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
   }
 
   assignToMe(): void {
@@ -344,6 +370,41 @@ export class IncidentDetailPage implements OnInit {
       error: (error: { message?: string }) => {
         this.busy.set(false);
         this.snack.open(error.message ?? 'Incident resolution failed.', 'Close', { duration: 3500 });
+      },
+    });
+  }
+
+  verifySafe(): void {
+    this.busy.set(true);
+    this.workspace.verifySafe().subscribe({
+      next: (verification) => {
+        this.busy.set(false);
+        this.reload();
+        this.snack.open(verification.safe ? 'Server verified a safe condition.' : verification.reason, 'Close', { duration: 4000 });
+      },
+      error: (error: { message?: string }) => {
+        this.busy.set(false);
+        this.snack.open(error.message ?? 'Safety verification failed.', 'Close', { duration: 3500 });
+      },
+    });
+  }
+
+  recordAction(): void {
+    const code = this.actionCode.trim();
+    if (!code) return;
+    this.busy.set(true);
+    this.workspace.recordHumanAction(code, this.actionNotes.trim() || undefined).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.showAction.set(false);
+        this.actionCode = '';
+        this.actionNotes = '';
+        this.reload();
+        this.snack.open('Operational action recorded.', 'Close', { duration: 2200 });
+      },
+      error: (error: { message?: string }) => {
+        this.busy.set(false);
+        this.snack.open(error.message ?? 'Could not record the action.', 'Close', { duration: 3500 });
       },
     });
   }

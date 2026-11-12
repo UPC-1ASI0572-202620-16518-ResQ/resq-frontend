@@ -239,6 +239,9 @@ function defaultCode(
     case 503:
       return 'SERVICE_UNAVAILABLE';
 
+    case 500:
+      return 'SERVER_ERROR';
+
     default:
       return 'HTTP_ERROR';
   }
@@ -299,6 +302,12 @@ function defaultMessage(
     case 503:
       return (
         'The service is temporarily unavailable.'
+      );
+
+    case 500:
+      return (
+        'The server encountered an internal error. ' +
+        'Existing data was not replaced; check the backend logs and retry.'
       );
 
     default:

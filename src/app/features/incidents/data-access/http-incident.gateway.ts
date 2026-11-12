@@ -35,6 +35,8 @@ import {
 import {
   AssignIncidentResourceDto,
   IncidentResourceDto,
+  IncidentHumanActionResourceDto,
+  IncidentSafetyVerificationResourceDto,
   ResolveIncidentResourceDto,
   UpdateIncidentStatusResourceDto,
 } from './incident.dto';
@@ -43,6 +45,8 @@ import {
   IncidentGateway,
   IncidentQueryFilters,
   IncidentRecord,
+  IncidentHumanActionRecord,
+  IncidentSafetyVerificationRecord,
 } from './incident.gateway';
 
 import {
@@ -222,6 +226,57 @@ export class HttpIncidentGateway
             ),
         ),
       );
+  }
+
+  assignCurrentUser(incidentId: string): Observable<IncidentRecord> {
+    return this.http.put<IncidentResourceDto>(
+      buildApiUrl(this.apiConfig, `${this.incidentsPath}/${incidentId}/assign/me`),
+      {},
+    ).pipe(
+      map(mapIncidentResourceDto),
+      catchError((error) => throwError(() => mapHttpError(error))),
+    );
+  }
+
+  verifySafe(incidentId: string): Observable<IncidentSafetyVerificationRecord> {
+    return this.http.post<IncidentSafetyVerificationResourceDto>(
+      buildApiUrl(this.apiConfig, `${this.incidentsPath}/${incidentId}/verify-safe`),
+      {},
+    ).pipe(
+      map((item) => ({
+        id: item.id,
+        verifiedByUserId: item.verifiedByUserId,
+        safe: item.safe,
+        reason: item.reason,
+        deviceId: item.deviceId ?? undefined,
+        measurementId: item.measurementId ?? undefined,
+        measuredValue: item.measuredValue ?? undefined,
+        measuredAt: item.measuredAt ? new Date(item.measuredAt) : undefined,
+        ruleSnapshot: item.ruleSnapshot ?? undefined,
+        verifiedAt: new Date(item.verifiedAt),
+      })),
+      catchError((error) => throwError(() => mapHttpError(error))),
+    );
+  }
+
+  recordHumanAction(
+    incidentId: string,
+    actionCode: string,
+    notes?: string,
+  ): Observable<IncidentHumanActionRecord> {
+    return this.http.post<IncidentHumanActionResourceDto>(
+      buildApiUrl(this.apiConfig, `${this.incidentsPath}/${incidentId}/actions`),
+      { actionCode, notes },
+    ).pipe(
+      map((item) => ({
+        id: item.id,
+        userId: item.userId,
+        actionCode: item.actionCode,
+        notes: item.notes ?? undefined,
+        performedAt: new Date(item.performedAt),
+      })),
+      catchError((error) => throwError(() => mapHttpError(error))),
+    );
   }
 
   resolveIncident(

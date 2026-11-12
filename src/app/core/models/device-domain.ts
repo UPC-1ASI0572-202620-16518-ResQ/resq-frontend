@@ -24,10 +24,12 @@ const capabilityAliases: Record<string, DeviceType> = {
   critical_status_indicator: 'VisualSignal',
   normal_status_indicator: 'VisualSignal',
 };
-export const capabilityDefinition = (code: string) =>
-  DEVICE_CATALOG.find(
-    (item) => item.capabilityCode === code || item.type === capabilityAliases[code],
+export const capabilityDefinition = (code: string) => {
+  const normalized = code.trim().toLowerCase();
+  return DEVICE_CATALOG.find(
+    (item) => item.capabilityCode === normalized || item.type === capabilityAliases[normalized],
   );
+};
 export function capabilityCategory(
   capability: Pick<DeviceCapability, 'code' | 'kind' | 'category'>,
 ): DeviceCapabilityCategory {

@@ -26,6 +26,9 @@ export function mapIncidentResourceDto(
     incidentId:
       dto.id,
 
+    riskDetectionId: dto.riskDetectionId ?? undefined,
+    alertId: dto.alertId ?? undefined,
+
     zoneId:
       dto.zoneId,
 
@@ -39,12 +42,37 @@ export function mapIncidentResourceDto(
       normalizeCode(dto.status) as IncidentRecord['status'],
 
     assignedTo:
-      dto.assignedTo ??
-      undefined,
+      dto.assignedUserId != null ? String(dto.assignedUserId) : dto.assignedTo ?? undefined,
+
+    assignedUserId: dto.assignedUserId ?? undefined,
 
     assignedAt: dto.assignedAt ? new Date(dto.assignedAt) : undefined,
-    safeAt: dto.safeAt ? new Date(dto.safeAt) : undefined,
-    resolvedBy: dto.resolvedBy ?? undefined,
+    safeAt: dto.safetyVerifications?.filter((item) => item.safe).at(-1)?.verifiedAt
+      ? new Date(dto.safetyVerifications.filter((item) => item.safe).at(-1)!.verifiedAt)
+      : undefined,
+    resolvedBy: dto.resolvedByUserId != null ? String(dto.resolvedByUserId) : undefined,
+    closedAt: dto.closedAt ? new Date(dto.closedAt) : undefined,
+    closedBy: dto.closedByUserId != null ? String(dto.closedByUserId) : undefined,
+    safetyVerified: Boolean(dto.safetyVerified),
+    humanActions: (dto.humanActions ?? []).map((item) => ({
+      id: item.id,
+      userId: item.userId,
+      actionCode: normalizeCode(item.actionCode),
+      notes: item.notes ?? undefined,
+      performedAt: new Date(item.performedAt),
+    })),
+    safetyVerifications: (dto.safetyVerifications ?? []).map((item) => ({
+      id: item.id,
+      verifiedByUserId: item.verifiedByUserId,
+      safe: item.safe,
+      reason: item.reason,
+      deviceId: item.deviceId ?? undefined,
+      measurementId: item.measurementId ?? undefined,
+      measuredValue: item.measuredValue ?? undefined,
+      measuredAt: item.measuredAt ? new Date(item.measuredAt) : undefined,
+      ruleSnapshot: item.ruleSnapshot ?? undefined,
+      verifiedAt: new Date(item.verifiedAt),
+    })),
 
     createdAt:
       new Date(
@@ -181,6 +209,10 @@ export function mapLegacyIncidentToRecord(
 
     resolutionNotes:
       incident.resolutionNotes,
+
+    safetyVerified: false,
+    humanActions: [],
+    safetyVerifications: [],
   };
 }
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable, signal } from '@angular/core';
-import { Observable, forkJoin, map, of, switchMap, tap, throwError } from 'rxjs';
+import { Observable, forkJoin, map, of, switchMap, tap } from 'rxjs';
 import { ApiError } from '../../core/api/api-error';
 import {
   BUILDING_GATEWAY,
@@ -231,12 +231,17 @@ export class IncidentWorkspaceFacade {
   }
 
   assignToCurrentUser(): Observable<IncidentRecord> {
-    return throwError(() => ({
-      status: 501,
-      code: 'ATTENDANT_ID_UNAVAILABLE',
-      message: 'Incident assignment requires a GUID attendant id, but IAM profiles expose integer user ids.',
-      fieldErrors: [],
-    }));
+    return this.incidents.assignCurrentUser().pipe(
+      tap((incident) => this.refreshCurrent(incident)),
+    );
+  }
+
+  verifySafe() {
+    return this.incidents.verifySafe();
+  }
+
+  recordHumanAction(actionCode: string, notes?: string) {
+    return this.incidents.recordHumanAction(actionCode, notes);
   }
 
   resolve(resolutionNotes: string): Observable<IncidentRecord> {
@@ -250,8 +255,7 @@ export class IncidentWorkspaceFacade {
   }
 
   canAssign(row: IncidentWorkspaceRow): boolean {
-    void row;
-    return false;
+    return this.incidents.canAssign(row.incident);
   }
 
   canResolve(row: IncidentWorkspaceRow): boolean {

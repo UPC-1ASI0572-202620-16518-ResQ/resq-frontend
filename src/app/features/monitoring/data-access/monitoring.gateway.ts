@@ -5,6 +5,7 @@ import {
 import {
   Observable,
 } from 'rxjs';
+import { ComparisonOperator, DetectionRuleRecord } from '../../risk-detection/data-access/risk-detection.gateway';
 
 export type DeviceAvailability =
   | 'AVAILABLE'
@@ -95,6 +96,20 @@ export interface MeasurementTimeRange {
   to: Date;
 }
 
+export interface ZoneMonitoringProfile {
+  zoneId: string;
+  source: 'ZONE_OVERRIDE' | 'GLOBAL_FALLBACK';
+  rules: DetectionRuleRecord[];
+}
+
+export interface ZoneMonitoringRuleInput {
+  riskTypeCode: string;
+  severityCode: string;
+  variableType: string;
+  operator: ComparisonOperator;
+  threshold: number;
+}
+
 export interface MonitoringGateway {
 
   getBuildingStatus(
@@ -138,6 +153,10 @@ export interface MonitoringGateway {
     Observable<
       MonitoringMeasurement[]
     >;
+
+  getZoneProfile(zoneId: string): Observable<ZoneMonitoringProfile>;
+
+  saveZoneProfile(zoneId: string, rules: ZoneMonitoringRuleInput[]): Observable<ZoneMonitoringProfile>;
 }
 
 export const MONITORING_GATEWAY =

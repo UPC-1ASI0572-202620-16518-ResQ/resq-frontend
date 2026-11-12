@@ -9,7 +9,7 @@ import {
   FloorPlanPoint,
 } from '../../core/models/resq.models';
 import { BuildingStoreService } from '../../core/services/building-store.service';
-import { FloorPlanLocalStorageService } from '../../core/services/floor-plan-local-storage.service';
+import { FloorPlanHydrationService } from '../../core/services/floor-plan-hydration.service';
 import {
   AlertWorkspaceFacade,
   AlertWorkspaceRow,
@@ -55,7 +55,7 @@ export class FloorMonitoringPage {
   private readonly alertWorkspace = inject(AlertWorkspaceFacade);
   private readonly snack = inject(MatSnackBar);
   readonly store = inject(BuildingStoreService);
-  private readonly localPlans = inject(FloorPlanLocalStorageService);
+  private readonly planHydration = inject(FloorPlanHydrationService);
   private readonly restoredPlanKeys = new Set<string>();
   readonly buildingId = signal(this.route.snapshot.paramMap.get('buildingId') ?? '');
   readonly floorId = signal(this.route.snapshot.paramMap.get('floorId') ?? '');
@@ -145,6 +145,14 @@ export class FloorMonitoringPage {
       ).length,
   );
   readonly lastSimulation = signal('');
+  readonly planLoadStatus = signal<'LOADING' | 'REMOTE' | 'LOCAL' | 'EMPTY' | 'ERROR'>('LOADING');
+  readonly planLoadMessage = computed(() => ({
+    LOADING: 'Checking the remote floor plan…',
+    REMOTE: 'Floor plan synchronized with the server.',
+    LOCAL: 'Showing the browser fallback because the remote plan is unavailable.',
+    EMPTY: 'This floor does not have a saved plan yet.',
+    ERROR: 'The remote floor plan could not be loaded; current data was not replaced.',
+  })[this.planLoadStatus()]);
 
   constructor() {
     this.alertWorkspace.loadAlerts().subscribe();
@@ -168,7 +176,14 @@ export class FloorMonitoringPage {
       const key = `${buildingId}:${floorId}`;
       if (this.restoredPlanKeys.has(key)) return;
       this.restoredPlanKeys.add(key);
-      this.localPlans.restoreToStore(this.store, buildingId, floorId);
+      this.planLoadStatus.set('LOADING');
+      this.planHydration.hydrate(this.store, buildingId, floorId).subscribe(result => {
+        if (result.error && result.source === 'EMPTY') {
+          this.planLoadStatus.set('ERROR');
+          this.snack.open(result.error.message || 'The server plan could not be loaded.', 'Close', { duration: 4500 });
+        } else this.planLoadStatus.set(
+          result.source === 'REMOTE' ? 'REMOTE' : result.source === 'EMPTY' ? 'EMPTY' : 'LOCAL');
+      });
     });
   }
 

@@ -1,4 +1,5 @@
 import { Device, DeviceType, SensorReading } from '../../core/models/resq.models';
+import { capabilityCategory } from '../../core/models/device-domain';
 import type { DeviceWorkspaceRow } from './device-workspace.facade';
 
 const legacyTypeByCode: Record<string, DeviceType> = {
@@ -8,6 +9,12 @@ const legacyTypeByCode: Record<string, DeviceType> = {
   VISUAL_SIGNAL: 'VisualSignal', SERVOMOTOR: 'Servomotor', OLED: 'OLED',
   TEMPERATURE_MEASUREMENT: 'Temperature', GAS_SMOKE_LEVEL: 'Gas',
   LOCAL_STATUS_DISPLAY: 'OLED',
+  GAS_PPM: 'Gas', SMOKE_PPM: 'Smoke',
+  GAS_MEASUREMENT: 'Gas', SMOKE_MEASUREMENT: 'Smoke',
+  HUMIDITY_MEASUREMENT: 'Humidity', MOTION_MEASUREMENT: 'Motion',
+  VISUAL_STATUS_SIGNALING: 'VisualSignal',
+  ENVIRONMENTAL_VENTILATION: 'HVAC',
+  MECHANICAL_SERVO: 'Servomotor',
 };
 
 /** Adapter for old floor/space components. Backend data is the only source of readings. */
@@ -17,9 +24,9 @@ export function mapWorkspaceDeviceToPresentation(row: DeviceWorkspaceRow): Devic
   const type = primary ? legacyTypeByCode[primary.code.toUpperCase()] : undefined;
   // Unrecognized API capabilities remain visible under their actual code in Devices.
   // The legacy floor widgets only understand catalog-supported device types.
-  const compatibilityType = type ?? 'Temperature';
+  const compatibilityType = type ?? (primary?.kind === 'ACTUATION' ? 'VisualSignal' : 'Temperature');
   const zoneId = catalog.assignment.zoneId ?? '';
-  const floorId = `${catalog.assignment.buildingId}:floor:${row.location.floorLabel?.trim() || 'Zones'}`;
+  const floorId = row.location.floorId ?? '';
   const status = !row.connection ? 'Unknown' : row.connection.status === 'ONLINE' ? 'Online' : 'Offline';
   const reading = row.latestMeasurement;
   const readingType = reading ? legacyTypeByCode[reading.variableType.toUpperCase()] : undefined;
@@ -48,7 +55,7 @@ export function mapWorkspaceDeviceToPresentation(row: DeviceWorkspaceRow): Devic
     healthStatus: 'UNKNOWN',
     capabilities: row.capabilities.map((cap) => ({
       id: cap.id, code: cap.code, name: cap.label, kind: cap.kind,
-      category: cap.category ?? (cap.kind === 'MEASUREMENT' ? 'SENSOR' : 'ACTUATOR'),
+      category: capabilityCategory(cap),
       hardware: cap.hardwareLabel, unit: cap.unit,
     })),
     power: { source: 'Not reported', status: 'UNKNOWN' },

@@ -17,7 +17,11 @@ import {
   MonitoringGateway,
   MonitoringMeasurement,
   ZoneMonitoringState,
+  ZoneMonitoringProfile,
+  ZoneMonitoringRuleInput,
 } from './monitoring.gateway';
+import { DetectionRuleResourceDto } from '../../risk-detection/data-access/risk-detection.dto';
+import { mapDetectionRuleResourceDto } from '../../risk-detection/data-access/risk-detection.mapper';
 import {
   mapBuildingMonitoringStatus,
   mapDeviceMonitoringState,
@@ -77,12 +81,32 @@ export class HttpMonitoringGateway implements MonitoringGateway {
     deviceId: string,
     range?: MeasurementTimeRange,
   ): Observable<MonitoringMeasurement[]> {
-    return this.getCurrentMeasurements({ deviceId }).pipe(
-      map((items) =>
-        range
-          ? items.filter((item) => item.measuredAt >= range.from && item.measuredAt <= range.to)
-          : items,
-      ),
+    let url = `${this.path}/devices/${deviceId}/measurements/history`;
+    const query = range
+      ? `?from=${encodeURIComponent(range.from.toISOString())}&to=${encodeURIComponent(range.to.toISOString())}`
+      : '';
+    return this.http.get<MonitoringMeasurementResourceDto[]>(buildApiUrl(this.apiConfig, url + query)).pipe(
+      map((items) => items.map(mapMonitoringMeasurement)),
+      catchError((error) => throwError(() => mapHttpError(error))),
+    );
+  }
+
+  getZoneProfile(zoneId: string): Observable<ZoneMonitoringProfile> {
+    return this.http.get<{ zoneId: string; source: ZoneMonitoringProfile['source']; rules: DetectionRuleResourceDto[] }>(
+      buildApiUrl(this.apiConfig, `${this.path}/zones/${zoneId}/profile`),
+    ).pipe(
+      map((resource) => ({ ...resource, rules: resource.rules.map(mapDetectionRuleResourceDto) })),
+      catchError((error) => throwError(() => mapHttpError(error))),
+    );
+  }
+
+  saveZoneProfile(zoneId: string, rules: ZoneMonitoringRuleInput[]): Observable<ZoneMonitoringProfile> {
+    return this.http.put<{ zoneId: string; source: ZoneMonitoringProfile['source']; rules: DetectionRuleResourceDto[] }>(
+      buildApiUrl(this.apiConfig, `${this.path}/zones/${zoneId}/profile`),
+      { rules },
+    ).pipe(
+      map((resource) => ({ ...resource, rules: resource.rules.map(mapDetectionRuleResourceDto) })),
+      catchError((error) => throwError(() => mapHttpError(error))),
     );
   }
 

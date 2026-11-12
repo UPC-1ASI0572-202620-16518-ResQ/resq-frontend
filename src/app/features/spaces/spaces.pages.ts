@@ -37,11 +37,13 @@ import {
 import { StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { AlertWorkspaceFacade } from '../alerts/alert-workspace.facade';
 import {
-  RISK_DETECTION_GATEWAY,
   ComparisonOperator,
   DetectionRuleRecord,
-  RiskDetectionGateway,
 } from '../risk-detection/data-access/risk-detection.gateway';
+import {
+  MONITORING_GATEWAY,
+  MonitoringGateway,
+} from '../monitoring/data-access/monitoring.gateway';
 
 @Component({
   selector: 'resq-spaces-page',
@@ -98,10 +100,10 @@ import {
           <a [routerLink]="'/spaces/' + space.id"
             ><div class="card-head">
               <span class="type-icon">{{ icon(space) }}</span
-              ><resq-status-badge [status]="space.status" />
+              ><resq-status-badge [status]="space.hasLiveData ? space.status : 'NoData'" [label]="space.hasLiveData ? '' : 'No data'" />
             </div>
             <h3>{{ space.name }}</h3>
-            <p>Room {{ space.roomNumber || '—' }} · {{ space.type }}</p>
+            <p>Room {{ space.roomNumber || '—' }} · {{ space.configurationPersisted ? space.type : 'Not set' }}</p>
             <div class="location">
               ▥ {{ buildingName(space.buildingId) }} <span>›</span> {{ floorName(space.floorId) }}
             </div>
@@ -110,7 +112,7 @@ import {
                 ><b>{{ space.devices.length }}</b
                 >Devices</span
               ><span
-                ><b>{{ space.sensitivity }}</b
+                ><b>{{ space.configurationPersisted ? space.sensitivity : 'Not set' }}</b
                 >Sensitivity</span
               ><span
                 ><b>{{ alertCount(space.id) }}</b
@@ -143,11 +145,11 @@ import {
                   <b>{{ space.name }}</b
                   ><small>Room {{ space.roomNumber }}</small>
                 </td>
-                <td>{{ space.type }}</td>
+                <td>{{ space.configurationPersisted ? space.type : 'Not set' }}</td>
                 <td>{{ buildingName(space.buildingId) }}</td>
                 <td>{{ floorName(space.floorId) }}</td>
-                <td>{{ space.sensitivity }}</td>
-                <td><resq-status-badge [status]="space.status" /></td>
+                <td>{{ space.configurationPersisted ? space.sensitivity : 'Not set' }}</td>
+                <td><resq-status-badge [status]="space.hasLiveData ? space.status : 'NoData'" [label]="space.hasLiveData ? '' : 'No data'" /></td>
                 <td>{{ space.devices.length }}</td>
                 <td>{{ alertCount(space.id) }}</td>
               </tr>
@@ -291,13 +293,13 @@ export class SpacesPage {
               <dt>Room</dt>
               <dd>{{ space()!.roomNumber }}</dd>
               <dt>Type</dt>
-              <dd>{{ space()!.type }}</dd>
+              <dd>{{ space()!.configurationPersisted ? space()!.type : 'Not set' }}</dd>
               <dt>Sensitivity</dt>
-              <dd>{{ space()!.sensitivity }}</dd>
+              <dd>{{ space()!.configurationPersisted ? space()!.sensitivity : 'Not set' }}</dd>
               <dt>Devices</dt>
               <dd>{{ space()!.devices.length }}</dd>
               <dt>Risk status</dt>
-              <dd><resq-status-badge [status]="space()!.status" /></dd>
+              <dd><resq-status-badge [status]="space()!.hasLiveData ? space()!.status : 'NoData'" [label]="space()!.hasLiveData ? '' : 'No data'" /></dd>
             </dl>
           </aside>
         </div>
@@ -378,12 +380,12 @@ export class SpacesPage {
         <section class="config rules-config">
           <div class="config-intro">
             <div>
-              <h3>Global Risk Detection Rules</h3>
-              <p>These backend rules apply across the organization by variable type, not only to {{ space()!.name }}.</p>
+              <h3>Zone Monitoring Profile</h3>
+              <p>Effective server rules for {{ space()!.name }}. Source: {{ profileSource() }}.</p>
             </div>
-            <button type="button" (click)="showRuleForm.set(!showRuleForm())">{{ showRuleForm() ? 'Cancel' : 'Create global rule' }}</button>
+            <button type="button" (click)="showRuleForm.set(!showRuleForm())">{{ showRuleForm() ? 'Cancel' : 'Add zone rule' }}</button>
           </div>
-          <p class="contract-note">Per-zone sensitivity profiles are not supported by the API. The sensitivity label shown elsewhere is presentation-only.</p>
+          <p class="contract-note">A zone override replaces the global fallback during server-side measurement evaluation.</p>
           @if (showRuleForm()) {
             <form class="rule-form" (ngSubmit)="createRule()">
               <label>Risk type code<input name="riskTypeCode" [(ngModel)]="ruleRiskType" required pattern="[A-Za-z][A-Za-z0-9_]*" placeholder="GAS_LEAK" /></label>
@@ -392,10 +394,10 @@ export class SpacesPage {
               <datalist id="zone-variable-types">@for (code of availableVariableTypes(); track code) {<option [value]="code"></option>}</datalist>
               <label>Operator<select name="operator" [(ngModel)]="ruleOperator">@for (operator of operators; track operator) {<option [value]="operator">{{ operatorLabel(operator) }}</option>}</select></label>
               <label>Threshold<input name="threshold" type="number" step="any" [(ngModel)]="ruleThreshold" required /></label>
-              <button type="submit" [disabled]="ruleBusy() || !ruleRiskType.trim() || !ruleVariableType.trim() || ruleThreshold === null">Create active global rule</button>
+              <button type="submit" [disabled]="ruleBusy() || !ruleRiskType.trim() || !ruleVariableType.trim() || ruleThreshold === null">Save zone profile</button>
             </form>
           }
-          @if (rulesLoading()) {<p class="contract-note">Loading global rules…</p>}
+          @if (rulesLoading()) {<p class="contract-note">Loading effective zone rules…</p>}
           @if (rulesError()) {<p class="contract-note">{{ rulesError() }} <button type="button" (click)="loadRules()">Retry</button></p>}
           <div class="rule-list">
             @for (rule of rules(); track rule.ruleId) {
@@ -403,8 +405,8 @@ export class SpacesPage {
                 <div><b>{{ rule.riskTypeCode }}</b><small>{{ rule.ruleId }}</small></div>
                 <span>{{ rule.severityCode }}</span>
                 <div><b>{{ rule.condition.variableType }}</b><small>{{ operatorLabel(rule.condition.operator) }} {{ rule.condition.threshold }}</small></div>
-                <em>{{ appliesToZone(rule) ? 'Variable present in this zone' : 'Global · variable not present here' }}</em>
-                <button type="button" [disabled]="ruleBusy()" (click)="toggleRule(rule)">{{ rule.status === 'ACTIVE' ? 'Deactivate' : 'Activate' }}</button>
+                <em>{{ appliesToZone(rule) ? 'Variable present in this zone' : 'Variable not present here' }}</em>
+                <button type="button" [disabled]="ruleBusy()" (click)="toggleRule(rule)">Remove from override</button>
               </article>
             } @empty {
               @if (!rulesLoading() && !rulesError()) {<p class="contract-note">No global detection rules are configured.</p>}
@@ -429,7 +431,7 @@ export class SpaceDetailPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly service = inject(SpaceService);
   private readonly alertWorkspace = inject(AlertWorkspaceFacade);
-  private readonly riskGateway = inject<RiskDetectionGateway>(RISK_DETECTION_GATEWAY);
+  private readonly monitoringGateway = inject<MonitoringGateway>(MONITORING_GATEWAY);
   readonly store = inject(BuildingStoreService);
   private readonly snack = inject(MatSnackBar);
   readonly response = inject(SensorResponseService);
@@ -447,6 +449,7 @@ export class SpaceDetailPage implements OnInit {
   readonly rulesError = signal('');
   readonly ruleBusy = signal(false);
   readonly showRuleForm = signal(false);
+  readonly profileSource = signal<'ZONE_OVERRIDE' | 'GLOBAL_FALLBACK'>('GLOBAL_FALLBACK');
   readonly operators: ComparisonOperator[] = [
     'GREATER_THAN',
     'GREATER_THAN_OR_EQUAL',
@@ -522,8 +525,8 @@ export class SpaceDetailPage implements OnInit {
   );
 
   ngOnInit(): void {
-    // Per-zone sensitivity/threshold read and write endpoints are not implemented.
-    // Disable the entire form instead of showing fictitious editable settings.
+    // The legacy sensitivity matrix is retained as a read-only visual summary;
+    // effective thresholds are edited as backend zone rules below.
     this.form.disable({ emitEvent: false });
     const found = this.store
       .spaces()
@@ -544,15 +547,17 @@ export class SpaceDetailPage implements OnInit {
   loadRules(): void {
     this.rulesLoading.set(true);
     this.rulesError.set('');
-    this.riskGateway.getDetectionRules().subscribe({
-      next: (rules) => {
-        this.rules.set(rules);
+    const zoneId = this.route.snapshot.paramMap.get('spaceId') ?? '';
+    this.monitoringGateway.getZoneProfile(zoneId).subscribe({
+      next: (profile) => {
+        this.rules.set(profile.rules);
+        this.profileSource.set(profile.source);
         this.rulesLoading.set(false);
         if (!this.ruleVariableType) this.ruleVariableType = this.availableVariableTypes()[0] ?? '';
       },
       error: (error: { message?: string }) => {
         this.rulesLoading.set(false);
-        this.rulesError.set(error.message ?? 'Global rules could not be loaded.');
+        this.rulesError.set(error.message ?? 'Zone monitoring profile could not be loaded.');
       },
     });
   }
@@ -579,25 +584,27 @@ export class SpaceDetailPage implements OnInit {
         `There are already ${duplicateScope.length} active global rule(s) for this risk, severity and variable. Create another active rule anyway?`,
       )
     ) return;
-    if (
-      !window.confirm(
-        `Create an ACTIVE organization-wide rule for ${variableType}? This will not be limited to ${this.space()?.name ?? 'this zone'}.`,
-      )
-    ) return;
     this.ruleBusy.set(true);
-    this.riskGateway
-      .configureDetectionRule({
+    const nextRules = [...this.rules().map((rule) => ({
+      riskTypeCode: rule.riskTypeCode,
+      severityCode: rule.severityCode,
+      variableType: rule.condition.variableType,
+      operator: rule.condition.operator,
+      threshold: rule.condition.threshold,
+    })), {
         riskTypeCode,
         severityCode: this.ruleSeverity,
         variableType,
         operator: this.ruleOperator,
         threshold: this.ruleThreshold,
-      })
+      }];
+    this.monitoringGateway
+      .saveZoneProfile(this.space()!.id, nextRules)
       .subscribe({
         next: () => {
           this.ruleBusy.set(false);
           this.showRuleForm.set(false);
-          this.snack.open('Global detection rule created and activated.', 'Close', { duration: 3000 });
+          this.snack.open('Zone monitoring profile saved.', 'Close', { duration: 3000 });
           this.loadRules();
         },
         error: (error: { message?: string }) => {
@@ -608,13 +615,23 @@ export class SpaceDetailPage implements OnInit {
   }
 
   toggleRule(rule: DetectionRuleRecord): void {
-    const activate = rule.status !== 'ACTIVE';
-    if (!window.confirm(`${activate ? 'Activate' : 'Deactivate'} this organization-wide rule?`)) return;
+    if (!window.confirm('Remove this rule from the zone override?')) return;
+    const remaining = this.rules().filter((item) => item.ruleId !== rule.ruleId).map((item) => ({
+      riskTypeCode: item.riskTypeCode,
+      severityCode: item.severityCode,
+      variableType: item.condition.variableType,
+      operator: item.condition.operator,
+      threshold: item.condition.threshold,
+    }));
+    if (!remaining.length) {
+      this.snack.open('A zone profile must keep at least one rule.', 'Close', { duration: 3000 });
+      return;
+    }
     this.ruleBusy.set(true);
-    this.riskGateway.changeDetectionRuleStatus(rule.ruleId, activate).subscribe({
+    this.monitoringGateway.saveZoneProfile(this.space()!.id, remaining).subscribe({
       next: () => {
         this.ruleBusy.set(false);
-        this.snack.open(`Global rule ${activate ? 'activated' : 'deactivated'}.`, 'Close', { duration: 2500 });
+        this.snack.open('Zone profile updated.', 'Close', { duration: 2500 });
         this.loadRules();
       },
       error: (error: { message?: string }) => {

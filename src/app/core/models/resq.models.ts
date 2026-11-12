@@ -364,6 +364,10 @@ export interface Space {
   roomNumber?: string;
   type: SpaceType;
   sensitivity: SensitivityLevel;
+  /** False when type/sensitivity are only presentation placeholders, not persisted configuration. */
+  configurationPersisted?: boolean;
+  /** True only when at least one assigned sensor supplies a current/known state. */
+  hasLiveData?: boolean;
   status: RiskStatus;
   thresholds: SpaceThresholds;
   /** Threshold values saved independently for each sensitivity preset. */
@@ -381,6 +385,7 @@ export interface Floor {
   planImageUrl?: string;
   planElements?: FloorPlanElement[];
   planConfigured?: boolean;
+  hasLiveData?: boolean;
 }
 export interface Building {
   id: string;
@@ -390,6 +395,7 @@ export interface Building {
   imageUrl?: string;
   floors: Floor[];
   status: RiskStatus;
+  hasLiveData?: boolean;
 }
 export interface AlertContext {
   riskDetectionId: string;

@@ -262,7 +262,7 @@ export class ThreeFloorViewerComponent implements AfterViewInit, OnChanges, OnDe
       // Elements that do not own monitoring data are still part of the physical
       // floor. Render them as context instead of silently dropping them in 3D.
       for (const element of floor.planElements ?? []) {
-        if (element.type === 'Space' || renderedStructuralIds.has(element.id)) continue;
+        if ((element.type === 'Space' && !!element.spaceId) || renderedStructuralIds.has(element.id)) continue;
         this.addStructuralElement(element, baseY, activeFloor);
       }
     });

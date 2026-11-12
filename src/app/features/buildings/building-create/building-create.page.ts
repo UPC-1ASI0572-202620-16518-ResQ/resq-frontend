@@ -3,6 +3,7 @@ import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } fr
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { Observable, concatMap, from, of, reduce, switchMap } from 'rxjs';
 import { Building } from '../../../core/models/resq.models';
 import { BuildingFacade } from '../data-access/building.facade';
 import { mapCatalogBuildingToPresentation } from '../building-legacy.mapper';
@@ -30,9 +31,8 @@ export class BuildingCreatePage implements OnInit {
   private originalBuilding?: Building;
 
   readonly isEditMode = signal(false);
+  readonly isSaving = signal(false);
   readonly currentStep = signal<WizardStep>(1);
-  readonly imagePreview = signal<string | undefined>(undefined);
-  readonly imageError = signal<string | undefined>(undefined);
 
   readonly buildingForm = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(2)] }),
@@ -119,7 +119,7 @@ export class BuildingCreatePage implements OnInit {
     const control = this.floorControls[index];
     const existing = this.originalBuilding?.floors.find(floor => floor.id === control.controls.id.value);
     const devices = existing?.spaces.reduce((total, space) => total + space.devices.length, 0) ?? 0;
-    if (existing && !window.confirm(`Delete ${existing.name}?\n\nThis floor contains ${existing.spaces.length} spaces and ${devices} devices.\nIts floor plan configuration will also be removed.`)) return;
+    if (existing && !window.confirm(`Remove ${existing.name}?\n\nThe server will reject this operation while the floor has zones, devices or a saved plan.`)) return;
     this.floorsForm.removeAt(index);
     this.renumberFloors();
     this.buildingForm.controls.numberOfFloors.setValue(this.floorsForm.length);
@@ -133,32 +133,8 @@ export class BuildingCreatePage implements OnInit {
     });
   }
 
-  onImageSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) this.processImage(file);
-  }
-
-  onImageDrop(event: DragEvent): void {
-    event.preventDefault();
-    const file = event.dataTransfer?.files?.[0];
-    if (file) this.processImage(file);
-  }
-
-  private processImage(file: File): void {
-    this.imageError.set(undefined);
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { this.imageError.set('Use a JPG, PNG or WEBP image.'); return; }
-    if (file.size > 5 * 1024 * 1024) { this.imageError.set('The image must be smaller than 5 MB.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => { if (typeof reader.result === 'string') this.imagePreview.set(reader.result); };
-    reader.onerror = () => this.imageError.set('The selected image could not be loaded.');
-    reader.readAsDataURL(file);
-  }
-
-  removeImage(): void { this.imagePreview.set(undefined); this.imageError.set(undefined); }
-
   createBuilding(): void {
+    if (this.isSaving()) return;
     if (this.buildingForm.invalid) { this.buildingForm.markAllAsTouched(); this.currentStep.set(1); return; }
     if (this.floorsForm.invalid) { this.floorsForm.markAllAsTouched(); this.currentStep.set(2); return; }
 
@@ -170,28 +146,64 @@ export class BuildingCreatePage implements OnInit {
       return;
     }
     const description = this.buildingForm.controls.description.value.trim() || undefined;
+    this.isSaving.set(true);
+    const floors = this.floorControls.map(control => ({
+      label: control.controls.name.value.trim(),
+      level: control.controls.level.value,
+    }));
     const operation = this.isEditMode()
-      ? this.buildings.updateBuildingDetails({ name, description, address })
+      ? this.buildings.updateBuildingDetails({ name, description, address }).pipe(
+          switchMap(result => this.synchronizeFloors(result, floors)),
+        )
       : this.buildings.registerBuilding({
           buildingCode: `BLDG_${this.slugify(name).replace(/-/g, '_').toUpperCase()}_${Date.now().toString(36).toUpperCase()}`.slice(0, 64),
           name,
           description,
           address,
+          floors,
         });
     operation.subscribe({
       next: (result) => {
-        const floorMessage = this.floorControls.length
-          ? ' Floor-plan persistence is unavailable in the backend.'
-          : '';
         this.snackBar.open(
-          `${this.isEditMode() ? 'Building updated successfully.' : 'Building created successfully.'}${floorMessage}`,
+          this.isEditMode() ? 'Building and floors updated successfully.' : 'Building and floors created successfully.',
           'Close',
           { duration: 4000, horizontalPosition: 'right', verticalPosition: 'top' },
         );
         void this.router.navigate(['/buildings', result.building.id]);
       },
-      error: (error: { message?: string }) => this.snackBar.open(error.message ?? 'Building could not be saved.', 'Close', { duration: 3500 }),
+      error: (error: { message?: string; status?: number }) => {
+        this.isSaving.set(false);
+        const message = error.status === 409
+          ? 'The building changed or a floor is still in use. Reload and try again.'
+          : error.message ?? 'Building or floors could not be saved.';
+        this.snackBar.open(message, 'Close', { duration: 5000 });
+      },
     });
+  }
+
+  private synchronizeFloors(
+    initial: import('../data-access/building.gateway').VersionedBuildingCatalogRecord,
+    desired: Array<{ label: string; level: number }>,
+  ): Observable<import('../data-access/building.gateway').VersionedBuildingCatalogRecord> {
+    const desiredIds = new Set(this.floorControls.map(control => control.controls.id.value).filter(Boolean));
+    const operations: Array<() => Observable<import('../data-access/building.gateway').VersionedBuildingCatalogRecord>> = [];
+    for (const floor of initial.building.floors) {
+      if (!desiredIds.has(floor.id)) operations.push(() => this.buildings.deleteFloor(floor.id));
+    }
+    this.floorControls.forEach((control, index) => {
+      const resource = desired[index];
+      const id = control.controls.id.value;
+      const existing = initial.building.floors.find(floor => floor.id === id);
+      if (!existing) operations.push(() => this.buildings.addFloor(resource));
+      else if (existing.label !== resource.label || existing.level !== resource.level) {
+        operations.push(() => this.buildings.updateFloor(id, resource));
+      }
+    });
+    if (!operations.length) return of(initial);
+    return from(operations).pipe(
+      concatMap(operation => operation()),
+      reduce((_, result) => result, initial),
+    );
   }
 
   private slugify(value: string): string {

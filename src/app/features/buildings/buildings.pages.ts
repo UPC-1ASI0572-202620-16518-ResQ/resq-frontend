@@ -31,6 +31,7 @@ import {
 import {
   BuildingStoreService,
 } from '../../core/services/building-store.service';
+import { FloorPlanHydrationService } from '../../core/services/floor-plan-hydration.service';
 import { forkJoin } from 'rxjs';
 import { AlertWorkspaceFacade, AlertWorkspaceRow } from '../alerts/alert-workspace.facade';
 import { DeviceWorkspaceFacade } from '../devices/device-workspace.facade';
@@ -105,6 +106,21 @@ import {
 
       </header>
 
+      @if (buildingsLoadError(); as error) {
+        <section class="load-error" role="alert" aria-live="assertive">
+          <mat-icon>error_outline</mat-icon>
+          <div>
+            <strong>Buildings could not be loaded</strong>
+            <p>{{ error }}</p>
+          </div>
+          <button type="button" (click)="retryBuildings()">Retry</button>
+        </section>
+      } @else if (buildingsLoading() && !buildings().length) {
+        <section class="loading-buildings" aria-live="polite">
+          <mat-icon>sync</mat-icon> Loading buildings…
+        </section>
+      }
+
 
       <!-- =====================================================
            KPI CARDS
@@ -134,9 +150,6 @@ import {
 
           </div>
 
-          <small class="trend">
-            ↑ 0%
-          </small>
 
         </article>
 
@@ -163,9 +176,6 @@ import {
 
           </div>
 
-          <small class="trend">
-            ↑ 10%
-          </small>
 
         </article>
 
@@ -192,9 +202,6 @@ import {
 
           </div>
 
-          <small class="trend">
-            ↑ 12%
-          </small>
 
         </article>
 
@@ -221,9 +228,6 @@ import {
 
           </div>
 
-          <small class="trend">
-            ↑ 100%
-          </small>
 
         </article>
 
@@ -389,7 +393,8 @@ import {
                     </h2>
 
                     <resq-status-badge
-                      [status]="building.status"
+                      [status]="building.hasLiveData ? building.status : 'NoData'"
+                      [label]="building.hasLiveData ? '' : 'No data'"
                     />
 
                   </div>
@@ -665,7 +670,7 @@ import {
                           [class.dot-offline]="floor.status === 'Offline'"
                         ></i>
 
-                        {{ floor.status }}
+                        {{ floor.hasLiveData ? floor.status : 'No data' }}
 
                       </span>
 
@@ -1246,6 +1251,35 @@ import {
       justify-content: space-between;
       gap: 24px;
     }
+
+    .load-error,
+    .loading-buildings {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 10px;
+    }
+
+    .load-error {
+      border: 1px solid #fda29b;
+      background: #fef3f2;
+      color: #b42318;
+    }
+
+    .load-error div { flex: 1; }
+    .load-error p { margin: 3px 0 0; color: #7a271a; }
+    .load-error button {
+      padding: 8px 14px;
+      border: 1px solid #d92d20;
+      border-radius: 7px;
+      background: #fff;
+      color: #b42318;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .loading-buildings { background: #f2f4f7; color: #475467; }
 
 
     .page-title h1 {
@@ -2658,6 +2692,9 @@ export class BuildingsPage {
   private readonly alertWorkspace = inject(AlertWorkspaceFacade);
   private readonly deviceWorkspace = inject(DeviceWorkspaceFacade);
   private readonly buildingFacade = inject(BuildingFacade);
+  readonly buildingsLoadError = signal<string | undefined>(undefined);
+  readonly buildingsLoading = this.buildingFacade.loading;
+  private readonly buildingsLoaded = signal(false);
 
 
   readonly buildings =
@@ -2704,19 +2741,42 @@ export class BuildingsPage {
 
 
   constructor() {
-    forkJoin({
-      buildings: this.buildingFacade.loadBuildings({}, { page: 0, size: 100 }),
-      alerts: this.alertWorkspace.loadAlerts(),
-      devices: this.deviceWorkspace.loadFleet(),
-    }).subscribe({
-      next: ({ buildings, alerts }) => {
+    this.loadBuildings();
+    this.alertWorkspace.loadAlerts().subscribe({
+      next: alerts => {
         this.recentAlertItems.set(alerts);
-        this.buildingStore.replaceBuildings(
-          buildings.items.map((building) => mapCatalogBuildingToPresentation(building, alerts)),
-        );
+        if (this.buildingsLoaded()) this.applyCatalogBuildings(this.buildingFacade.buildings());
       },
       error: () => undefined,
     });
+    this.deviceWorkspace.loadFleet().subscribe({ error: () => undefined });
+  }
+
+  retryBuildings(): void {
+    this.loadBuildings();
+  }
+
+  private loadBuildings(): void {
+    this.buildingsLoadError.set(undefined);
+    this.buildingFacade.loadBuildings({}, { page: 0, size: 100 }).subscribe({
+      next: result => {
+        this.buildingsLoaded.set(true);
+        this.applyCatalogBuildings(result.items);
+      },
+      error: (error: { status?: number; message?: string }) => {
+        const prefix = error.status === 500
+          ? 'The server could not read the building schema.'
+          : 'The Buildings API request failed.';
+        this.buildingsLoadError.set(`${prefix} ${error.message ?? 'Try again after checking the backend.'}`);
+      },
+    });
+  }
+
+  private applyCatalogBuildings(buildings: BuildingCatalogRecord[]): void {
+    const alerts = this.recentAlertItems();
+    this.buildingStore.replaceBuildings(
+      buildings.map(building => mapCatalogBuildingToPresentation(building, alerts)),
+    );
   }
 
   readonly displayedBuildings =
@@ -3199,7 +3259,8 @@ export class BuildingsPage {
         <div class="detail-actions">
 
           <resq-status-badge
-            [status]="building()!.status"
+            [status]="building()!.hasLiveData ? building()!.status : 'NoData'"
+            [label]="building()!.hasLiveData ? '' : 'No data'"
           />
 
           <a [routerLink]="['/buildings', building()!.id, 'edit']">
@@ -3412,7 +3473,8 @@ export class BuildingsPage {
 
 
               <resq-status-badge
-                [status]="floor.status"
+                [status]="floor.hasLiveData ? floor.status : 'NoData'"
+                [label]="floor.hasLiveData ? '' : 'No data'"
               />
 
               <div class="floor-actions">
@@ -4185,6 +4247,7 @@ export class BuildingDetailPage
     private readonly buildingFacade: BuildingFacade,
     private readonly deviceWorkspace: DeviceWorkspaceFacade,
     private readonly store: BuildingStoreService,
+    private readonly planHydration: FloorPlanHydrationService,
   ) {}
 
   catalogBuilding(): BuildingCatalogRecord | undefined {
@@ -4194,8 +4257,8 @@ export class BuildingDetailPage
   floorLabels(): string[] {
     return [
       ...new Set(
-        (this.catalogBuilding()?.zones ?? [])
-          .map((zone) => zone.floorLabel?.trim())
+        (this.catalogBuilding()?.floors ?? [])
+          .map((floor) => floor.label.trim())
           .filter((label): label is string => Boolean(label)),
       ),
     ];
@@ -4218,7 +4281,18 @@ export class BuildingDetailPage
     }).subscribe({
       next: ({ building, alerts }) => {
         this.recentAlertItems.set(alerts);
-        if (building) this.building.set(mapCatalogBuildingToPresentation(building.building, alerts));
+        if (building) {
+          const presentation = mapCatalogBuildingToPresentation(building.building, alerts);
+          this.building.set(presentation);
+          if (this.store.getBuilding(presentation.id)) this.store.updateBuilding(presentation);
+          else this.store.createBuilding(presentation);
+          const hydrations = presentation.floors.map(floor =>
+            this.planHydration.hydrate(this.store, presentation.id, floor.id));
+          if (hydrations.length) forkJoin(hydrations).subscribe({
+            next: () => this.building.set(this.store.getBuilding(presentation.id)),
+            error: () => undefined,
+          });
+        }
       },
       error: () => this.building.set(undefined),
     });
@@ -4403,7 +4477,7 @@ export class BuildingDetailPage
     const presentation: Building = {
       ...mapped,
       floors: mapped.floors.map((floor) => {
-        const existingFloor = current?.floors.find((item) => item.name === floor.name);
+        const existingFloor = current?.floors.find((item) => item.id === floor.id);
         const existingSpaces = new Map(existingFloor?.spaces.map((space) => [space.id, space]) ?? []);
         return {
           ...floor,
@@ -4417,6 +4491,7 @@ export class BuildingDetailPage
                   ...space,
                   type: existing.type,
                   sensitivity: existing.sensitivity,
+                  configurationPersisted: existing.configurationPersisted,
                   thresholds: existing.thresholds,
                   thresholdProfiles: existing.thresholdProfiles,
                   polygon: existing.polygon,

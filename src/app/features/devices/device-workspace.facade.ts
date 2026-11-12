@@ -42,6 +42,7 @@ import { DeviceFacade } from './data-access/device.facade';
 import {
   DeviceCatalogCapability,
   DeviceCatalogRecord,
+  VersionedDeviceCatalogRecord,
 } from './data-access/device.gateway';
 
 export interface DeviceWorkspaceLocation {
@@ -50,6 +51,7 @@ export interface DeviceWorkspaceLocation {
   zoneId?: string;
   zoneName?: string;
   floorLabel?: string;
+  floorId?: string;
 }
 
 export interface DeviceWorkspaceCapability extends DeviceCatalogCapability {
@@ -245,7 +247,7 @@ export class DeviceWorkspaceFacade {
     );
   }
 
-  registerDevice(resource: RegisterDeviceResourceDto): Observable<unknown> {
+  registerDevice(resource: RegisterDeviceResourceDto): Observable<VersionedDeviceCatalogRecord> {
     return this.devices.registerDevice(resource);
   }
 
@@ -329,6 +331,7 @@ export class DeviceWorkspaceFacade {
       zoneId: device.assignment.zoneId,
       zoneName: zone?.name,
       floorLabel: zone?.floorLabel,
+      floorId: building?.floors.find(floor => floor.label === zone?.floorLabel)?.id,
     };
   }
 }

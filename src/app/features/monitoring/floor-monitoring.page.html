@@ -53,7 +53,7 @@
             ><button aria-label="Fit" (click)="fit()"><mat-icon>fit_screen</mat-icon></button>
           </div>
         </div>
-        <p class="local-plan-notice">Plano guardado en este navegador; no sincronizado con el servidor.</p>
+        <p class="local-plan-notice">{{ planLoadMessage() }}</p>
         @if (!floor()!.planConfigured) {
           <div class="plan-empty">
             <mat-icon>map</mat-icon>
@@ -91,7 +91,13 @@
                   />
                 }
                 @for (element of floor()!.planElements || []; track element.id) {
-                  @if (element.type !== 'Space') {
+                  @if (element.type === 'Space' && !element.spaceId) {
+                    <g class="monitor-element unlinked-space">
+                      <rect [attr.x]="element.x" [attr.y]="element.y" [attr.width]="element.width" [attr.height]="element.height" rx="4" />
+                      <text [attr.x]="element.x + element.width / 2" [attr.y]="element.y + element.height / 2">{{ element.label || 'Unmonitored area' }}</text>
+                      <title>Unmonitored area</title>
+                    </g>
+                  } @else if (element.type !== 'Space') {
                     <g class="monitor-element">
                       <rect
                         [attr.x]="element.x"
@@ -354,11 +360,15 @@
             <div>
               <h2>{{ space.name }}</h2>
               <p>
-                Room {{ space.roomNumber || '—' }} · {{ space.type }} ·
-                {{ space.sensitivity }} Sensitivity
+                Room {{ space.roomNumber || '—' }} ·
+                @if (space.configurationPersisted) {
+                  {{ space.type }} · {{ space.sensitivity }} Sensitivity
+                } @else {
+                  Configuration not persisted
+                }
               </p>
             </div>
-            <resq-status-badge [status]="space.status" />
+            <resq-status-badge [status]="space.hasLiveData ? space.status : 'NoData'" [label]="space.hasLiveData ? '' : 'No data'" />
           </div>
           <a class="space-detail-link" [routerLink]="['/spaces', space.id]"
             ><mat-icon>open_in_new</mat-icon>Open full space details</a
