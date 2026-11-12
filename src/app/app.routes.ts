@@ -39,6 +39,10 @@ import { authGuard } from './features/auth/auth.guard';
 
 export const routes: Routes = [
   {
+    path: 'prototype',
+    loadComponent: () => import('./features/prototype/prototype-telemetry.page').then(module => module.PrototypeTelemetryPage),
+  },
+  {
     path: 'login',
     component: LoginPage,
   },
