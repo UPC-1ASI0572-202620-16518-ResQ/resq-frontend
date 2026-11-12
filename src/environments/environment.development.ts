@@ -1,4 +1,4 @@
 export const environment = {
   production: false,
-  apiBaseUrl: 'http://localhost:5058',
+  apiBaseUrl: 'https://resq-api-79xy.onrender.com/',
 } as const;
