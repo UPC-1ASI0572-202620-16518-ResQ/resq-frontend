@@ -1,6 +1,6 @@
 import { Inject, Injectable, computed, signal } from '@angular/core';
-import { Observable, forkJoin, map, of, switchMap, tap } from 'rxjs';
-import { ApiError } from '../../core/api/api-error';
+import { Observable, catchError, finalize, forkJoin, map, of, switchMap, tap, throwError } from 'rxjs';
+import { ApiError, isApiError } from '../../core/api/api-error';
 import { BuildingStoreService } from '../../core/services/building-store.service';
 import { mapWorkspaceDeviceToPresentation } from './device-legacy.mapper';
 import { capabilityHardware, capabilityLabel, riskTypeLabel } from '../../shared/presentation/domain-labels';
@@ -95,12 +95,14 @@ export class DeviceWorkspaceFacade {
   private readonly detailState = signal<DeviceWorkspaceDetail | undefined>(undefined);
   private readonly loadingState = signal(false);
   private readonly errorState = signal<ApiError | undefined>(undefined);
+  private readonly partialErrorsState = signal<string[]>([]);
 
   readonly rows = this.rowsState.asReadonly();
   readonly buildings = this.buildingsState.asReadonly();
   readonly detail = this.detailState.asReadonly();
   readonly loading = this.loadingState.asReadonly();
   readonly error = this.errorState.asReadonly();
+  readonly partialErrors = this.partialErrorsState.asReadonly();
 
   readonly summary = computed<DeviceFleetSummary>(() => {
     const rows = this.rowsState();
@@ -130,10 +132,17 @@ export class DeviceWorkspaceFacade {
   loadFleet(): Observable<DeviceWorkspaceRow[]> {
     this.loadingState.set(true);
     this.errorState.set(undefined);
+    this.partialErrorsState.set([]);
+    const partialErrors: string[] = [];
 
     return forkJoin({
       devices: this.devices.loadDevices({}, { page: 0, size: 100 }),
-      buildings: this.buildingGateway.getBuildings({}, { page: 0, size: 100 }),
+      buildings: this.recover(
+        this.buildingGateway.getBuildings({}, { page: 0, size: 100 }),
+        pageFrom(this.buildingsState()),
+        partialErrors,
+        'No se pudieron actualizar los edificios; se conservó la última asignación conocida.',
+      ),
     }).pipe(
       tap(({ buildings }) => this.buildingsState.set(buildings.items)),
       switchMap(({ devices, buildings }) => {
@@ -144,9 +153,24 @@ export class DeviceWorkspaceFacade {
         return forkJoin(
           devices.items.map((device) =>
             forkJoin({
-              monitoring: this.monitoring.getDeviceStatus(device.id),
-              connection: this.connectivity.getDeviceConnectionStatus(device.id),
-              current: this.monitoring.getCurrentMeasurements({ deviceId: device.id }),
+              monitoring: this.recover(
+                this.monitoring.getDeviceStatus(device.id),
+                undefined,
+                partialErrors,
+                `No se pudo consultar el estado de Monitoring de ${device.name}.`,
+              ),
+              connection: this.recover(
+                this.connectivity.getDeviceConnectionStatus(device.id),
+                undefined,
+                partialErrors,
+                `No se pudo consultar Connectivity para ${device.name}.`,
+              ),
+              current: this.recover(
+                this.monitoring.getCurrentMeasurements({ deviceId: device.id }),
+                [] as MonitoringMeasurement[],
+                partialErrors,
+                `No se pudieron consultar las mediciones actuales de ${device.name}.`,
+              ),
             }).pipe(
               map(({ monitoring, connection, current }) =>
                 this.toRow(device, buildings.items, monitoring, connection, newestMeasurement(current)),
@@ -159,27 +183,54 @@ export class DeviceWorkspaceFacade {
         next: (rows) => {
           this.rowsState.set(rows);
           this.buildingProjection.replaceDevices(rows.map(mapWorkspaceDeviceToPresentation));
-          this.loadingState.set(false);
+          this.partialErrorsState.set(uniqueMessages(partialErrors));
         },
         error: (error: ApiError) => {
           this.errorState.set(error);
-          this.loadingState.set(false);
         },
       }),
+      finalize(() => this.loadingState.set(false)),
     );
   }
 
   loadDetail(deviceId: string): Observable<DeviceWorkspaceDetail | undefined> {
     this.loadingState.set(true);
     this.errorState.set(undefined);
+    this.partialErrorsState.set([]);
+    const partialErrors: string[] = [];
 
     return forkJoin({
       versioned: this.devices.loadDevice(deviceId),
-      buildings: this.buildingGateway.getBuildings({}, { page: 0, size: 100 }),
-      monitoring: this.monitoring.getDeviceStatus(deviceId),
-      connection: this.connectivity.getDeviceConnectionStatus(deviceId),
-      measurements: this.monitoring.getDeviceMeasurements(deviceId),
-      alerts: this.alertsGateway.getAlerts({}),
+      buildings: this.recover(
+        this.buildingGateway.getBuildings({}, { page: 0, size: 100 }),
+        pageFrom(this.buildingsState()),
+        partialErrors,
+        'No se pudo actualizar la asignación del dispositivo.',
+      ),
+      monitoring: this.recover(
+        this.monitoring.getDeviceStatus(deviceId),
+        undefined,
+        partialErrors,
+        'No se pudo consultar el estado de Monitoring.',
+      ),
+      connection: this.recover(
+        this.connectivity.getDeviceConnectionStatus(deviceId),
+        undefined,
+        partialErrors,
+        'No se pudo consultar el estado de Connectivity.',
+      ),
+      measurements: this.recover(
+        this.monitoring.getDeviceMeasurements(deviceId),
+        this.detailState()?.catalog.id === deviceId ? this.detailState()!.measurements : [],
+        partialErrors,
+        'No se pudo actualizar el historial de mediciones.',
+      ),
+      alerts: this.recover(
+        this.alertsGateway.getAlerts({}),
+        [] as AlertRecord[],
+        partialErrors,
+        'No se pudieron actualizar las alertas relacionadas.',
+      ),
     }).pipe(
       tap(({ buildings }) => this.buildingsState.set(buildings.items)),
       switchMap((result) => {
@@ -191,7 +242,12 @@ export class DeviceWorkspaceFacade {
         const relevantAlertRisks = result.alerts
           .filter((alert) => isGuidRiskId(alert.context.riskDetectionId))
           .map((alert) =>
-          this.riskGateway.getRiskDetectionEvidence(alert.context.riskDetectionId).pipe(
+          this.recover(
+            this.riskGateway.getRiskDetectionEvidence(alert.context.riskDetectionId),
+            undefined,
+            partialErrors,
+            'No se pudo consultar una evidencia de Risk Detection.',
+          ).pipe(
             map((risk) => ({ alert, risk })),
           ),
         );
@@ -227,7 +283,7 @@ export class DeviceWorkspaceFacade {
                 result.connection,
                 current,
               ),
-              measurements: result.measurements,
+              measurements: [...result.measurements].sort((a, b) => a.measuredAt.getTime() - b.measuredAt.getTime()),
               alerts: deviceAlerts,
             } satisfies DeviceWorkspaceDetail;
           }),
@@ -237,13 +293,13 @@ export class DeviceWorkspaceFacade {
         next: (detail) => {
           this.detailState.set(detail);
           if (detail) this.buildingProjection.updateDevice(mapWorkspaceDeviceToPresentation(detail));
-          this.loadingState.set(false);
+          this.partialErrorsState.set(uniqueMessages(partialErrors));
         },
         error: (error: ApiError) => {
           this.errorState.set(error);
-          this.loadingState.set(false);
         },
       }),
+      finalize(() => this.loadingState.set(false)),
     );
   }
 
@@ -296,6 +352,19 @@ export class DeviceWorkspaceFacade {
     this.errorState.set(undefined);
   }
 
+  private recover<T>(
+    request: Observable<T>,
+    fallback: T,
+    partialErrors: string[],
+    message: string,
+  ): Observable<T> {
+    return request.pipe(catchError((error: unknown) => {
+      if (isApiError(error) && error.status === 401) return throwError(() => error);
+      partialErrors.push(message);
+      return of(fallback);
+    }));
+  }
+
   private toRow(
     device: DeviceCatalogRecord,
     buildings: BuildingCatalogRecord[],
@@ -342,4 +411,18 @@ function isGuidRiskId(value: string): boolean {
 
 function newestMeasurement(items: MonitoringMeasurement[]): MonitoringMeasurement | undefined {
   return [...items].sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())[0];
+}
+
+function pageFrom<T>(items: T[]) {
+  return {
+    items,
+    page: 0,
+    size: 100,
+    totalElements: items.length,
+    totalPages: items.length ? 1 : 0,
+  };
+}
+
+function uniqueMessages(messages: string[]): string[] {
+  return [...new Set(messages)];
 }

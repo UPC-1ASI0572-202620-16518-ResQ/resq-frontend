@@ -1,4 +1,6 @@
 :host { width: 100%; }
+.partial-warning { margin: 12px 0; padding: 11px 13px; border: 1px solid #fedf89; border-radius: 8px; background: #fffaeb; color: #b54708; font-size: 12px; line-height: 1.45; }
+.partial-warning b { margin-right: 4px; }
 .kpis { gap: 14px; margin-bottom: 16px; }
 .filters { gap: 12px; padding: 16px; }
 .filters label { font-size: 13px; }

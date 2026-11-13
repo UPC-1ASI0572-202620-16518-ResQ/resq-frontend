@@ -3,6 +3,13 @@ import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { StatusBadgeComponent } from './ui.components';
 import { AnalyticsWorkspaceFacade } from '../../features/analytics/analytics-workspace.facade';
+import { MonitoringMeasurement } from '../../features/monitoring/data-access/monitoring.gateway';
+import {
+  isMeasurementFresh,
+  monitoringUnitLabel,
+  monitoringValueLabel,
+  monitoringVariableLabel,
+} from '../../features/monitoring/monitoring-presentation';
 
 @Component({
   selector: 'resq-response-activity',
@@ -17,9 +24,9 @@ import { AnalyticsWorkspaceFacade } from '../../features/analytics/analytics-wor
     @for (event of events(); track event.id) {
       <a [routerLink]="['/devices', event.deviceId]"
         ><div>
-          <b>{{ event.sensor }} · {{ event.value }} {{ event.unit }}</b
+          <b>{{ event.sensor }} · {{ event.value }}{{ event.unit ? ' ' + event.unit : '' }}</b
           ><small
-            >{{ event.message }} · {{ event.createdAt | date: 'shortTime' }}</small
+            >{{ event.device }} · Medición almacenada · {{ event.createdAt | date: 'short' }}</small
           >
         </div>
         <resq-status-badge [status]="event.risk"
@@ -72,22 +79,26 @@ import { AnalyticsWorkspaceFacade } from '../../features/analytics/analytics-wor
 export class ResponseActivityComponent {
   readonly spaceId = input('');
   readonly deviceId = input('');
+  readonly deviceName = input('');
+  readonly measurements = input<readonly MonitoringMeasurement[] | undefined>(undefined);
   readonly analytics = inject(AnalyticsWorkspaceFacade);
   readonly events = computed(() =>
-    this.analytics.measurements()
+    [...(this.measurements() ?? this.analytics.measurements())]
       .filter((measurement) =>
         (!this.spaceId() || measurement.zoneId === this.spaceId()) &&
         (!this.deviceId() || measurement.deviceId === this.deviceId()),
       )
+      .sort((a, b) => b.measuredAt.getTime() - a.measuredAt.getTime())
       .map((measurement) => ({
         id: measurement.measurementId,
         deviceId: measurement.deviceId,
-        sensor: measurement.variableType,
-        value: measurement.measurementValue.value,
-        unit: measurement.measurementValue.unit,
-        message: 'Measurement',
+        device: this.analytics.devices().find((row) => row.catalog.id === measurement.deviceId)?.catalog.name
+          ?? (this.deviceName() || measurement.deviceId),
+        sensor: monitoringVariableLabel(measurement.variableType),
+        value: monitoringValueLabel(measurement.variableType, measurement.measurementValue.value),
+        unit: monitoringUnitLabel(measurement.variableType, measurement.measurementValue.unit),
         createdAt: measurement.measuredAt,
-        risk: 'Recorded',
+        risk: isMeasurementFresh(measurement) ? 'RECENT' : 'STORED',
       }))
       .slice(0, 10),
   );
