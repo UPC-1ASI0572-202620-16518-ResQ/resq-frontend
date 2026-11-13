@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Inject, Injectable } from '@angular/core';
-import { Observable, catchError, map, of, throwError } from 'rxjs';
+import { Observable, catchError, defer, map, of, throwError } from 'rxjs';
 import { API_CONFIG, ApiConfig, buildApiUrl } from '../../../core/api/api.config';
 import { mapHttpError } from '../../../core/api/http-error.mapper';
 import {
@@ -20,8 +20,10 @@ import {
   ZoneMonitoringProfile,
   ZoneMonitoringRuleInput,
 } from './monitoring.gateway';
-import { DetectionRuleResourceDto } from '../../risk-detection/data-access/risk-detection.dto';
-import { mapDetectionRuleResourceDto } from '../../risk-detection/data-access/risk-detection.mapper';
+import {
+  mapZoneMonitoringProfileRequest,
+  mapZoneMonitoringProfileResponse,
+} from './monitoring-profile.mapper';
 import {
   mapBuildingMonitoringStatus,
   mapDeviceMonitoringState,
@@ -92,20 +94,20 @@ export class HttpMonitoringGateway implements MonitoringGateway {
   }
 
   getZoneProfile(zoneId: string): Observable<ZoneMonitoringProfile> {
-    return this.http.get<{ zoneId: string; source: ZoneMonitoringProfile['source']; rules: DetectionRuleResourceDto[] }>(
+    return this.http.get<unknown>(
       buildApiUrl(this.apiConfig, `${this.path}/zones/${zoneId}/profile`),
     ).pipe(
-      map((resource) => ({ ...resource, rules: resource.rules.map(mapDetectionRuleResourceDto) })),
+      map(mapZoneMonitoringProfileResponse),
       catchError((error) => throwError(() => mapHttpError(error))),
     );
   }
 
   saveZoneProfile(zoneId: string, rules: ZoneMonitoringRuleInput[]): Observable<ZoneMonitoringProfile> {
-    return this.http.put<{ zoneId: string; source: ZoneMonitoringProfile['source']; rules: DetectionRuleResourceDto[] }>(
-      buildApiUrl(this.apiConfig, `${this.path}/zones/${zoneId}/profile`),
-      { rules },
-    ).pipe(
-      map((resource) => ({ ...resource, rules: resource.rules.map(mapDetectionRuleResourceDto) })),
+    return defer(() => this.http.put<unknown>(
+        buildApiUrl(this.apiConfig, `${this.path}/zones/${zoneId}/profile`),
+        mapZoneMonitoringProfileRequest(rules),
+      )).pipe(
+      map(mapZoneMonitoringProfileResponse),
       catchError((error) => throwError(() => mapHttpError(error))),
     );
   }

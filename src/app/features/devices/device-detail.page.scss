@@ -114,6 +114,9 @@
   color: #7c899b;
   font-size: 9px;
 }
+.stats + .current-readings {
+  margin-top: 14px;
+}
 .detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(290px, 1fr);

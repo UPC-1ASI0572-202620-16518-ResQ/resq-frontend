@@ -1,19 +1,30 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { BarChartComponent, DoughnutChartComponent, KpiCardComponent, LineChartComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
+import { EMPTY, catchError, exhaustMap, timer } from 'rxjs';
+import { BarChartComponent, DoughnutChartComponent, EmptyStateComponent, KpiCardComponent, LineChartComponent, StatusBadgeComponent } from '../../shared/ui/ui.components';
 import { AnalyticsWorkspaceFacade } from '../analytics/analytics-workspace.facade';
 import { ResponseActivityComponent } from '../../shared/ui/response-activity.component';
+import {
+  ENVIRONMENTAL_VARIABLES,
+  EnvironmentalVariable,
+  monitoringUnitLabel,
+  monitoringVariableLabel,
+} from '../monitoring/monitoring-presentation';
 
 @Component({
   selector: 'resq-dashboard-page',
   standalone: true,
-  imports: [RouterLink, KpiCardComponent, DoughnutChartComponent, LineChartComponent, BarChartComponent, StatusBadgeComponent, ResponseActivityComponent],
+  imports: [RouterLink, KpiCardComponent, DoughnutChartComponent, LineChartComponent, BarChartComponent, StatusBadgeComponent, ResponseActivityComponent, EmptyStateComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="kpis"><resq-kpi-card icon="apartment" [value]="analytics.buildings().length" label="Buildings Monitored"/><resq-kpi-card icon="sensors" [value]="activeDevices()" label="Connected Devices" tone="green"/><resq-kpi-card icon="warning_amber" [value]="recentAlertCount()" label="Active Alerts" tone="red"/><resq-kpi-card icon="grid_view" [value]="criticalSpaces()" label="Critical Spaces" tone="red"/></section>
+    @if (analytics.partialErrors().length) {
+      <section class="partial-errors" role="status"><b>Datos parciales</b><span>{{ partialErrorMessage() }}</span></section>
+    }
     <resq-response-activity/>
     <section class="hero-grid">
-      <article class="card environmental"><div class="card-head"><div><h2>Environmental Overview</h2><p>Current readings across monitored buildings</p></div></div><div class="metric-tabs">@for(metric of environmentalMetrics();track metric){<button type="button" [class.active]="environmentalMetric()===metric" (click)="environmentalMetric.set(metric)">{{metric}}</button>}<div><b>{{environmentalAverage()}} {{environmentalUnit()}}</b><small>Average</small></div><div><b>{{environmentalMinimum()}} {{environmentalUnit()}}</b><small>Minimum</small></div><div><b>{{environmentalMaximum()}} {{environmentalUnit()}}</b><small>Maximum</small></div></div><resq-line-chart [labels]="environmentalLabels()" [values]="environmentalValues()" [datasetLabel]="environmentalMetric()" [unit]="environmentalUnit()"/></article>
+      <article class="card environmental"><div class="card-head"><div><h2>Environmental Overview</h2><p>Historical measurements stored by Monitoring</p></div></div><div class="metric-tabs">@for(metric of environmentalMetrics;track metric.value){<button type="button" [class.active]="environmentalMetric()===metric.value" (click)="environmentalMetric.set(metric.value)">{{metric.label}}</button>}<div><b>{{environmentalAverage()}} {{environmentalUnit()}}</b><small>Average</small></div><div><b>{{environmentalMinimum()}} {{environmentalUnit()}}</b><small>Minimum</small></div><div><b>{{environmentalMaximum()}} {{environmentalUnit()}}</b><small>Maximum</small></div></div>@if(environmentalReadings().length){<resq-line-chart [labels]="environmentalLabels()" [values]="environmentalValues()" [datasetLabel]="environmentalLabel()" [unit]="environmentalUnit()"/>}@else{<resq-empty-state title="No stored measurements" [message]="'Monitoring has no '+environmentalLabel().toLowerCase()+' readings for registered devices.'"/>}</article>
       <article class="card risk"><div class="card-head"><div><h2>Risk Distribution</h2><p>Current zone status</p></div><a routerLink="/spaces">View spaces →</a></div><div class="risk-chart"><div class="ring"><span><b>{{totalZones()}}</b>Spaces</span></div><ul>@for(status of riskStatuses;track status){<li><i [class]="status.toLowerCase()"></i><span>{{status}}</span><b>{{spaceStatusCount(status)}}</b><em>{{spaceStatusPercent(status)}}%</em></li>}</ul></div></article>
     </section>
     <section class="lower-grid">
@@ -33,27 +44,46 @@ import { ResponseActivityComponent } from '../../shared/ui/response-activity.com
 })
 export class DashboardPage implements OnInit {
   readonly analytics = inject(AnalyticsWorkspaceFacade);
+  private readonly destroyRef = inject(DestroyRef);
   readonly alerts = computed(() => this.analytics.alerts().slice(0, 5));
   readonly recentAlertCount = computed(() => this.analytics.alerts().filter((item) => item.status === 'ACTIVE').length);
   readonly incidents = computed(() => this.analytics.incidents().slice(0, 4));
   readonly period = signal<'24h' | '7d' | '30d'>('7d');
   readonly periods = [{ value: '24h' as const, label: 'Last 24 Hours' }, { value: '7d' as const, label: 'Last 7 Days' }, { value: '30d' as const, label: 'Last 30 Days' }];
-  readonly environmentalMetric = signal('');
-  readonly environmentalMetrics = computed(() => [...new Set(this.analytics.measurements().map((item) => item.variableType))]);
+  readonly environmentalMetric = signal<EnvironmentalVariable>('TEMPERATURE_C');
+  readonly environmentalMetrics = ENVIRONMENTAL_VARIABLES.map((value) => ({
+    value,
+    label: monitoringVariableLabel(value),
+  }));
   readonly activeDevices = computed(() => this.analytics.devices().filter((row) => row.connection?.status === 'ONLINE').length);
   readonly criticalSpaces = computed(() => new Set(this.analytics.alerts().filter((item) => item.status === 'ACTIVE' && item.severity.toUpperCase() === 'CRITICAL').map((item) => item.location.zoneId).filter(Boolean)).size);
   readonly totalZones = computed(() => this.analytics.buildings().reduce((total, building) => total + building.zones.length, 0));
   readonly riskStatuses = ['Normal', 'Warning', 'Critical', 'Offline'] as const;
   readonly deviceStatuses = ['Online', 'Warning', 'Critical', 'Offline'] as const;
   readonly deviceStatusValues = computed(() => this.deviceStatuses.map(status => this.deviceStatusCount(status)));
-  readonly environmentalReadings = computed(() => { const metric = this.environmentalMetric() || this.environmentalMetrics()[0]; return this.analytics.measurements().filter((reading) => reading.variableType === metric).sort((a, b) => a.measuredAt.getTime() - b.measuredAt.getTime()).slice(-30); });
+  readonly environmentalReadings = computed(() => {
+    const readings = this.analytics.measurements()
+      .filter((reading) => reading.variableType.toUpperCase() === this.environmentalMetric())
+      .sort((a, b) => a.measuredAt.getTime() - b.measuredAt.getTime());
+    const latestUnit = readings.at(-1)?.measurementValue.unit.toUpperCase();
+    return readings
+      .filter((reading) => !latestUnit || reading.measurementValue.unit.toUpperCase() === latestUnit)
+      .slice(-30);
+  });
   readonly filteredAlerts = computed(() => this.analytics.alerts().filter(item => item.generatedAt >= this.cutoff()));
   readonly filteredIncidents = computed(() => this.analytics.incidents().filter(item => item.incident.createdAt >= this.cutoff()));
 
-  ngOnInit(): void { this.analytics.load().subscribe({ next: () => { if (!this.environmentalMetric()) this.environmentalMetric.set(this.environmentalMetrics()[0] ?? ''); }, error: () => undefined }); }
-  environmentalLabels(): string[] { return this.environmentalReadings().map(item => item.measuredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); }
+  ngOnInit(): void {
+    timer(0, 30_000).pipe(
+      exhaustMap(() => this.analytics.load().pipe(catchError(() => EMPTY))),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe();
+  }
+  environmentalLabels(): string[] { return this.environmentalReadings().map(item => item.measuredAt.toLocaleString([], { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })); }
   environmentalValues(): number[] { return this.environmentalReadings().map(item => item.measurementValue.value); }
-  environmentalUnit(): string { return this.environmentalReadings()[0]?.measurementValue.unit ?? ''; }
+  environmentalUnit(): string { const item = this.environmentalReadings().at(-1); return item ? monitoringUnitLabel(item.variableType, item.measurementValue.unit) : ''; }
+  environmentalLabel(): string { return monitoringVariableLabel(this.environmentalMetric()); }
+  partialErrorMessage(): string { return this.analytics.partialErrors().map((issue) => issue.message).join(' '); }
   environmentalAverage(): string { return this.stat(values => values.reduce((sum, value) => sum + value, 0) / values.length); }
   environmentalMinimum(): string { return this.stat(values => Math.min(...values)); }
   environmentalMaximum(): string { return this.stat(values => Math.max(...values)); }

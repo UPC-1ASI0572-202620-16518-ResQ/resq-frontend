@@ -38,3 +38,22 @@ export interface BuildingMonitoringStatusResourceDto {
   unavailableDevices: number;
   unknownDevices: number;
 }
+
+export type ZoneMonitoringProfileOperatorDto =
+  | 'GreaterThan'
+  | 'GreaterThanOrEqual'
+  | 'LessThan'
+  | 'LessThanOrEqual'
+  | 'Equal';
+
+export interface ZoneMonitoringRuleRequestDto {
+  riskTypeCode: string;
+  severityCode: string;
+  variableType: string;
+  operator: ZoneMonitoringProfileOperatorDto;
+  threshold: number;
+}
+
+export interface ZoneMonitoringProfileRequestDto {
+  rules: ZoneMonitoringRuleRequestDto[];
+}
